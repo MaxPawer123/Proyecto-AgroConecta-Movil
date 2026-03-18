@@ -1,0 +1,420 @@
+import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+
+const REQUEST_TIMEOUT_MS = 10000;
+
+function obtenerPuertoApi(): number {
+  const valor = process.env.EXPO_PUBLIC_API_PORT;
+  const numero = Number(valor);
+  if (Number.isInteger(numero) && numero > 0 && numero <= 65535) {
+    return numero;
+  }
+  return 3000;
+}
+
+const API_PORT = obtenerPuertoApi();
+
+type ApiResponse<T> = {
+  success: boolean;
+  message?: string;
+  data: T;
+};
+
+type ListResponse<T> = {
+  success: boolean;
+  message?: string;
+  count?: number;
+  data: T[];
+};
+
+export type CrearLotePayload = {
+  id_productor: number;
+  id_producto: number;
+  nombre_lote: string;
+  superficie: number;
+  fecha_siembra: string;
+  fecha_cosecha_est: string;
+  rendimiento_estimado: number;
+  precio_venta_est: number;
+  foto_siembra_url?: string | null;
+  ubicacion?: string | null;
+  variedad?: string | null;
+};
+
+export type LoteApi = {
+  id_lote: number;
+  id_productor: number;
+  id_producto: number;
+  nombre_lote: string;
+  superficie: string;
+  fecha_siembra: string;
+  fecha_cosecha_est: string;
+  rendimiento_estimado: string;
+  precio_venta_est: string;
+  foto_siembra_url?: string | null;
+  ubicacion?: string | null;
+  variedad?: string | null;
+  estado: string;
+  created_at: string;
+  nombre_producto?: string;
+};
+
+export type CrearGastoPayload = {
+  id_lote: number;
+  categoria: string;
+  descripcion?: string;
+  cantidad: number;
+  costo_unitario: number;
+  tipo_costo: 'FIJO' | 'VARIABLE';
+  modalidad_pago?: 'CICLO' | 'ANUAL' | 'NA';
+};
+
+export type GastoApi = {
+  id_gasto: number;
+  id_lote: number;
+  categoria: string;
+  descripcion: string | null;
+  cantidad: string;
+  costo_unitario: string;
+  monto_total: string;
+  tipo_costo: 'FIJO' | 'VARIABLE';
+  modalidad_pago: 'CICLO' | 'ANUAL' | 'NA';
+  fecha_gasto: string;
+};
+
+let baseUrlActiva: string | null = null;
+
+class HttpStatusError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'HttpStatusError';
+    this.status = status;
+  }
+}
+
+function normalizarBaseUrl(url: string): string {
+  return url.trim().replace(/\/$/, '');
+}
+
+function extraerHostDesdeUrl(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function esHostPrivado(host: string | null): boolean {
+  if (!host) return false;
+  return (
+    host.startsWith('192.168.') ||
+    host.startsWith('10.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+  );
+}
+
+function prioridadBaseUrl(url: string, baseUrlPrincipal: string | null): number {
+  if (baseUrlPrincipal && url === baseUrlPrincipal) return 0;
+
+  const host = extraerHostDesdeUrl(url);
+
+  // Modo local/LAN: IP privada primero, luego alias de emulador/simulador.
+  if (esHostPrivado(host) && url.startsWith('http://')) return 1;
+  if (host === '10.0.2.2') return 2;
+  if (host === 'localhost' || host === '127.0.0.1') return 3;
+  if (url.startsWith('https://')) return 4;
+  return 5;
+}
+
+function extraerHostDesdeUri(hostUri?: string | null): string | null {
+  if (!hostUri) return null;
+  const host = hostUri.split(':')[0]?.trim();
+  if (!host) return null;
+  if (host.endsWith('.exp.direct') || host.endsWith('.expo.dev')) return null;
+  return host;
+}
+
+function obtenerHostDesdeUri(hostUri?: string | null): string | null {
+  if (!hostUri) return null;
+  const host = hostUri.split(':')[0]?.trim().toLowerCase();
+  return host || null;
+}
+
+function obtenerHostUriExpo(): string | null {
+  const hostCandidates = [
+    (Constants as unknown as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost,
+    (Constants as unknown as { manifest2?: { extra?: { expoClient?: { hostUri?: string } } } }).manifest2?.extra
+      ?.expoClient?.hostUri,
+    Constants.expoConfig?.hostUri,
+  ];
+
+  return hostCandidates.find((hostUri) => Boolean(hostUri)) || null;
+}
+
+function extraerUrlsConfiguradasDesdeEnv(): string[] {
+  const valores = [
+    process.env.EXPO_PUBLIC_API_BASE_URL,
+    process.env.EXPO_PUBLIC_API_BASE_URLS,
+    process.env.EXPO_PUBLIC_API_BASE_URL_LAN,
+  ];
+
+  const urls: string[] = [];
+
+  for (const valor of valores) {
+    if (!valor) continue;
+
+    for (const parte of valor.split(/[\s,;]+/)) {
+      const url = parte.trim();
+      if (!url) continue;
+      if (!/^https?:\/\//i.test(url)) continue;
+      urls.push(normalizarBaseUrl(url));
+    }
+  }
+
+  return urls;
+}
+
+function construirBaseUrlsCandidatas(): string[] {
+  const candidatas: string[] = [];
+  const baseUrlPrincipal = process.env.EXPO_PUBLIC_API_BASE_URL
+    ? normalizarBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL)
+    : null;
+
+  const baseUrlLan = process.env.EXPO_PUBLIC_API_BASE_URL_LAN
+    ? normalizarBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL_LAN)
+    : null;
+
+  if (baseUrlLan) candidatas.push(baseUrlLan);
+
+  candidatas.push(...extraerUrlsConfiguradasDesdeEnv());
+
+  const hostExpo = extraerHostDesdeUri(obtenerHostUriExpo());
+  if (hostExpo) {
+    candidatas.push(`http://${hostExpo}:${API_PORT}`);
+  }
+
+  const hostCandidates = [
+    (Constants as unknown as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost,
+    (Constants as unknown as { manifest2?: { extra?: { expoClient?: { hostUri?: string } } } }).manifest2?.extra
+      ?.expoClient?.hostUri,
+    Constants.expoConfig?.hostUri,
+  ];
+
+  for (const hostUri of hostCandidates) {
+    const host = extraerHostDesdeUri(hostUri);
+    if (!host) continue;
+    candidatas.push(`http://${host}:${API_PORT}`);
+  }
+
+  if (Platform.OS === 'android') {
+    // Emulador Android
+    candidatas.push(`http://10.0.2.2:${API_PORT}`);
+  }
+
+  candidatas.push(`http://localhost:${API_PORT}`);
+  candidatas.push(`http://127.0.0.1:${API_PORT}`);
+
+  return [...new Set(candidatas.map(normalizarBaseUrl))].sort((a, b) => {
+    const prioridadA = prioridadBaseUrl(a, baseUrlPrincipal);
+    const prioridadB = prioridadBaseUrl(b, baseUrlPrincipal);
+    if (prioridadA !== prioridadB) return prioridadA - prioridadB;
+    return a.localeCompare(b);
+  });
+}
+
+export const API_URL = construirBaseUrlsCandidatas()[0] || `http://localhost:${API_PORT}`;
+
+export function obtenerInfoConexionApi() {
+  return {
+    mode: 'lan',
+    hostUri: obtenerHostUriExpo(),
+    hostDetectado: obtenerHostDesdeUri(obtenerHostUriExpo()),
+    apiUrl: API_URL,
+    baseUrlActiva,
+    baseUrlsCandidatas: construirBaseUrlsCandidatas(),
+  };
+}
+
+function esErrorConexionRecuperable(error: unknown): boolean {
+  if (error instanceof HttpStatusError) {
+    // Permite fallback cuando un túnel o gateway externo falla temporalmente.
+    return [408, 429, 500, 502, 503, 504].includes(error.status);
+  }
+  if (!(error instanceof Error)) return true;
+  if (error.name === 'AbortError') return true;
+
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes('network request failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('cleartext') ||
+    msg.includes('tiempo de espera agotado') ||
+    msg.includes('network error')
+  );
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const baseUrls = construirBaseUrlsCandidatas();
+  const orden = baseUrlActiva
+    ? [baseUrlActiva, ...baseUrls.filter((url) => url !== baseUrlActiva)]
+    : baseUrls;
+
+  let ultimoError: Error | null = null;
+
+  for (const baseUrl of orden) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(init?.headers || {}),
+        },
+      });
+
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const mensaje =
+          data && typeof data === 'object' && 'message' in data
+            ? String((data as { message?: unknown }).message || `Error HTTP ${response.status}`)
+            : `Error HTTP ${response.status}`;
+        throw new HttpStatusError(mensaje, response.status);
+      }
+
+      baseUrlActiva = baseUrl;
+      return data as T;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        ultimoError = new Error(
+          `Tiempo de espera agotado al conectar con ${baseUrl}. Verifica que Backend este corriendo en puerto ${API_PORT}.`
+        );
+      } else {
+        ultimoError = error instanceof Error ? error : new Error(String(error));
+      }
+
+      if (!esErrorConexionRecuperable(error)) {
+        throw ultimoError;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw new Error(
+    `No se pudo conectar con el backend. URLs probadas: ${orden.join(', ')}. Ultimo error: ${
+      ultimoError?.message || 'sin detalle'
+    }`
+  );
+}
+
+export async function fetchGetBackend<T>(path: string): Promise<T> {
+  return requestJson<T>(path, { method: 'GET' });
+}
+
+export async function fetchGetBackendConFallback<T>(
+  path: string,
+  obtenerFallback: () => Promise<T> | T
+): Promise<T> {
+  try {
+    return await fetchGetBackend<T>(path);
+  } catch (error) {
+    if (!esErrorConexionRecuperable(error)) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+
+    const fallback = await Promise.resolve(obtenerFallback());
+    console.warn(`Fallo GET ${path}. Se usa fallback local.`);
+    return fallback;
+  }
+}
+
+export async function fetchGetConManejoRed<T>(
+  path: string,
+  obtenerFallback: () => Promise<T> | T
+): Promise<T> {
+  return fetchGetBackendConFallback(path, obtenerFallback);
+}
+
+export async function crearLoteApi(payload: CrearLotePayload): Promise<LoteApi> {
+  const response = await requestJson<ApiResponse<LoteApi>>('/api/lotes', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo crear el lote en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function obtenerLotesPorProductoApi(idProducto: number): Promise<LoteApi[]> {
+  const response = await fetchGetBackendConFallback<ListResponse<LoteApi>>(
+    `/api/lotes/producto/${idProducto}`,
+    () => ({ success: true, data: [], count: 0, message: 'Fallback local por error de red' })
+  );
+
+  if (!response?.success || !Array.isArray(response.data)) {
+    throw new Error(response?.message || 'No se pudieron obtener lotes por producto desde el servidor');
+  }
+
+  return response.data;
+}
+export async function crearGastoApi(payload: CrearGastoPayload): Promise<GastoApi> {
+  const response = await requestJson<ApiResponse<GastoApi>>('/api/gastos', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo registrar el gasto en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function obtenerGastosPorLoteApi(idLote: number): Promise<GastoApi[]> {
+  const response = await requestJson<ListResponse<GastoApi>>(`/api/gastos/lote/${idLote}`, {
+    method: 'GET',
+  });
+
+  if (!response?.success || !Array.isArray(response.data)) {
+    throw new Error(response?.message || 'No se pudieron obtener gastos del lote desde el servidor');
+  }
+
+  return response.data;
+}
+
+export async function actualizarGastoApi(idGasto: number, payload: Partial<CrearGastoPayload>): Promise<GastoApi> {
+  const response = await requestJson<ApiResponse<GastoApi>>(`/api/gastos/${idGasto}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo actualizar el gasto en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function eliminarGastoApi(idGasto: number): Promise<void> {
+  const response = await requestJson<ApiResponse<null>>(`/api/gastos/${idGasto}`, {
+    method: 'DELETE',
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.message || 'No se pudo eliminar el gasto del servidor');
+  }
+}
