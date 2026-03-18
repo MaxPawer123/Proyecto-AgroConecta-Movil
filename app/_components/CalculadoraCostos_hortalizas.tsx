@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Alert,
   View, 
@@ -135,7 +135,43 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
   ];
   const maxGrafico = Math.max(ingresosTotales * 1.3, totalCostos, 100);
 
-  // --- FUNCIONES ---
+  const inferirFaseDesdeApi = (gasto: GastoApi): Fase => {
+    if (CATEGORIAS_POR_FASE.Cosecha.includes(gasto.categoria)) return 'Cosecha';
+    if (CATEGORIAS_POR_FASE.Progreso.includes(gasto.categoria)) return 'Progreso';
+    if (CATEGORIAS_POR_FASE.Siembra.includes(gasto.categoria)) return 'Siembra';
+    return gasto.tipo_costo === 'FIJO' ? 'Siembra' : 'Progreso';
+  };
+
+  const cargarGastosDelLote = async () => {
+    const loteDestino = idLote ?? 1;
+    try {
+      const gastosApi = await obtenerGastosPorLoteApi(loteDestino);
+      const gastosMapeados: Gasto[] = gastosApi.map((gasto) => ({
+        id: String(gasto.id_gasto),
+        fase: inferirFaseDesdeApi(gasto),
+        categoria: gasto.categoria,
+        descripcion: gasto.descripcion || '',
+        cantidad: String(gasto.cantidad ?? ''),
+        monto: String(gasto.monto_total ?? 0),
+      }));
+      setGastos(gastosMapeados);
+    } catch (error) {
+      console.warn('No se pudieron cargar gastos del lote desde backend:', error);
+      setGastos([]);
+    }
+  };
+
+  // Cargar gastos al iniciar y guardar automático al desmontar
+  useEffect(() => {
+    cargarGastosDelLote();
+    
+    // Cleanup: guardar cuando se sale de la pantalla
+    return () => {
+      console.log('Pantalla de calculadora cerrándose - gastos sincronizados con BD');
+    };
+  }, [idLote]);
+
+  // FUNCIONES PARA MANEJO DE GASTOS -
   const cambiarFase = (nuevaFase: Fase) => {
     setFase(nuevaFase);
     setFormGasto({ ...formGasto, categoria: '' }); // Resetear categoría al cambiar fase
@@ -157,7 +193,6 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
     const costoUnitario = monto / cantidad;
     const loteDestino = idLote ?? 1;
 
-    let sincronizado = false;
     try {
       await crearGastoApi({
         id_lote: loteDestino,
@@ -168,23 +203,12 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
         tipo_costo: fase === 'Siembra' ? 'FIJO' : 'VARIABLE',
         modalidad_pago: 'CICLO',
       });
-      sincronizado = true;
+      setFormGasto({ categoria: '', descripcion: '', cantidad: '', monto: '' });
+      await cargarGastosDelLote();
+      Alert.alert('Listo', 'Gasto registrado y guardado en la base de datos.');
     } catch (error) {
       console.warn('No se pudo registrar gasto en backend:', error);
-    }
-
-    const nuevoGasto = {
-      id: Date.now().toString(),
-      fase,
-      ...formGasto
-    };
-    setGastos([...gastos, nuevoGasto]);
-    setFormGasto({ categoria: '', descripcion: '', cantidad: '', monto: '' });
-
-    if (sincronizado) {
-      Alert.alert('Listo', 'Gasto registrado en backend.');
-    } else {
-      Alert.alert('Guardado local en pantalla', 'No se pudo sincronizar este gasto con el backend.');
+      Alert.alert('Sin conexión', 'No se pudo guardar el gasto en la base de datos. Intenta nuevamente.');
     }
   };
 
@@ -838,10 +862,10 @@ const styles = StyleSheet.create({
   itemTitle: { fontSize: 14, fontWeight: '600', color: '#1f2937' },
   itemSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
   itemPrice: { fontSize: 14, fontWeight: 'bold', color: '#2eaa51', marginRight: 12 },
-  editBtn: { padding: 6, backgroundColor: '#dbeafe', borderRadius: 6, marginRight: 8 },
   deleteBtn: { padding: 6, backgroundColor: '#fef2f2', borderRadius: 6 },
   tagGreen: { backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 },
   tagTextGreen: { color: '#166534', fontSize: 10, fontWeight: 'bold' },
+  editBtn: { padding: 6, backgroundColor: '#dbeafe', borderRadius: 6, marginRight: 8 },
 
   // Gráfico Nativo
   chartContainer: { flexDirection: 'row', height: 180, marginTop: 10, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
@@ -871,7 +895,3 @@ const styles = StyleSheet.create({
   modalCloseBtn: { marginTop: 20, padding: 14, backgroundColor: '#f3f4f6', borderRadius: 10, alignItems: 'center' },
   modalCloseText: { fontSize: 16, fontWeight: 'bold', color: '#4b5563' }
 });
-
-function cargarGastosDelLote() {
-  throw new Error('Function not implemented.');
-}

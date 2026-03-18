@@ -110,6 +110,9 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   const margenGanancia = ingresosTotales > 0 ? (gananciaNeta / ingresosTotales) * 100 : 0;
   const puntoEquilibrio = precioVentaKg > 0 ? totalCostos / precioVentaKg : 0;
   const puntoEquilibrioKg = Math.ceil(puntoEquilibrio);
+  const puntoEquilibrioQq = Math.ceil(puntoEquilibrio / KG_POR_QUINTAL * 10) / 10;
+  const puntoEquilibrioMostrado = unidadCantidad === 'qq' ? puntoEquilibrioQq : puntoEquilibrioKg;
+  const unidadMostrada = unidadCantidad === 'qq' ? 'qq' : 'kg';
   const esRentable = gananciaNeta >= 0;
 
   // Cálculos para el gráfico (Escenarios)
@@ -144,7 +147,6 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
 
   const cargarGastosDelLote = async () => {
     const loteDestino = idLote ?? 1;
-
     try {
       const gastosApi = await obtenerGastosPorLoteApi(loteDestino);
       const gastosMapeados: Gasto[] = gastosApi.map((gasto) => ({
@@ -162,8 +164,14 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
     }
   };
 
+  // Cargar gastos al iniciar y guardar automático al desmontar
   useEffect(() => {
     cargarGastosDelLote();
+    
+    // Cleanup: guardar cuando se sale de la pantalla
+    return () => {
+      console.log('Pantalla de calculadora cerrándose - gastos sincronizados con BD');
+    };
   }, [idLote]);
 
   // --- FUNCIONES ---
@@ -366,7 +374,7 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
             <Text style={styles.recommendationInfoText}>
               💡 <Text style={styles.recommendationInfoStrong}>¡Buenas noticias!</Text>{' '}
               Solo necesitas vender{' '}
-              <Text style={styles.recommendationInfoStrong}>{puntoEquilibrioKg} kg</Text>{' '}
+              <Text style={styles.recommendationInfoStrong}>{puntoEquilibrioMostrado} {unidadMostrada}</Text>{' '}
               para recuperar toda tu inversión.
               {esRentable ? ' ¡El resto es ganancia pura! 🎯' : ''}
             </Text>

@@ -40,7 +40,7 @@ export default function Inicio() {
         >
           <View style={styles.heroContent}>
             <View>
-              <Text style={styles.heroTitle}>Gestionar Mis Cultivos</Text>
+              <Text style={styles.heroTitle}>Calcular Mis Cultivoss</Text>
               <Text style={styles.heroSubtitle}>Administra tus lotes, siembras y finanzas.</Text>
             </View>
             <View style={styles.heroArrow}>

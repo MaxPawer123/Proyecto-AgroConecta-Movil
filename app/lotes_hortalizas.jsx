@@ -332,7 +332,7 @@ export default function MisLotes_Hortalizas() {
                   }}
                 >
                   <Ionicons name="share-social-outline" size={16} color="#fff" />
-                  <Text style={styles.btnGestionarText}>Gestionar</Text>
+                  <Text style={styles.btnGestionarText}>Calcular</Text>
                 </TouchableOpacity>
 
                 {lote.mostrarCosecha && (
