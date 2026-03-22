@@ -778,6 +778,14 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
                       <Ionicons name="chevron-down" size={20} color="#9ca3af" />
                     </TouchableOpacity>
 
+                    <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
+                    <TextInput 
+                      style={styles.input} 
+                      placeholder="" 
+                      value={formEdicion.descripcion}
+                      onChangeText={(t) => setFormEdicion({...formEdicion, descripcion: t})}
+                    />
+
                     <View style={styles.row}>
                       <View style={{ flex: 1, marginRight: 10 }}>
                         <Text style={styles.inputLabel}>Cantidad ({unidadCantidadEdicion})</Text>

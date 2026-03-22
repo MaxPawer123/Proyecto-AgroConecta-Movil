@@ -110,3 +110,47 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
 export async function obtenerLotesLocales(): Promise<LoteLocal[]> {
   return leerLotes();
 }
+
+export async function actualizarLoteLocal(
+  idLocal: number,
+  cambios: Partial<Omit<LoteLocal, 'id_local'>>
+): Promise<void> {
+  const lotes = await leerLotes();
+  const actualizados = lotes.map((lote) => {
+    if (lote.id_local !== idLocal) return lote;
+    return {
+      ...lote,
+      ...cambios,
+    };
+  });
+
+  await guardarLotes(actualizados);
+}
+
+export async function actualizarLoteLocalPorServidor(
+  idServidor: number,
+  cambios: Partial<Omit<LoteLocal, 'id_local'>>
+): Promise<void> {
+  const lotes = await leerLotes();
+  const actualizados = lotes.map((lote) => {
+    if (lote.id_servidor !== idServidor) return lote;
+    return {
+      ...lote,
+      ...cambios,
+    };
+  });
+
+  await guardarLotes(actualizados);
+}
+
+export async function eliminarLoteLocal(idLocal: number): Promise<void> {
+  const lotes = await leerLotes();
+  const filtrados = lotes.filter((lote) => lote.id_local !== idLocal);
+  await guardarLotes(filtrados);
+}
+
+export async function eliminarLoteLocalPorServidor(idServidor: number): Promise<void> {
+  const lotes = await leerLotes();
+  const filtrados = lotes.filter((lote) => lote.id_servidor !== idServidor);
+  await guardarLotes(filtrados);
+}

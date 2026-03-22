@@ -27,6 +27,16 @@ type ListResponse<T> = {
   data: T[];
 };
 
+type UploadFotoResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    url?: string;
+    filename?: string;
+    path?: string;
+  };
+};
+
 export type CrearLotePayload = {
   id_productor: number;
   id_producto: number;
@@ -39,6 +49,10 @@ export type CrearLotePayload = {
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
   variedad?: string | null;
+};
+
+export type ActualizarLotePayload = Partial<CrearLotePayload> & {
+  estado?: string;
 };
 
 export type LoteApi = {
@@ -346,6 +360,98 @@ export async function fetchGetConManejoRed<T>(
   return fetchGetBackendConFallback(path, obtenerFallback);
 }
 
+function obtenerNombreArchivoDesdeUri(uri: string): string {
+  const ultimoSegmento = uri.split('/').pop();
+  if (!ultimoSegmento) return `siembra-${Date.now()}.jpg`;
+  return ultimoSegmento.includes('.') ? ultimoSegmento : `${ultimoSegmento}.jpg`;
+}
+
+function obtenerMimeDesdeNombre(nombre: string): string {
+  const lower = nombre.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.jpeg') || lower.endsWith('.jpg')) return 'image/jpeg';
+  return 'image/jpeg';
+}
+
+export async function subirFotoSiembraApi(uriFoto: string): Promise<string> {
+  if (!uriFoto) {
+    throw new Error('No se recibio una URI de foto para subir.');
+  }
+
+  if (!uriFoto.startsWith('file://') && /^https?:\/\//i.test(uriFoto)) {
+    return uriFoto;
+  }
+
+  const baseUrls = construirBaseUrlsCandidatas();
+  const orden = baseUrlActiva
+    ? [baseUrlActiva, ...baseUrls.filter((url) => url !== baseUrlActiva)]
+    : baseUrls;
+
+  let ultimoError: Error | null = null;
+
+  const nombreArchivo = obtenerNombreArchivoDesdeUri(uriFoto);
+  const tipoMime = obtenerMimeDesdeNombre(nombreArchivo);
+
+  for (const baseUrl of orden) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const formData = new FormData();
+      formData.append('foto', {
+        uri: uriFoto,
+        name: nombreArchivo,
+        type: tipoMime,
+      } as unknown as Blob);
+
+      const response = await fetch(`${baseUrl}/api/lotes/upload/siembra`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+
+      let data: UploadFotoResponse | null = null;
+      try {
+        data = (await response.json()) as UploadFotoResponse;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const mensaje = data?.message || `Error HTTP ${response.status}`;
+        throw new HttpStatusError(mensaje, response.status);
+      }
+
+      const url = data?.data?.url;
+      if (!url) {
+        throw new Error('El backend no devolvio la URL de la imagen subida.');
+      }
+
+      baseUrlActiva = baseUrl;
+      return url;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        ultimoError = new Error(`Tiempo de espera agotado al subir foto a ${baseUrl}.`);
+      } else {
+        ultimoError = error instanceof Error ? error : new Error(String(error));
+      }
+
+      if (!esErrorConexionRecuperable(error)) {
+        throw ultimoError;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw new Error(
+    `No se pudo subir la foto al backend. URLs probadas: ${orden.join(', ')}. Ultimo error: ${
+      ultimoError?.message || 'sin detalle'
+    }`
+  );
+}
+
 export async function crearLoteApi(payload: CrearLotePayload): Promise<LoteApi> {
   const response = await requestJson<ApiResponse<LoteApi>>('/api/lotes', {
     method: 'POST',
@@ -371,6 +477,30 @@ export async function obtenerLotesPorProductoApi(idProducto: number): Promise<Lo
 
   return response.data;
 }
+
+export async function actualizarLoteApi(idLote: number, payload: ActualizarLotePayload): Promise<LoteApi> {
+  const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo actualizar el lote en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function eliminarLoteApi(idLote: number): Promise<void> {
+  const response = await requestJson<ApiResponse<null>>(`/api/lotes/${idLote}`, {
+    method: 'DELETE',
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.message || 'No se pudo eliminar el lote en el servidor');
+  }
+}
+
 export async function crearGastoApi(payload: CrearGastoPayload): Promise<GastoApi> {
   const response = await requestJson<ApiResponse<GastoApi>>('/api/gastos', {
     method: 'POST',

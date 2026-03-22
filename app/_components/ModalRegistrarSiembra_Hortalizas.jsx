@@ -15,7 +15,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
-import { crearLoteApi } from '@/src/services/api';
+import { crearLoteApi, subirFotoSiembraApi } from '@/src/services/api';
 import { insertarLoteLocal } from '@/src/services/database';
 
 LocaleConfig.locales.es = {
@@ -181,21 +181,30 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
 
     setGuardando(true);
 
-    const payload = {
-      id_productor: ID_PRODUCTOR_DEFAULT,
-      id_producto: idProducto,
-      nombre_lote: nombre,
-      superficie,
-      fecha_siembra: fechaSiembraIso,
-      fecha_cosecha_est: fechaCosechaIso,
-      rendimiento_estimado: Math.max(1, superficie * 500),
-      precio_venta_est: 8,
-      foto_siembra_url: fotoTerreno,
-      ubicacion: form.ubicacion,
-      variedad: form.tipoCultivo,
-    };
-
     try {
+      let fotoSiembraUrl = null;
+      if (fotoTerreno) {
+        try {
+          fotoSiembraUrl = await subirFotoSiembraApi(fotoTerreno);
+        } catch (errorFoto) {
+          console.warn('No se pudo subir la foto de siembra, se crea el lote sin foto:', errorFoto);
+        }
+      }
+
+      const payload = {
+        id_productor: ID_PRODUCTOR_DEFAULT,
+        id_producto: idProducto,
+        nombre_lote: nombre,
+        superficie,
+        fecha_siembra: fechaSiembraIso,
+        fecha_cosecha_est: fechaCosechaIso,
+        rendimiento_estimado: Math.max(1, superficie * 500),
+        precio_venta_est: 8,
+        foto_siembra_url: fotoSiembraUrl,
+        ubicacion: form.ubicacion,
+        variedad: form.tipoCultivo,
+      };
+
       const loteServidor = await crearLoteApi(payload);
 
       await insertarLoteLocal({
@@ -212,7 +221,10 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
         estado_sincronizacion: 'SINCRONIZADO',
       });
 
-      Alert.alert('Listo', 'Lote registrado en backend y guardado localmente.');
+      const mensajeExito = fotoTerreno && !fotoSiembraUrl
+        ? 'Lote registrado en backend y guardado localmente. La foto quedo pendiente de sincronizacion.'
+        : 'Lote registrado en backend y guardado localmente.';
+      Alert.alert('Listo', mensajeExito);
       limpiarFormulario();
       if (onCreated) {
         await onCreated();
@@ -227,8 +239,8 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
         superficie,
         fecha_siembra: fechaSiembraIso,
         fecha_cosecha_est: fechaCosechaIso,
-        rendimiento_estimado: payload.rendimiento_estimado,
-        precio_venta_est: payload.precio_venta_est,
+        rendimiento_estimado: Math.max(1, superficie * 500),
+        precio_venta_est: 8,
         foto_siembra_uri_local: fotoTerreno,
         estado_sincronizacion: 'PENDIENTE',
       });

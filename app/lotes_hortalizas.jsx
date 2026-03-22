@@ -1,18 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { 
+  Alert,
   View, 
   Text, 
   ScrollView, 
   TouchableOpacity, 
   StyleSheet, 
-  Image
+  Image,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ModalRegistrarSiembra from './_components/ModalRegistrarSiembra_Hortalizas';
 import CalculadoraCostos from './_components/CalculadoraCostos_hortalizas';
-import { marcarLoteComoSincronizado, obtenerLotesLocales, obtenerLotesPendientesLocales } from '@/src/services/database';
-import { crearLoteApi, obtenerLotesPorProductoApi } from '@/src/services/api';
+import {
+  actualizarLoteLocal,
+  actualizarLoteLocalPorServidor,
+  eliminarLoteLocal,
+  eliminarLoteLocalPorServidor,
+  marcarLoteComoSincronizado,
+  obtenerLotesLocales,
+  obtenerLotesPendientesLocales,
+} from '@/src/services/database';
+import {
+  actualizarLoteApi,
+  crearLoteApi,
+  eliminarLoteApi,
+  obtenerLotesPorProductoApi,
+  subirFotoSiembraApi,
+} from '@/src/services/api';
 
 const formatearFecha = (iso) => {
   if (!iso) return 'N/D';
@@ -26,6 +43,13 @@ export default function MisLotes_Hortalizas() {
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false);
   const [loteSeleccionadoId, setLoteSeleccionadoId] = useState(1);
   const [lotes, setLotes] = useState([]);
+  const [modalEditarOpen, setModalEditarOpen] = useState(false);
+  const [loteEditando, setLoteEditando] = useState(null);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [formEdicion, setFormEdicion] = useState({
+    nombre: '',
+    superficie: '',
+  });
 
   const sincronizarLotesPendientes = async () => {
     const pendientes = await obtenerLotesPendientesLocales();
@@ -36,6 +60,14 @@ export default function MisLotes_Hortalizas() {
         const superficie = Number(lote.superficie || 0);
         const rendimiento = Number(lote.rendimiento_estimado || 0);
         const precio = Number(lote.precio_venta_est || 0);
+        let fotoSiembraUrl = null;
+        if (lote.foto_siembra_uri_local) {
+          try {
+            fotoSiembraUrl = await subirFotoSiembraApi(lote.foto_siembra_uri_local);
+          } catch (errorFoto) {
+            console.warn('No se pudo sincronizar foto de lote hortalizas, se sincroniza solo datos:', errorFoto);
+          }
+        }
 
         const loteServidor = await crearLoteApi({
           id_productor: 1,
@@ -46,7 +78,7 @@ export default function MisLotes_Hortalizas() {
           fecha_cosecha_est: lote.fecha_cosecha_est,
           rendimiento_estimado: rendimiento > 0 ? rendimiento : 1,
           precio_venta_est: precio > 0 ? precio : 1,
-          foto_siembra_url: lote.foto_siembra_uri_local,
+          foto_siembra_url: fotoSiembraUrl,
           ubicacion: null,
           variedad: lote.variedad,
         });
@@ -67,19 +99,28 @@ export default function MisLotes_Hortalizas() {
       return {
         key: item.id_servidor ? `srv-${item.id_servidor}` : `local-${item.id_local}`,
         id: item.id_servidor || item.id_local,
+        idLocal: item.id_local,
+        idServidor: item.id_servidor,
+        idProducto: item.id_producto,
         codigo: item.id_servidor ? `H-BD-${item.id_servidor}` : `H-LOCAL-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         producto: 'Hortalizas',
         tipoProducto: item.variedad || (item.id_producto === 3 ? 'Haba' : 'Hortaliza'),
-        imagen: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800',
+        imagen: item.foto_siembra_uri_local || 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800',
+        imagenRemota: item.foto_siembra_uri_local || null,
         area: superficie,
         comunidad: 'Comunidad registrada',
         fechaSiembra: formatearFecha(item.fecha_siembra),
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
+        fechaSiembraIso: item.fecha_siembra,
+        fechaCosechaIso: item.fecha_cosecha_est,
+        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
+        precioVentaEst: precio > 0 ? precio : 1,
         progreso: item.estado_sincronizacion === 'SINCRONIZADO' ? 35 : 15,
         estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'En Crecimiento' : 'Pendiente Sync',
         estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
         faseActual: 'Siembra',
+        estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
         inversion: 0,
         proyeccion: rendimiento * precio,
         mostrarCosecha: false,
@@ -94,19 +135,28 @@ export default function MisLotes_Hortalizas() {
       return {
         key: `srv-${item.id_lote}`,
         id: item.id_lote,
+        idLocal: null,
+        idServidor: item.id_lote,
+        idProducto: item.id_producto,
         codigo: `H-BD-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
         producto: 'Hortalizas',
         tipoProducto: item.variedad || (item.id_producto === 3 ? 'Haba' : 'Hortaliza'),
-        imagen: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800',
+        imagen: item.foto_siembra_url || 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800',
+        imagenRemota: item.foto_siembra_url || null,
         area: superficie,
         comunidad: item.ubicacion || 'Comunidad registrada',
         fechaSiembra: formatearFecha(item.fecha_siembra),
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
+        fechaSiembraIso: item.fecha_siembra,
+        fechaCosechaIso: item.fecha_cosecha_est,
+        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
+        precioVentaEst: precio > 0 ? precio : 1,
         progreso: 35,
         estado: item.estado || 'En Crecimiento',
         estadoColor: '#2eaa51',
         faseActual: 'Siembra',
+        estadoRaw: item.estado || 'ACTIVO',
         inversion: 0,
         proyeccion: rendimiento * precio,
         mostrarCosecha: false,
@@ -161,6 +211,97 @@ export default function MisLotes_Hortalizas() {
 
   const manejarCreacionLote = async () => {
     await cargarLotesLocales();
+  };
+
+  const abrirModalEdicion = (lote) => {
+    setLoteEditando(lote);
+    setFormEdicion({
+      nombre: lote.nombre || '',
+      superficie: String(lote.area || ''),
+    });
+    setModalEditarOpen(true);
+  };
+
+  const guardarEdicionLote = async () => {
+    if (!loteEditando) return;
+
+    const nombre = formEdicion.nombre.trim();
+    const superficie = Number(formEdicion.superficie);
+    if (!nombre || !superficie || superficie <= 0) {
+      Alert.alert('Datos inválidos', 'Ingresa nombre y superficie válida.');
+      return;
+    }
+
+    setGuardandoEdicion(true);
+    try {
+      if (loteEditando.idServidor) {
+        await actualizarLoteApi(loteEditando.idServidor, {
+          nombre_lote: nombre,
+          superficie,
+          fecha_siembra: loteEditando.fechaSiembraIso,
+          fecha_cosecha_est: loteEditando.fechaCosechaIso,
+          rendimiento_estimado: loteEditando.rendimientoEstimado,
+          precio_venta_est: loteEditando.precioVentaEst,
+          estado: loteEditando.estadoRaw || 'ACTIVO',
+          foto_siembra_url: loteEditando.imagenRemota,
+          ubicacion: loteEditando.comunidad === 'Comunidad registrada' ? null : loteEditando.comunidad,
+          variedad: loteEditando.tipoProducto,
+          id_productor: 1,
+          id_producto: loteEditando.idProducto || 2,
+        });
+      }
+
+      if (loteEditando.idLocal) {
+        await actualizarLoteLocal(loteEditando.idLocal, {
+          nombre_lote: nombre,
+          superficie,
+        });
+      } else if (loteEditando.idServidor) {
+        await actualizarLoteLocalPorServidor(loteEditando.idServidor, {
+          nombre_lote: nombre,
+          superficie,
+        });
+      }
+
+      setModalEditarOpen(false);
+      setLoteEditando(null);
+      await cargarLotesLocales();
+      Alert.alert('Listo', 'Lote actualizado correctamente.');
+    } catch (error) {
+      const mensaje = error instanceof Error ? error.message : 'No se pudo actualizar el lote';
+      Alert.alert('Error', mensaje);
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
+
+  const eliminarLote = (lote) => {
+    Alert.alert('Eliminar lote', `¿Seguro que quieres eliminar "${lote.nombre}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            if (lote.idServidor) {
+              await eliminarLoteApi(lote.idServidor);
+            }
+
+            if (lote.idLocal) {
+              await eliminarLoteLocal(lote.idLocal);
+            } else if (lote.idServidor) {
+              await eliminarLoteLocalPorServidor(lote.idServidor);
+            }
+
+            await cargarLotesLocales();
+            Alert.alert('Listo', 'Lote eliminado correctamente.');
+          } catch (error) {
+            const mensaje = error instanceof Error ? error.message : 'No se pudo eliminar el lote';
+            Alert.alert('Error', mensaje);
+          }
+        },
+      },
+    ]);
   };
 
   const stats = {
@@ -335,6 +476,18 @@ export default function MisLotes_Hortalizas() {
                   <Text style={styles.btnGestionarText}>Calcular</Text>
                 </TouchableOpacity>
 
+                <View style={styles.accionesSecundariasRow}>
+                  <TouchableOpacity style={styles.btnEditar} onPress={() => abrirModalEdicion(lote)}>
+                    <Ionicons name="create-outline" size={16} color="#2563eb" />
+                    <Text style={styles.btnEditarText}>Editar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.btnEliminar} onPress={() => eliminarLote(lote)}>
+                    <Ionicons name="trash-outline" size={16} color="#dc2626" />
+                    <Text style={styles.btnEliminarText}>Eliminar</Text>
+                  </TouchableOpacity>
+                </View>
+
                 {lote.mostrarCosecha && (
                   <TouchableOpacity style={styles.btnCosecha}>
                     <Ionicons name="pencil" size={16} color="#fff" />
@@ -355,6 +508,40 @@ export default function MisLotes_Hortalizas() {
           }}
           onCreated={manejarCreacionLote}
         />
+
+        <Modal visible={modalEditarOpen} transparent animationType="fade" onRequestClose={() => setModalEditarOpen(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>Editar Lote</Text>
+
+              <Text style={styles.modalLabel}>Nombre del lote</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={formEdicion.nombre}
+                onChangeText={(t) => setFormEdicion({ ...formEdicion, nombre: t })}
+                placeholder="Nombre"
+              />
+
+              <Text style={styles.modalLabel}>Superficie (Ha)</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={formEdicion.superficie}
+                onChangeText={(t) => setFormEdicion({ ...formEdicion, superficie: t })}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setModalEditarOpen(false)}>
+                  <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalBtnSave} onPress={guardarEdicionLote} disabled={guardandoEdicion}>
+                  <Text style={styles.modalBtnSaveText}>{guardandoEdicion ? 'Guardando...' : 'Guardar'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
         
 
       </ScrollView>
@@ -406,8 +593,70 @@ const styles = StyleSheet.create({
   finanzasInversion: { fontSize: 15, fontWeight: 'bold', color: '#ef4444' },
   finanzasProyeccion: { fontSize: 15, fontWeight: 'bold', color: '#2eaa51' },
   accionesContainer: { gap: 8 },
+  accionesSecundariasRow: { flexDirection: 'row', gap: 8 },
   btnGestionar: { backgroundColor: '#2eaa51', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8 },
   btnGestionarText: { color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 6 },
+  btnEditar: {
+    flex: 1,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  btnEditarText: { color: '#2563eb', fontWeight: '600', fontSize: 13, marginLeft: 6 },
+  btnEliminar: {
+    flex: 1,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  btnEliminarText: { color: '#dc2626', fontWeight: '600', fontSize: 13, marginLeft: 6 },
   btnCosecha: { backgroundColor: '#f59e0b', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8 },
-  btnCosechaText: { color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 6 }
+  btnCosechaText: { color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 6 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#1f2937', marginBottom: 12 },
+  modalLabel: { fontSize: 12, fontWeight: '600', color: '#4b5563', marginBottom: 6 },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    color: '#111827',
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 4 },
+  modalBtnCancel: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+  },
+  modalBtnCancelText: { color: '#374151', fontWeight: '600' },
+  modalBtnSave: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+  },
+  modalBtnSaveText: { color: '#fff', fontWeight: '600' },
 });

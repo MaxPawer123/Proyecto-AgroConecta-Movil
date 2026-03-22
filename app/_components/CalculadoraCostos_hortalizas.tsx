@@ -256,7 +256,7 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
   const guardarEdicion = async () => {
     if (!formEdicion.categoria || !formEdicion.monto || !gastoEnEdicion) {
       Alert.alert('Datos incompletos', 'Por favor completa todos los campos obligatorios.');
-      return;
+      return;     
     }
 
     const cantidad = Number(formEdicion.cantidad || '1');
