@@ -13,9 +13,10 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { crearGastoApi, GastoApi, obtenerGastosPorLoteApi, actualizarGastoApi, eliminarGastoApi } from '@/src/services/api';
 
-type Fase = 'Siembra' | 'Progreso' | 'Cosecha';
+type Fase = 'Siembra' | 'Crecimiento' | 'Cosecha';
 type UnidadCantidad = 'kg' | 'qq';
 type UnidadPrecio = 'bskg' | 'bsqq';
+type UnidadCategoria = 'ha' | 'kg' | 'hora' | 'jornal' | 'unidad' | 'viaje';
 
 const KG_POR_QUINTAL = 46;
 
@@ -44,7 +45,7 @@ const CATEGORIAS_POR_FASE: Record<Fase, string[]> = {
     'Maquinaria para Siembra', 'Mano de obra para roturar', 
     'Mano de obra para siembra', 'Herramientas', 'Otros'
   ],
-  Progreso: [
+  Crecimiento: [
     'Abonos', 'Pesticidas', 'Agua/Riego', 'Fertilizantes químicos', 
     'Fertilizantes orgánicos', 'Mano de obra para labores culturales', 
     'Herramientas', 'Otros'
@@ -53,6 +54,68 @@ const CATEGORIAS_POR_FASE: Record<Fase, string[]> = {
     'Maquinaria para Cosecha', 'Mano de obra para cosecha', 
     'Transporte', 'Herramientas', 'Otros'
   ]
+};
+
+const UNIDAD_POR_CATEGORIA: Record<string, UnidadCategoria> = {
+  'Alquiler de Terreno': 'ha',
+  'Semillas': 'kg',
+  'Maquinaria para Roturar': 'hora',
+  'Maquinaria para Siembra': 'hora',
+  'Mano de obra para roturar': 'jornal',
+  'Mano de obra para siembra': 'jornal',
+  'Abonos': 'kg',
+  'Pesticidas': 'kg',
+  'Agua/Riego': 'hora',
+  'Fertilizantes químicos': 'kg',
+  'Fertilizantes orgánicos': 'kg',
+  'Mano de obra para labores culturales': 'jornal',
+  'Maquinaria para Cosecha': 'hora',
+  'Mano de obra para cosecha': 'jornal',
+  'Transporte': 'viaje',
+  'Herramientas': 'unidad',
+  'Otros': 'unidad',
+};
+
+const CATEGORIAS_CANTIDAD_ENTERA = new Set<string>(['Herramientas', 'Transporte', 'Otros']);
+
+const obtenerUnidadCategoria = (categoria: string): UnidadCategoria =>
+  UNIDAD_POR_CATEGORIA[categoria] || 'unidad';
+
+const sanitizarDecimal = (texto: string): string => {
+  const conPunto = texto.replace(/,/g, '.').replace(/[^\d.]/g, '');
+  const partes = conPunto.split('.');
+  if (partes.length <= 1) return partes[0];
+  return `${partes[0]}.${partes.slice(1).join('')}`;
+};
+
+const sanitizarCantidadPorCategoria = (categoria: string, texto: string): string => {
+  if (CATEGORIAS_CANTIDAD_ENTERA.has(categoria)) {
+    return texto.replace(/\D/g, '');
+  }
+  return sanitizarDecimal(texto);
+};
+
+const validarCantidadPorCategoria = (
+  categoria: string,
+  cantidadTexto: string,
+): { esValida: boolean; mensaje?: string; cantidad?: number } => {
+  const cantidadLimpia = cantidadTexto.trim();
+  const unidad = obtenerUnidadCategoria(categoria);
+
+  if (!cantidadLimpia) {
+    return { esValida: false, mensaje: `Ingresa una cantidad en ${unidad}.` };
+  }
+
+  const cantidad = Number(cantidadLimpia);
+  if (Number.isNaN(cantidad) || cantidad <= 0) {
+    return { esValida: false, mensaje: `La cantidad en ${unidad} debe ser mayor a cero.` };
+  }
+
+  if (CATEGORIAS_CANTIDAD_ENTERA.has(categoria) && !Number.isInteger(cantidad)) {
+    return { esValida: false, mensaje: `La categoria ${categoria} solo permite cantidades enteras.` };
+  }
+
+  return { esValida: true, cantidad };
 };
 
 type CalculadoraCostosProps = {
@@ -74,7 +137,7 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
 
   // Estado de producción editable
   const [produccion, setProduccion] = useState({
-    cantidad: '500', precio: '3.5'
+    cantidad: '0', precio: '0'
   });
   const [unidadCantidad, setUnidadCantidad] = useState<UnidadCantidad>('kg');
   const [unidadPrecio, setUnidadPrecio] = useState<UnidadPrecio>('bskg');
@@ -87,6 +150,9 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   const [formEdicion, setFormEdicion] = useState<FormGasto>({
     categoria: '', descripcion: '', cantidad: '', monto: ''
   });
+
+  const unidadCantidadForm = obtenerUnidadCategoria(formGasto.categoria);
+  const unidadCantidadEdicion = obtenerUnidadCategoria(formEdicion.categoria);
 
   // --- CÁLCULOS EN TIEMPO REAL ---
   const totalCostos = gastos.reduce((sum, item) => sum + (parseFloat(item.monto) || 0), 0);
@@ -140,9 +206,9 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
 
   const inferirFaseDesdeApi = (gasto: GastoApi): Fase => {
     if (CATEGORIAS_POR_FASE.Cosecha.includes(gasto.categoria)) return 'Cosecha';
-    if (CATEGORIAS_POR_FASE.Progreso.includes(gasto.categoria)) return 'Progreso';
+    if (CATEGORIAS_POR_FASE.Crecimiento.includes(gasto.categoria)) return 'Crecimiento';
     if (CATEGORIAS_POR_FASE.Siembra.includes(gasto.categoria)) return 'Siembra';
-    return gasto.tipo_costo === 'FIJO' ? 'Siembra' : 'Progreso';
+    return gasto.tipo_costo === 'FIJO' ? 'Siembra' : 'Crecimiento';
   };
 
   const cargarGastosDelLote = async () => {
@@ -177,7 +243,7 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   // --- FUNCIONES ---
   const cambiarFase = (nuevaFase: Fase) => {
     setFase(nuevaFase);
-    setFormGasto({ ...formGasto, categoria: '' }); // Resetear categoría al cambiar fase
+    setFormGasto({ ...formGasto, categoria: '', cantidad: '' }); // Resetear categoría y cantidad al cambiar fase
   };
 
   const agregarGasto = async () => {
@@ -186,10 +252,16 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
       return;
     }
 
-    const cantidad = Number(formGasto.cantidad || '1');
+    const validacionCantidad = validarCantidadPorCategoria(formGasto.categoria, formGasto.cantidad);
+    if (!validacionCantidad.esValida || !validacionCantidad.cantidad) {
+      Alert.alert('Cantidad inválida', validacionCantidad.mensaje || 'Verifica la cantidad ingresada.');
+      return;
+    }
+
+    const cantidad = validacionCantidad.cantidad;
     const monto = Number(formGasto.monto);
-    if (!cantidad || cantidad <= 0 || !monto || monto <= 0) {
-      Alert.alert('Datos inválidos', 'Cantidad y monto deben ser mayores a cero.');
+    if (!monto || monto <= 0) {
+      Alert.alert('Datos inválidos', 'El monto debe ser mayor a cero.');
       return;
     }
 
@@ -262,10 +334,16 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
       return;
     }
 
-    const cantidad = Number(formEdicion.cantidad || '1');
+    const validacionCantidad = validarCantidadPorCategoria(formEdicion.categoria, formEdicion.cantidad);
+    if (!validacionCantidad.esValida || !validacionCantidad.cantidad) {
+      Alert.alert('Cantidad inválida', validacionCantidad.mensaje || 'Verifica la cantidad ingresada.');
+      return;
+    }
+
+    const cantidad = validacionCantidad.cantidad;
     const monto = Number(formEdicion.monto);
-    if (!cantidad || cantidad <= 0 || !monto || monto <= 0) {
-      Alert.alert('Datos inválidos', 'Cantidad y monto deben ser mayores a cero.');
+    if (!monto || monto <= 0) {
+      Alert.alert('Datos inválidos', 'El monto debe ser mayor a cero.');
       return;
     }
 
@@ -400,14 +478,14 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
 
           {/* Fases */}
           <View style={styles.phaseContainer}>
-            {(['Siembra', 'Progreso', 'Cosecha'] as Fase[]).map((f) => (
+            {(['Siembra', 'Crecimiento', 'Cosecha'] as Fase[]).map((f) => (
               <TouchableOpacity 
                 key={f}
                 style={[styles.phaseBtn, fase === f && styles.phaseBtnActive]}
                 onPress={() => cambiarFase(f)}
               >
                 <MaterialCommunityIcons 
-                  name={f === 'Siembra' ? 'sprout' : f === 'Progreso' ? 'trending-up' : 'basket-outline'} 
+                  name={f === 'Siembra' ? 'sprout' : f === 'Crecimiento' ? 'trending-up' : 'basket-outline'} 
                   size={24} color={fase === f ? '#2eaa51' : '#9ca3af'} 
                 />
                 <Text style={[styles.phaseText, fase === f && styles.phaseTextActive]}>{f}</Text>
@@ -430,18 +508,23 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
           <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Ej: Semilla certificada" 
+            placeholder="" 
             value={formGasto.descripcion}
             onChangeText={(t) => setFormGasto({...formGasto, descripcion: t})}
           />
 
           <View style={styles.row}>
             <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.inputLabel}>Cantidad</Text>
+              <Text style={styles.inputLabel}>Cantidad ({unidadCantidadForm})</Text>
               <TextInput 
-                style={styles.input} placeholder="0" keyboardType="numeric" 
+                style={styles.input} placeholder={CATEGORIAS_CANTIDAD_ENTERA.has(formGasto.categoria) ? '0' : '0.00'} keyboardType="numeric" 
                 value={formGasto.cantidad}
-                onChangeText={(t) => setFormGasto({...formGasto, cantidad: t})}
+                onChangeText={(t) =>
+                  setFormGasto({
+                    ...formGasto,
+                    cantidad: sanitizarCantidadPorCategoria(formGasto.categoria, t),
+                  })
+                }
               />
             </View>
             <View style={{ flex: 1 }}>
@@ -588,11 +671,18 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
                 <TouchableOpacity 
                   style={styles.modalItem}
                   onPress={() => {
-                    setFormGasto({...formGasto, categoria: item});
+                    setFormGasto({
+                      ...formGasto,
+                      categoria: item,
+                      cantidad: sanitizarCantidadPorCategoria(item, formGasto.cantidad),
+                    });
                     setModalCategoria(false);
                   }}
                 >
-                  <Text style={styles.modalItemText}>{item}</Text>
+                  <View style={styles.modalItemRow}>
+                    <Text style={styles.modalItemText}>{item}</Text>
+                    <Text style={styles.modalItemUnit}>{obtenerUnidadCategoria(item)}</Text>
+                  </View>
                 </TouchableOpacity>
               )}
             />
@@ -688,21 +778,18 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
                       <Ionicons name="chevron-down" size={20} color="#9ca3af" />
                     </TouchableOpacity>
 
-                    <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
-                    <TextInput 
-                      style={styles.input} 
-                      placeholder="Ej: Semilla certificada" 
-                      value={formEdicion.descripcion}
-                      onChangeText={(t) => setFormEdicion({...formEdicion, descripcion: t})}
-                    />
-
                     <View style={styles.row}>
                       <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text style={styles.inputLabel}>Cantidad</Text>
+                        <Text style={styles.inputLabel}>Cantidad ({unidadCantidadEdicion})</Text>
                         <TextInput 
-                          style={styles.input} placeholder="0" keyboardType="numeric" 
+                          style={styles.input} placeholder={CATEGORIAS_CANTIDAD_ENTERA.has(formEdicion.categoria) ? '0' : '0.00'} keyboardType="numeric" 
                           value={formEdicion.cantidad}
-                          onChangeText={(t) => setFormEdicion({...formEdicion, cantidad: t})}
+                          onChangeText={(t) =>
+                            setFormEdicion({
+                              ...formEdicion,
+                              cantidad: sanitizarCantidadPorCategoria(formEdicion.categoria, t),
+                            })
+                          }
                         />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -894,7 +981,9 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
   modalSub: { fontSize: 13, color: '#2eaa51', fontWeight: '600', marginBottom: 16 },
   modalItem: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  modalItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   modalItemText: { fontSize: 16, color: '#4b5563' },
+  modalItemUnit: { fontSize: 12, color: '#2eaa51', fontWeight: '700', textTransform: 'uppercase' },
   modalCloseBtn: { marginTop: 20, padding: 14, backgroundColor: '#f3f4f6', borderRadius: 10, alignItems: 'center' },
   modalCloseText: { fontSize: 16, fontWeight: 'bold', color: '#4b5563' }
 });

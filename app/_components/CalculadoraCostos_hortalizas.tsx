@@ -13,7 +13,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { crearGastoApi, GastoApi, obtenerGastosPorLoteApi, actualizarGastoApi, eliminarGastoApi } from '@/src/services/api';
 
-type Fase = 'Siembra' | 'Progreso' | 'Cosecha';
+type Fase = 'Siembra' | 'Crecimiento' | 'Cosecha';
 type UnidadCantidad = 'kg' | 'qq';
 type UnidadPrecio = 'bskg' | 'bsqq';
 
@@ -44,7 +44,7 @@ const CATEGORIAS_POR_FASE: Record<Fase, string[]> = {
     'Maquinaria para Siembra', 'Mano de obra para roturar', 
     'Mano de obra para siembra', 'Herramientas', 'Otros'
   ],
-  Progreso: [
+  Crecimiento: [
     'Abonos', 'Pesticidas', 'Agua/Riego', 'Fertilizantes químicos', 
     'Fertilizantes orgánicos', 'Mano de obra para labores culturales', 
     'Herramientas', 'Otros'
@@ -74,7 +74,7 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
 
   // Estado de producción editable
   const [produccion, setProduccion] = useState({
-    cantidad: '500', precio: '3.5'
+    cantidad: '0', precio: '0'
   });
   const [unidadCantidad, setUnidadCantidad] = useState<UnidadCantidad>('kg');
   const [unidadPrecio, setUnidadPrecio] = useState<UnidadPrecio>('bskg');
@@ -137,9 +137,9 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
 
   const inferirFaseDesdeApi = (gasto: GastoApi): Fase => {
     if (CATEGORIAS_POR_FASE.Cosecha.includes(gasto.categoria)) return 'Cosecha';
-    if (CATEGORIAS_POR_FASE.Progreso.includes(gasto.categoria)) return 'Progreso';
+    if (CATEGORIAS_POR_FASE.Crecimiento.includes(gasto.categoria)) return 'Crecimiento';
     if (CATEGORIAS_POR_FASE.Siembra.includes(gasto.categoria)) return 'Siembra';
-    return gasto.tipo_costo === 'FIJO' ? 'Siembra' : 'Progreso';
+    return gasto.tipo_costo === 'FIJO' ? 'Siembra' : 'Crecimiento';
   };
 
   const cargarGastosDelLote = async () => {
@@ -397,14 +397,14 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
 
           {/* Fases */}
           <View style={styles.phaseContainer}>
-            {(['Siembra', 'Progreso', 'Cosecha'] as Fase[]).map((f) => (
+            {(['Siembra', 'Crecimiento', 'Cosecha'] as Fase[]).map((f) => (
               <TouchableOpacity 
                 key={f}
                 style={[styles.phaseBtn, fase === f && styles.phaseBtnActive]}
                 onPress={() => cambiarFase(f)}
               >
                 <MaterialCommunityIcons 
-                  name={f === 'Siembra' ? 'sprout' : f === 'Progreso' ? 'trending-up' : 'basket-outline'} 
+                  name={f === 'Siembra' ? 'sprout' : f === 'Crecimiento' ? 'trending-up' : 'basket-outline'} 
                   size={24} color={fase === f ? '#2eaa51' : '#9ca3af'} 
                 />
                 <Text style={[styles.phaseText, fase === f && styles.phaseTextActive]}>{f}</Text>
@@ -427,7 +427,7 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
           <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Ej: Semilla certificada" 
+            placeholder="sfasdfdas" 
             value={formGasto.descripcion}
             onChangeText={(t) => setFormGasto({...formGasto, descripcion: t})}
           />
@@ -684,14 +684,6 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
                       </Text>
                       <Ionicons name="chevron-down" size={20} color="#9ca3af" />
                     </TouchableOpacity>
-
-                    <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
-                    <TextInput 
-                      style={styles.input} 
-                      placeholder="Ej: Semilla certificada" 
-                      value={formEdicion.descripcion}
-                      onChangeText={(t) => setFormEdicion({...formEdicion, descripcion: t})}
-                    />
 
                     <View style={styles.row}>
                       <View style={{ flex: 1, marginRight: 10 }}>
