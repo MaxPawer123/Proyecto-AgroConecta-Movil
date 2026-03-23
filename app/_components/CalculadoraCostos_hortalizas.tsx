@@ -11,7 +11,15 @@ import {
   FlatList
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { crearGastoApi, GastoApi, obtenerGastosPorLoteApi, actualizarGastoApi, eliminarGastoApi } from '@/src/services/api';
+import {
+  crearGastoApi,
+  GastoApi,
+  obtenerGastosPorLoteApi,
+  actualizarGastoApi,
+  eliminarGastoApi,
+  registrarProduccionLoteApi,
+  obtenerUltimaProduccionLoteApi,
+} from '@/src/services/api';
 
 type Fase = 'Siembra' | 'Crecimiento' | 'Cosecha';
 type UnidadCantidad = 'kg' | 'qq';
@@ -74,12 +82,13 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
 
   // Estado de producción editable
   const [produccion, setProduccion] = useState({
-    cantidad: '0', precio: '0'
+    cantidad: '', precio: ''
   });
   const [unidadCantidad, setUnidadCantidad] = useState<UnidadCantidad>('kg');
   const [unidadPrecio, setUnidadPrecio] = useState<UnidadPrecio>('bskg');
   const [modalUnidadCantidad, setModalUnidadCantidad] = useState(false);
   const [modalUnidadPrecio, setModalUnidadPrecio] = useState(false);
+  const [guardandoProduccion, setGuardandoProduccion] = useState(false);
 
   // Modal de edición
   const [modalEdicion, setModalEdicion] = useState(false);
@@ -161,15 +170,80 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
     }
   };
 
+  const cargarUltimaProduccionDelLote = async () => {
+    if (!idLote) {
+      setProduccion({ cantidad: '', precio: '' });
+      setUnidadCantidad('kg');
+      setUnidadPrecio('bskg');
+      return;
+    }
+
+    try {
+      const ultimaProduccion = await obtenerUltimaProduccionLoteApi(idLote);
+      if (!ultimaProduccion) {
+        setProduccion({ cantidad: '', precio: '' });
+        setUnidadCantidad('kg');
+        setUnidadPrecio('bskg');
+        return;
+      }
+
+      setProduccion({
+        cantidad: String(Number(ultimaProduccion.cantidad_obtenida) || ''),
+        precio: String(Number(ultimaProduccion.precio_venta) || ''),
+      });
+      setUnidadCantidad('kg');
+      setUnidadPrecio('bskg');
+    } catch (error) {
+      console.warn('No se pudo cargar la ultima produccion del lote:', error);
+    }
+  };
+
   // Cargar gastos al iniciar y guardar automático al desmontar
   useEffect(() => {
     cargarGastosDelLote();
+    cargarUltimaProduccionDelLote();
     
     // Cleanup: guardar cuando se sale de la pantalla
     return () => {
       console.log('Pantalla de calculadora cerrándose - gastos sincronizados con BD');
     };
   }, [idLote]);
+
+  const guardarDatosProduccion = async () => {
+    if (!idLote) {
+      Alert.alert('Lote inválido', 'No se encontró el lote para guardar los datos de producción.');
+      return;
+    }
+
+    const cantidad = unidadCantidad === 'kg'
+      ? (parseFloat(produccion.cantidad) || 0)
+      : (parseFloat(produccion.cantidad) || 0) * KG_POR_QUINTAL;
+
+    const precio = unidadPrecio === 'bskg'
+      ? (parseFloat(produccion.precio) || 0)
+      : (parseFloat(produccion.precio) || 0) / KG_POR_QUINTAL;
+
+    if (cantidad <= 0 || precio <= 0) {
+      Alert.alert('Datos inválidos', 'La cantidad producida y el precio de venta deben ser mayores a cero.');
+      return;
+    }
+
+    setGuardandoProduccion(true);
+    try {
+      await registrarProduccionLoteApi({
+        id_lote: idLote,
+        fecha_registro: new Date().toISOString().split('T')[0],
+        cantidad_obtenida: cantidad,
+        precio_venta: precio,
+      });
+      Alert.alert('Listo', 'Datos de producción guardados en la base de datos.');
+    } catch (error) {
+      const mensaje = error instanceof Error ? error.message : 'No se pudo guardar la producción';
+      Alert.alert('Error', mensaje);
+    } finally {
+      setGuardandoProduccion(false);
+    }
+  };
 
   // FUNCIONES PARA MANEJO DE GASTOS -
   const cambiarFase = (nuevaFase: Fase) => {
@@ -529,6 +603,17 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLote }: Calcula
                 </TouchableOpacity>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={guardarDatosProduccion}
+              disabled={guardandoProduccion}
+            >
+              <Ionicons name="save-outline" size={18} color="#fff" />
+              <Text style={styles.primaryButtonText}>
+                {guardandoProduccion ? 'Guardando...' : 'Guardar Datos de Producción'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 

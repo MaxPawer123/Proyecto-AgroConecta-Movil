@@ -27,6 +27,7 @@ import {
   actualizarLoteApi,
   crearLoteApi,
   eliminarLoteApi,
+  obtenerGastosPorLoteApi,
   obtenerLotesPorProductoApi,
   subirFotoSiembraApi,
 } from '@/src/services/api';
@@ -38,10 +39,32 @@ const formatearFecha = (iso) => {
   return fecha.toLocaleDateString('es-BO');
 };
 
+const calcularProgresoYCiclo = (fechaSiembraIso, fechaCosechaIso) => {
+  const inicio = new Date(fechaSiembraIso);
+  const fin = new Date(fechaCosechaIso);
+
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime()) || fin <= inicio) {
+    return { progreso: 45, faseActual: 'Crecimiento' };
+  }
+
+  const ahora = new Date();
+  const total = fin.getTime() - inicio.getTime();
+  const transcurrido = Math.min(Math.max(ahora.getTime() - inicio.getTime(), 0), total);
+
+  let progreso = Math.round((transcurrido / total) * 100);
+  progreso = Math.max(10, Math.min(progreso, 100));
+
+  let faseActual = 'Siembra';
+  if (progreso >= 70) faseActual = 'Cosecha';
+  else if (progreso >= 35) faseActual = 'Crecimiento';
+
+  return { progreso, faseActual };
+};
+
 export default function MisLotes_Hortalizas() {
   const [modalOpen, setModalOpen] = useState(false);
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false);
-  const [loteSeleccionadoId, setLoteSeleccionadoId] = useState(1);
+  const [loteSeleccionadoId, setLoteSeleccionadoId] = useState(null);
   const [lotes, setLotes] = useState([]);
   const [modalEditarOpen, setModalEditarOpen] = useState(false);
   const [loteEditando, setLoteEditando] = useState(null);
@@ -95,6 +118,8 @@ export default function MisLotes_Hortalizas() {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
       const precio = Number(item.precio_venta_est || 0);
+      const ingresoEstimado = rendimiento * precio;
+      const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
       return {
         key: item.id_servidor ? `srv-${item.id_servidor}` : `local-${item.id_local}`,
@@ -116,13 +141,14 @@ export default function MisLotes_Hortalizas() {
         fechaCosechaIso: item.fecha_cosecha_est,
         rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
         precioVentaEst: precio > 0 ? precio : 1,
-        progreso: item.estado_sincronizacion === 'SINCRONIZADO' ? 35 : 15,
+        progreso,
         estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'En Crecimiento' : 'Pendiente Sync',
         estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
-        faseActual: 'Siembra',
+        faseActual,
         estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
         inversion: 0,
-        proyeccion: rendimiento * precio,
+        ingresoEstimado,
+        proyeccion: ingresoEstimado,
         mostrarCosecha: false,
       };
     };
@@ -131,6 +157,8 @@ export default function MisLotes_Hortalizas() {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
       const precio = Number(item.precio_venta_est || 0);
+      const ingresoEstimado = rendimiento * precio;
+      const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
       return {
         key: `srv-${item.id_lote}`,
@@ -152,15 +180,36 @@ export default function MisLotes_Hortalizas() {
         fechaCosechaIso: item.fecha_cosecha_est,
         rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
         precioVentaEst: precio > 0 ? precio : 1,
-        progreso: 35,
+        progreso,
         estado: item.estado || 'En Crecimiento',
         estadoColor: '#2eaa51',
-        faseActual: 'Siembra',
+        faseActual,
         estadoRaw: item.estado || 'ACTIVO',
         inversion: 0,
-        proyeccion: rendimiento * precio,
+        ingresoEstimado,
+        proyeccion: ingresoEstimado,
         mostrarCosecha: false,
       };
+    };
+
+    const enriquecerConGastos = async (lotesBase) => {
+      return Promise.all(
+        lotesBase.map(async (lote) => {
+          if (!lote.idServidor) return lote;
+
+          try {
+            const gastos = await obtenerGastosPorLoteApi(lote.idServidor);
+            const inversion = gastos.reduce((acc, gasto) => acc + (Number(gasto.monto_total) || 0), 0);
+            return {
+              ...lote,
+              inversion,
+              proyeccion: (lote.ingresoEstimado || 0) - inversion,
+            };
+          } catch {
+            return lote;
+          }
+        })
+      );
     };
 
     try {
@@ -182,7 +231,8 @@ export default function MisLotes_Hortalizas() {
       const localesSinDuplicado = locales.filter((item) => !item.id_servidor || !idsRemotos.has(item.id_servidor));
 
       const combinados = [...remotos.map(mapearLoteBackend), ...localesSinDuplicado.map(mapearLoteLocal)];
-      setLotes(combinados);
+      const combinadosConGastos = await enriquecerConGastos(combinados);
+      setLotes(combinadosConGastos);
     } catch (error) {
       console.warn('No se pudieron cargar lotes de hortalizas desde backend, usando local:', error);
 
@@ -191,7 +241,9 @@ export default function MisLotes_Hortalizas() {
         const locales = Array.isArray(datosLocales)
           ? datosLocales.filter((item) => item.id_producto === 2 || item.id_producto === 3)
           : [];
-        setLotes(locales.map(mapearLoteLocal));
+        const localesMapeados = locales.map(mapearLoteLocal);
+        const localesConGastos = await enriquecerConGastos(localesMapeados);
+        setLotes(localesConGastos);
       } catch (localError) {
         console.warn('No se pudieron cargar lotes locales de hortalizas:', localError);
         setLotes([]);
@@ -312,7 +364,15 @@ export default function MisLotes_Hortalizas() {
   };
 
   if (mostrarCalculadora) {
-    return <CalculadoraCostos idLote={loteSeleccionadoId} onBack={() => setMostrarCalculadora(false)} />;
+    return (
+      <CalculadoraCostos
+        idLote={loteSeleccionadoId ?? undefined}
+        onBack={async () => {
+          setMostrarCalculadora(false);
+          await cargarLotesLocales();
+        }}
+      />
+    );
   }
 
   return (
@@ -468,7 +528,14 @@ export default function MisLotes_Hortalizas() {
                 <TouchableOpacity 
                   style={styles.btnGestionar}
                   onPress={() => {
-                    setLoteSeleccionadoId(lote.id);
+                    if (!lote.idServidor) {
+                      Alert.alert(
+                        'Lote pendiente',
+                        'Este lote aún no está sincronizado con backend. Sincroniza primero para ver gastos por lote.'
+                      );
+                      return;
+                    }
+                    setLoteSeleccionadoId(lote.idServidor);
                     setMostrarCalculadora(true);
                   }}
                 >

@@ -73,6 +73,16 @@ export type LoteApi = {
   nombre_producto?: string;
 };
 
+export type ProduccionApi = {
+  id_produccion: number;
+  id_lote: number;
+  fecha_registro: string;
+  cantidad_obtenida: string;
+  precio_venta: string;
+  estado_sincronizacion: string;
+  created_at: string;
+};
+
 export type CrearGastoPayload = {
   id_lote: number;
   categoria: string;
@@ -478,6 +488,18 @@ export async function obtenerLotesPorProductoApi(idProducto: number): Promise<Lo
   return response.data;
 }
 
+export async function obtenerLotePorIdApi(idLote: number): Promise<LoteApi> {
+  const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}`, {
+    method: 'GET',
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo obtener el lote desde el servidor');
+  }
+
+  return response.data;
+}
+
 export async function actualizarLoteApi(idLote: number, payload: ActualizarLotePayload): Promise<LoteApi> {
   const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}`, {
     method: 'PUT',
@@ -489,6 +511,60 @@ export async function actualizarLoteApi(idLote: number, payload: ActualizarLoteP
   }
 
   return response.data;
+}
+
+export async function actualizarProduccionLoteApi(
+  idLote: number,
+  payload: { rendimiento_estimado: number; precio_venta_est: number }
+): Promise<LoteApi> {
+  const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}/produccion`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo actualizar la producción del lote en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function registrarProduccionLoteApi(payload: {
+  id_lote: number;
+  fecha_registro: string;
+  cantidad_obtenida: number;
+  precio_venta: number;
+  estado_sincronizacion?: string;
+}): Promise<ProduccionApi> {
+  const response = await requestJson<ApiResponse<ProduccionApi>>('/api/produccion', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo registrar la produccion en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function obtenerUltimaProduccionLoteApi(idLote: number): Promise<ProduccionApi | null> {
+  try {
+    const response = await requestJson<ApiResponse<ProduccionApi>>(`/api/produccion/lote/${idLote}/ultima`, {
+      method: 'GET',
+    });
+
+    if (!response?.success || !response.data) {
+      return null;
+    }
+
+    return response.data;
+  } catch (error) {
+    if (error instanceof HttpStatusError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function eliminarLoteApi(idLote: number): Promise<void> {
