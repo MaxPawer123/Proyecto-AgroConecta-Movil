@@ -11,6 +11,7 @@ import {
   FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   crearGastoApi,
@@ -133,6 +134,7 @@ type CalculadoraCostosProps = {
 };
 
 export default function CalculadoraCostos_Quinua({ onBack, idLote }: CalculadoraCostosProps) {
+  const router = useRouter();
 
   //  ESTADOS -
   const [fase, setFase] = useState<Fase>('Siembra');
@@ -474,85 +476,22 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
           </View>
         </View>
 
-        {/* 1. TARJETAS DE RESULTADOS (KPIs) */}
-        <View style={styles.greenCard}>
-          <View style={styles.cardHeaderRow}>
-            <Ionicons name="receipt-outline" size={18} color="#ecfdf5" />
-            <Text style={styles.cardHeaderTitle}>Gastos totales</Text>
-          </View>
-          <View style={styles.statsRow}>
-            <View>
-              <Text style={styles.statLabel}>Total Costos</Text>
-              <Text style={styles.statValue}>Bs {totalCostos.toFixed(2)}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View>
-              <Text style={styles.statLabel}>Costo por Kilogramo</Text>
-              <Text style={styles.statValue}>Bs {costoPorKg.toFixed(2)}</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.yellowCard}>
-          <View style={styles.statsRow}>
-            <View>
-              <Text style={styles.statLabelYellow}>Ingresos Totales</Text>
-              <Text style={styles.statValue}>Bs {ingresosTotales.toFixed(2)}</Text>
-            </View>
-            <View style={styles.dividerYellow} />
-            <View>
-              <Text style={styles.statLabelYellow}>Ganancia Neta</Text>
-              <View style={styles.rowCenter}>
-                <Text style={styles.statValue}>Bs {gananciaNeta.toFixed(2)}</Text>
-                {gananciaNeta > 0 && <Ionicons name="trending-up" size={20} color="#fff" style={{ marginLeft: 5 }} />}
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={[
-          styles.recommendationCard,
-          !esRentable && styles.recommendationCardRed
-        ]}>
-          <View style={styles.recommendationHeader}>
-            <Ionicons
-              name={esRentable ? 'happy-outline' : 'alert-circle-outline'}
-              size={24}
-              color={esRentable ? '#16a34a' : '#dc2626'}
-            />
-            <Text style={[styles.recommendationTitle, !esRentable && styles.recommendationTitleRed]}>
-              {esRentable ? '¡Excelente! Te conviene vender' : 'Atención: revisa tu precio de venta'}
-            </Text>
-          </View>
-
-          <Text style={[styles.recommendationText, !esRentable && styles.recommendationTextRed]}>
-            {esRentable
-              ? 'Tu precio de venta cubre muy bien tus gastos de producción. ¡Vas a ganar bien!'
-              : 'Con el precio actual no alcanzas a cubrir los costos. Sube el precio o reduce gastos.'}
-          </Text>
-
-          <View style={[styles.recommendationInfoBox, !esRentable && styles.recommendationInfoBoxRed]}>
-            <Text style={styles.recommendationInfoText}>
-              💡 <Text style={styles.recommendationInfoStrong}>¡Buenas noticias!</Text>{' '}
-              Solo necesitas vender{' '}
-              <Text style={styles.recommendationInfoStrong}>{puntoEquilibrioMostrado} {unidadMostrada}</Text>{' '}
-              para recuperar toda tu inversión.
-              {esRentable ? ' ¡El resto es ganancia pura! 🎯' : ''}
-            </Text>
-          </View>
-        </View>
-
-        {/* MARGEN Y PUNTO DE EQUILIBRIO (Móvil) */}
-        <View style={styles.row}>
-          <View style={[styles.card, {flex: 1, marginRight: 8, alignItems: 'center'}]}>
-            <Text style={styles.cardSubtitle}>Margen Ganancia</Text>
-            <Text style={[styles.statValue, {color: '#2eaa51', fontSize: 22}]}>{margenGanancia.toFixed(1)}%</Text>
-          </View>
-          <View style={[styles.card, {flex: 1, marginLeft: 8, alignItems: 'center'}]}>
-            <Text style={styles.cardSubtitle}>Punto Equilibrio</Text>
-            <Text style={[styles.statValue, {color: '#1f2937', fontSize: 22}]}>{Math.ceil(puntoEquilibrio)} kg</Text>
-          </View>
-        </View>
+        {/* BOTÓN VER RESULTADOS */}
+        <TouchableOpacity 
+          style={styles.resultsButton}
+          onPress={() => {
+            // Nota: Si se abre desde una modal, podrías cerrar primero
+            // Aquí navegamos directamente a la página de resultados
+            router.push({
+              pathname: '/resultados_quinua',
+              params: { idLote: idLote || 1 }
+            });
+          }}
+        >
+          <Ionicons name="bar-chart-outline" size={20} color="#fff" />
+          <Text style={styles.resultsButtonText}>Ver Resultados Detallados</Text>
+          <Ionicons name="chevron-forward" size={20} color="#fff" />
+        </TouchableOpacity>
               
         {/* 2. FORMULARIO REGISTRAR GASTOS */}
         <View style={styles.card}>
@@ -708,44 +647,6 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
                 {guardandoProduccion ? 'Guardando...' : 'Guardar Datos de Producción'}
               </Text>
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 5. GRÁFICO DE PROYECCIÓN DE INGRESOS */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Proyección de Ingresos</Text>
-          <Text style={styles.cardSubtitle}>Pesimista (70%) | Realista (100%) | Optimista (130%)</Text>
-          
-          <View style={styles.chartContainer}>
-            {/* Eje Y simplificado */}
-            <View style={styles.chartYAxis}>
-              <Text style={styles.chartYText}>{Math.round(maxGrafico)}</Text>
-              <Text style={styles.chartYText}>{Math.round(maxGrafico / 2)}</Text>
-              <Text style={styles.chartYText}>0</Text>
-            </View>
-            
-            {/* Barras */}
-            <View style={styles.chartBarsContainer}>
-              {escenarios.map((esc, index) => (
-                <View key={index} style={styles.chartGroup}>
-                  {/* Ingresos (Verde) */}
-                  <View style={[styles.bar, {height: (esc.ingresos / maxGrafico) * 150, backgroundColor: '#2eaa51'}]} />
-                  {/* Costos (Rojo) */}
-                  <View style={[styles.bar, {height: (esc.costos / maxGrafico) * 150, backgroundColor: '#ef4444'}]} />
-                  {/* Ganancia (Amarillo) */}
-                  <View style={[styles.bar, {height: (Math.max(esc.ganancia, 0) / maxGrafico) * 150, backgroundColor: '#fbbf24'}]} />
-                  
-                  <Text style={styles.chartLabel}>{esc.nombre}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-          
-          {/* Leyenda */}
-          <View style={styles.legendRow}>
-            <View style={styles.legendItem}><View style={[styles.legendDot, {backgroundColor: '#2eaa51'}]}/><Text style={styles.legendText}>Ingresos</Text></View>
-            <View style={styles.legendItem}><View style={[styles.legendDot, {backgroundColor: '#ef4444'}]}/><Text style={styles.legendText}>Costos</Text></View>
-            <View style={styles.legendItem}><View style={[styles.legendDot, {backgroundColor: '#fbbf24'}]}/><Text style={styles.legendText}>Ganancia Neta</Text></View>
           </View>
         </View>
 
@@ -1046,6 +947,8 @@ const styles = StyleSheet.create({
   dropdownButton: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, marginBottom: 16 },
   primaryButton: { backgroundColor: '#2eaa51', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 10, marginTop: 4 },
   primaryButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14, marginLeft: 8 },
+  resultsButton: { backgroundColor: '#8b5cf6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 12, marginBottom: 20, gap: 10 },
+  resultsButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   
   // Lista de gastos
   listItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
