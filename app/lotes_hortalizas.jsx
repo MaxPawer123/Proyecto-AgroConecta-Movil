@@ -29,6 +29,7 @@ import {
   eliminarLoteApi,
   obtenerGastosPorLoteApi,
   obtenerLotesPorProductoApi,
+  obtenerProductosPorCategoriaApi,
   subirFotoSiembraApi,
 } from '@/src/services/api';
 
@@ -215,17 +216,30 @@ export default function MisLotes_Hortalizas() {
     try {
       await sincronizarLotesPendientes();
 
-      const [datosLocales, hortalizas, habas] = await Promise.all([
+      const [datosLocales, productosHortalizasNuevos, productosHortalizaLegacy, productosTuberculoLegacy] = await Promise.all([
         obtenerLotesLocales(),
-        obtenerLotesPorProductoApi(2),
-        obtenerLotesPorProductoApi(3),
+        obtenerProductosPorCategoriaApi('Hortalizas'),
+        obtenerProductosPorCategoriaApi('Hortaliza'),
+        obtenerProductosPorCategoriaApi('Tuberculo'),
       ]);
 
+      const idsProductoHortalizas = new Set([
+        2,
+        3,
+        ...(Array.isArray(productosHortalizasNuevos) ? productosHortalizasNuevos : []).map((producto) => producto.id_producto),
+        ...(Array.isArray(productosHortalizaLegacy) ? productosHortalizaLegacy : []).map((producto) => producto.id_producto),
+        ...(Array.isArray(productosTuberculoLegacy) ? productosTuberculoLegacy : []).map((producto) => producto.id_producto),
+      ]);
+
+      const lotesPorProducto = await Promise.all(
+        [...idsProductoHortalizas].map((idProducto) => obtenerLotesPorProductoApi(idProducto))
+      );
+
       const locales = Array.isArray(datosLocales)
-        ? datosLocales.filter((item) => item.id_producto === 2 || item.id_producto === 3)
+        ? datosLocales.filter((item) => idsProductoHortalizas.has(item.id_producto))
         : [];
 
-      const remotos = [...(Array.isArray(hortalizas) ? hortalizas : []), ...(Array.isArray(habas) ? habas : [])];
+      const remotos = lotesPorProducto.flat();
       const idsRemotos = new Set(remotos.map((item) => item.id_lote));
 
       const localesSinDuplicado = locales.filter((item) => !item.id_servidor || !idsRemotos.has(item.id_servidor));

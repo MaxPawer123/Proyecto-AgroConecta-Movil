@@ -38,8 +38,7 @@ CREATE TABLE producto (
     id_producto SERIAL PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL, -- Ej: Quinua Real
     categoria VARCHAR(50) CHECK (categoria IN ('Grano', 'Tuberculo', 'Hortaliza', 'Forraje')),
-    unidad_medida_base VARCHAR(20) DEFAULT 'Kg',
-    imagen_defecto_url VARCHAR(255) -- URL de la imagen genérica si el usuario no sube foto
+    unidad_medida_base VARCHAR(20) DEFAULT 'Kg'
 );
 
 -- =========================================================
@@ -96,6 +95,23 @@ CREATE TABLE gasto_lote (
     
     fecha_gasto DATE DEFAULT CURRENT_DATE
 );
+CREATE TABLE produccion_lote (
+    id_produccion SERIAL PRIMARY KEY,
+     id_lote INT NOT NULL REFERENCES lote(id_lote),
+    fecha_registro DATE NOT NULL,
+    
+    -- DECIMAL(10,2) significa: hasta 10 dígitos en total, con 2 decimales. 
+    -- Ideal para kilos (ej. 1500.50) y dinero (ej. 350.00)
+    cantidad_obtenida DECIMAL(10, 2) NOT NULL,
+    precio_venta DECIMAL(10, 2) NOT NULL,
+    
+    -- Control para tu arquitectura Offline-First
+    estado_sincronizacion VARCHAR(20) DEFAULT 'SINCRONIZADO',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
 
 -- =========================================================
 -- 4. DATOS SEMILLA (SEEDERS) PARA PRUEBAS
@@ -111,11 +127,11 @@ INSERT INTO usuario (nombre_completo, email, password_hash, rol) VALUES
 INSERT INTO productor (id_usuario, comunidad, municipio, telefono) VALUES 
 (1, 'Milla Milla', 'Sica Sica', '77712345');
 
--- 3. Catálogo de Productos (Con imágenes genéricas)
-INSERT INTO producto (nombre, categoria, imagen_defecto_url) VALUES 
-('Quinua Real', 'Grano', 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'),
-('Papa Imilla', 'Tuberculo', 'https://cdn-icons-png.flaticon.com/512/765/765613.png'),
-('Haba', 'Hortaliza', 'https://cdn-icons-png.flaticon.com/512/7394/7394338.png');
+-- 3. Catálogo de Productos
+INSERT INTO producto (nombre, categoria) VALUES 
+('Quinua Real', 'Grano'),
+('Papa Imilla', 'Tuberculo'),
+('Haba', 'Hortaliza');
 
 -- 4. Lote ACTIVO (Ejemplo de uno que apenas está empezando)
 INSERT INTO lote (id_productor, id_producto, nombre_lote, superficie, fecha_siembra, fecha_cosecha_est, rendimiento_estimado, precio_venta_est, estado, foto_siembra_url)

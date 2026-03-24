@@ -29,6 +29,7 @@ import {
   eliminarLoteApi,
   obtenerGastosPorLoteApi,
   obtenerLotesPorProductoApi,
+  obtenerProductosPorCategoriaApi,
   subirFotoSiembraApi,
 } from '@/src/services/api';
 
@@ -215,13 +216,26 @@ export default function MisLotes_Quinua() {
     try {
       await sincronizarLotesPendientes();
 
-      const [datosLocales, datosBackend] = await Promise.all([
+      const [datosLocales, productosQuinuaNuevos, productosQuinuaLegacy] = await Promise.all([
         obtenerLotesLocales(),
-        obtenerLotesPorProductoApi(1),
+        obtenerProductosPorCategoriaApi('Quinua'),
+        obtenerProductosPorCategoriaApi('Grano'),
       ]);
 
+      const idsProductoQuinua = new Set([
+        1,
+        ...(Array.isArray(productosQuinuaNuevos) ? productosQuinuaNuevos : []).map((producto) => producto.id_producto),
+        ...(Array.isArray(productosQuinuaLegacy) ? productosQuinuaLegacy : []).map((producto) => producto.id_producto),
+      ]);
+
+      const lotesPorProducto = await Promise.all(
+        [...idsProductoQuinua].map((idProducto) => obtenerLotesPorProductoApi(idProducto))
+      );
+
+      const datosBackend = lotesPorProducto.flat();
+
       const locales = Array.isArray(datosLocales)
-        ? datosLocales.filter((item) => item.id_producto === 1)
+        ? datosLocales.filter((item) => idsProductoQuinua.has(item.id_producto))
         : [];
 
       const remotos = Array.isArray(datosBackend) ? datosBackend : [];

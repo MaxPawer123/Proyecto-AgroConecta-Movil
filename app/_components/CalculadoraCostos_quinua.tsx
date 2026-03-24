@@ -6,10 +6,11 @@ import {
   ScrollView, 
   TextInput, 
   TouchableOpacity, 
-  StyleSheet, SafeAreaView,
+  StyleSheet,
   Modal,
   FlatList
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   crearGastoApi,
@@ -147,8 +148,8 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   const [produccion, setProduccion] = useState({
     cantidad: '', precio: ''
   });
-  const [unidadCantidad, setUnidadCantidad] = useState<UnidadCantidad>('kg');
-  const [unidadPrecio, setUnidadPrecio] = useState<UnidadPrecio>('bskg');
+  const [unidadCantidad, setUnidadCantidad] = useState<UnidadCantidad>('qq');
+  const [unidadPrecio, setUnidadPrecio] = useState<UnidadPrecio>('bsqq');
   const [modalUnidadCantidad, setModalUnidadCantidad] = useState(false);
   const [modalUnidadPrecio, setModalUnidadPrecio] = useState(false);
   const [guardandoProduccion, setGuardandoProduccion] = useState(false);
@@ -178,6 +179,9 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   const equivalenciaTexto = unidadCantidad === 'qq'
     ? `= ${(qtyProducidaKg || 0).toFixed(2)} kg`
     : `= ${((qtyProducidaKg || 0) / KG_POR_QUINTAL).toFixed(2)} qq`;
+  const equivalenciaPrecioTexto = unidadPrecio === 'bskg'
+    ? `= ${((precioVentaKg || 0) * KG_POR_QUINTAL).toFixed(2)} Bs/qq`
+    : `= ${(precioVentaKg || 0).toFixed(2)} Bs/kg`;
   
   const costoPorKg = qtyProducidaKg > 0 ? totalCostos / qtyProducidaKg : 0;
   const ingresosTotales = qtyProducidaKg * precioVentaKg;
@@ -242,8 +246,8 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   const cargarUltimaProduccionDelLote = async () => {
     if (!idLote) {
       setProduccion({ cantidad: '', precio: '' });
-      setUnidadCantidad('kg');
-      setUnidadPrecio('bskg');
+      setUnidadCantidad('qq');
+      setUnidadPrecio('bsqq');
       return;
     }
 
@@ -251,17 +255,22 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
       const ultimaProduccion = await obtenerUltimaProduccionLoteApi(idLote);
       if (!ultimaProduccion) {
         setProduccion({ cantidad: '', precio: '' });
-        setUnidadCantidad('kg');
-        setUnidadPrecio('bskg');
+        setUnidadCantidad('qq');
+        setUnidadPrecio('bsqq');
         return;
       }
 
+      const cantidadKg = Number(ultimaProduccion.cantidad_obtenida) || 0;
+      const precioKg = Number(ultimaProduccion.precio_venta) || 0;
+      const cantidadQq = cantidadKg / KG_POR_QUINTAL;
+      const precioQq = precioKg * KG_POR_QUINTAL;
+
       setProduccion({
-        cantidad: String(Number(ultimaProduccion.cantidad_obtenida) || ''),
-        precio: String(Number(ultimaProduccion.precio_venta) || ''),
+        cantidad: cantidadQq > 0 ? cantidadQq.toFixed(2) : '',
+        precio: precioQq > 0 ? precioQq.toFixed(2) : '',
       });
-      setUnidadCantidad('kg');
-      setUnidadPrecio('bskg');
+      setUnidadCantidad('qq');
+      setUnidadPrecio('bsqq');
     } catch (error) {
       console.warn('No se pudo cargar la ultima produccion del lote:', error);
     }
@@ -628,12 +637,10 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
             <View key={gasto.id}>
               <View style={styles.listItem}>
                 <View style={{ flex: 1 }}>
-                  <View style={styles.rowCenter}>
-                    <Text style={styles.itemTitle}>{gasto.categoria}</Text>
-                    <View style={styles.tagGreen}>
-                      <Text style={styles.tagTextGreen}>{gasto.fase}</Text>
-                    </View>
+                  <View style={styles.tagGreenInlineTop}>
+                    <Text style={styles.tagTextGreen}>{gasto.fase}</Text>
                   </View>
+                  <Text style={styles.itemTitle}>{gasto.categoria}</Text>
                   {gasto.descripcion ? <Text style={styles.itemSub}>{gasto.descripcion}</Text> : null}
                 </View>
                 <Text style={styles.itemPrice}>Bs {parseFloat(gasto.monto).toFixed(2)}</Text>
@@ -688,6 +695,7 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
                   <Ionicons name="chevron-down" size={10} color="#9ca3af" />
                 </TouchableOpacity>
               </View>
+              <Text style={styles.equivalenceText}>{equivalenciaPrecioTexto}</Text>
             </View>
 
             <TouchableOpacity
@@ -1048,6 +1056,7 @@ const styles = StyleSheet.create({
   editBtn: { padding: 6, backgroundColor: '#dbeafe', borderRadius: 6, marginRight: 8 },
   deleteBtn: { padding: 6, backgroundColor: '#fef2f2', borderRadius: 6 },
   tagGreen: { backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginLeft: 8 },
+  tagGreenInlineTop: { backgroundColor: '#dcfce7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 6 },
   tagTextGreen: { color: '#166534', fontSize: 10, fontWeight: 'bold' },
 
   // Gráfico Nativo

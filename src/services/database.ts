@@ -80,10 +80,6 @@ async function guardarLotes(lotes: LoteLocal[]): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lotes));
 }
 
-export async function initDB(): Promise<void> {
-  return;
-}
-
 export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<number> {
   const lotes = await leerLotes();
   const siguienteId = lotes.length > 0 ? Math.max(...lotes.map((l) => l.id_local)) + 1 : 1;

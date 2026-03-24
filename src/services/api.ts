@@ -106,6 +106,13 @@ export type GastoApi = {
   fecha_gasto: string;
 };
 
+export type ProductoApi = {
+  id_producto: number;
+  nombre: string;
+  categoria: string;
+  imagen_url?: string | null;
+};
+
 let baseUrlActiva: string | null = null;
 
 class HttpStatusError extends Error {
@@ -158,12 +165,6 @@ function extraerHostDesdeUri(hostUri?: string | null): string | null {
   if (!host) return null;
   if (host.endsWith('.exp.direct') || host.endsWith('.expo.dev')) return null;
   return host;
-}
-
-function obtenerHostDesdeUri(hostUri?: string | null): string | null {
-  if (!hostUri) return null;
-  const host = hostUri.split(':')[0]?.trim().toLowerCase();
-  return host || null;
 }
 
 function obtenerHostUriExpo(): string | null {
@@ -246,19 +247,6 @@ function construirBaseUrlsCandidatas(): string[] {
     if (prioridadA !== prioridadB) return prioridadA - prioridadB;
     return a.localeCompare(b);
   });
-}
-
-export const API_URL = construirBaseUrlsCandidatas()[0] || `http://localhost:${API_PORT}`;
-
-export function obtenerInfoConexionApi() {
-  return {
-    mode: 'lan',
-    hostUri: obtenerHostUriExpo(),
-    hostDetectado: obtenerHostDesdeUri(obtenerHostUriExpo()),
-    apiUrl: API_URL,
-    baseUrlActiva,
-    baseUrlsCandidatas: construirBaseUrlsCandidatas(),
-  };
 }
 
 function esErrorConexionRecuperable(error: unknown): boolean {
@@ -361,13 +349,6 @@ export async function fetchGetBackendConFallback<T>(
     console.warn(`Fallo GET ${path}. Se usa fallback local.`);
     return fallback;
   }
-}
-
-export async function fetchGetConManejoRed<T>(
-  path: string,
-  obtenerFallback: () => Promise<T> | T
-): Promise<T> {
-  return fetchGetBackendConFallback(path, obtenerFallback);
 }
 
 function obtenerNombreArchivoDesdeUri(uri: string): string {
@@ -488,18 +469,6 @@ export async function obtenerLotesPorProductoApi(idProducto: number): Promise<Lo
   return response.data;
 }
 
-export async function obtenerLotePorIdApi(idLote: number): Promise<LoteApi> {
-  const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}`, {
-    method: 'GET',
-  });
-
-  if (!response?.success || !response.data) {
-    throw new Error(response?.message || 'No se pudo obtener el lote desde el servidor');
-  }
-
-  return response.data;
-}
-
 export async function actualizarLoteApi(idLote: number, payload: ActualizarLotePayload): Promise<LoteApi> {
   const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}`, {
     method: 'PUT',
@@ -508,22 +477,6 @@ export async function actualizarLoteApi(idLote: number, payload: ActualizarLoteP
 
   if (!response?.success || !response.data) {
     throw new Error(response?.message || 'No se pudo actualizar el lote en el servidor');
-  }
-
-  return response.data;
-}
-
-export async function actualizarProduccionLoteApi(
-  idLote: number,
-  payload: { rendimiento_estimado: number; precio_venta_est: number }
-): Promise<LoteApi> {
-  const response = await requestJson<ApiResponse<LoteApi>>(`/api/lotes/${idLote}/produccion`, {
-    method: 'PUT',
-    body: JSON.stringify(payload),
-  });
-
-  if (!response?.success || !response.data) {
-    throw new Error(response?.message || 'No se pudo actualizar la producción del lote en el servidor');
   }
 
   return response.data;
@@ -623,4 +576,51 @@ export async function eliminarGastoApi(idGasto: number): Promise<void> {
   if (!response?.success) {
     throw new Error(response?.message || 'No se pudo eliminar el gasto del servidor');
   }
+}
+
+export async function obtenerProductosPorCategoriaApi(categoria: string): Promise<ProductoApi[]> {
+  const categoriaSegura = encodeURIComponent(categoria);
+  const response = await fetchGetBackendConFallback<ListResponse<ProductoApi>>(
+    `/api/productos/categoria/${categoriaSegura}`,
+    () => ({ success: true, data: [], count: 0 })
+  );
+
+  if (!response?.success || !Array.isArray(response.data)) {
+    throw new Error(response?.message || 'No se pudieron obtener productos por categoría');
+  }
+
+  return response.data;
+}
+
+export async function crearProductoApi(payload: {
+  nombre: string;
+  categoria: string;
+}): Promise<ProductoApi> {
+  const response = await requestJson<ApiResponse<ProductoApi>>('/api/productos', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo crear el producto en el servidor');
+  }
+
+  return response.data;
+}
+
+export async function obtenerOCrearProductoApi(payload: {
+  nombre: string;
+  categoria: string;
+}): Promise<ProductoApi> {
+  const productosCategoria = await obtenerProductosPorCategoriaApi(payload.categoria);
+  const nombreNormalizado = payload.nombre.trim().toLowerCase();
+  const encontrado = productosCategoria.find(
+    (producto) => producto.nombre.trim().toLowerCase() === nombreNormalizado
+  );
+
+  if (encontrado) {
+    return encontrado;
+  }
+
+  return crearProductoApi(payload);
 }
