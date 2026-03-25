@@ -85,6 +85,14 @@ export default function Inicio() {
             <Text style={styles.gridItemSub}>Foro agrícola</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.gridItem} onPress={() => router.push('/debug-sqlite')}>
+            <View style={[styles.iconBg, { backgroundColor: '#eff6ff' }]}>
+              <Ionicons name="bug-outline" size={28} color="#2563eb" />
+            </View>
+            <Text style={styles.gridItemTitle}>Debug SQLite</Text>
+            <Text style={styles.gridItemSub}>Ver datos locales</Text>
+          </TouchableOpacity>
+
         </View>
 
         {/* CONSEJO DEL DÍA (Estilo Figma) */}

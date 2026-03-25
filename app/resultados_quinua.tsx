@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   chartBarsContainer: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', flex: 1, borderLeftWidth: 1, borderBottomWidth: 1, borderLeftColor: '#e5e7eb', borderBottomColor: '#e5e7eb', paddingLeft: 10, paddingBottom: 10 },
   chartGroup: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
   bar: { width: 10, borderRadius: 3, marginHorizontal: 1 },
-  chartLabel: { fontSize: 11, color: '#6b7280', marginTop: 12, fontWeight: '600', textAlign: 'center' },
+  chartLabel: { fontSize: 10, color: '#6b7280', marginTop: 8, fontWeight: '500' },
 
   // Leyenda
   legendRow: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#f3f4f6' },

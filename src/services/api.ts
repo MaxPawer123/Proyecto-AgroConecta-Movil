@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const REQUEST_TIMEOUT_MS = 10000;
+const UPLOAD_REQUEST_TIMEOUT_MS = 30000;
 
 function obtenerPuertoApi(): number {
   const valor = process.env.EXPO_PUBLIC_API_PORT;
@@ -277,7 +278,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   for (const baseUrl of orden) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD_REQUEST_TIMEOUT_MS);
 
     try {
       const response = await fetch(`${baseUrl}${path}`, {

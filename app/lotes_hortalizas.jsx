@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { 
   Alert,
   View, 
@@ -11,6 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ModalRegistrarSiembra from './_components/ModalRegistrarSiembra_Hortalizas';
 import CalculadoraCostos from './_components/CalculadoraCostos_hortalizas';
@@ -19,19 +20,21 @@ import {
   actualizarLoteLocalPorServidor,
   eliminarLoteLocal,
   eliminarLoteLocalPorServidor,
-  marcarLoteComoSincronizado,
   obtenerLotesLocales,
-  obtenerLotesPendientesLocales,
 } from '@/src/services/database';
 import {
   actualizarLoteApi,
-  crearLoteApi,
   eliminarLoteApi,
   obtenerGastosPorLoteApi,
   obtenerLotesPorProductoApi,
   obtenerProductosPorCategoriaApi,
-  subirFotoSiembraApi,
 } from '@/src/services/api';
+import {
+  iniciarSincronizacionAutomaticaSiembras,
+  detenerSincronizacionAutomaticaSiembras,
+  sincronizarSiembrasPendientes,
+  suscribirEventosSincronizacionSiembras,
+} from '@/src/services/siembraStorageSync';
 
 const formatearFecha = (iso) => {
   if (!iso) return 'N/D';
@@ -74,47 +77,66 @@ export default function MisLotes_Hortalizas() {
     nombre: '',
     superficie: '',
   });
+  const [diagnosticoCarga, setDiagnosticoCarga] = useState('');
+  const [mensajeSync, setMensajeSync] = useState('');
 
-  const sincronizarLotesPendientes = async () => {
-    const pendientes = await obtenerLotesPendientesLocales();
-    if (!pendientes.length) return;
+  const cargarLotesLocalesInmediato = useCallback(async () => {
+    const esLoteHortaliza = (item) => {
+      const idProducto = Number(item.id_producto || 0);
+      if (idProducto === 2 || idProducto === 3) return true;
+      const variedad = String(item.variedad ?? '').toLowerCase();
+      const nombre = String(item.nombre_lote ?? '').toLowerCase();
+      return variedad.includes('hortaliza') || nombre.includes('hortaliza') || variedad.includes('haba') || nombre.includes('haba');
+    };
 
-    for (const lote of pendientes) {
-      try {
-        const superficie = Number(lote.superficie || 0);
-        const rendimiento = Number(lote.rendimiento_estimado || 0);
-        const precio = Number(lote.precio_venta_est || 0);
-        let fotoSiembraUrl = null;
-        if (lote.foto_siembra_uri_local) {
-          try {
-            fotoSiembraUrl = await subirFotoSiembraApi(lote.foto_siembra_uri_local);
-          } catch (errorFoto) {
-            console.warn('No se pudo sincronizar foto de lote hortalizas, se sincroniza solo datos:', errorFoto);
-          }
-        }
+    const mapearRapido = (item) => {
+      const superficie = Number(item.superficie || 0);
+      const rendimiento = Number(item.rendimiento_estimado || 0);
+      const precio = Number(item.precio_venta_est || 0);
+      const ingresoEstimado = rendimiento * precio;
+      const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
-        const loteServidor = await crearLoteApi({
-          id_productor: 1,
-          id_producto: lote.id_producto,
-          nombre_lote: lote.nombre_lote,
-          superficie: superficie > 0 ? superficie : 1,
-          fecha_siembra: lote.fecha_siembra,
-          fecha_cosecha_est: lote.fecha_cosecha_est,
-          rendimiento_estimado: rendimiento > 0 ? rendimiento : 1,
-          precio_venta_est: precio > 0 ? precio : 1,
-          foto_siembra_url: fotoSiembraUrl,
-          ubicacion: null,
-          variedad: lote.variedad,
-        });
+      return {
+        key: `local-${item.id_local}`,
+        id: item.id_servidor || item.id_local,
+        idLocal: item.id_local,
+        idServidor: item.id_servidor,
+        idProducto: item.id_producto,
+        codigo: item.id_servidor ? `H-BD-${item.id_servidor}` : `H-LOCAL-${item.id_local}`,
+        nombre: item.nombre_lote || `Lote ${item.id_local}`,
+        producto: 'Hortalizas',
+        tipoProducto: item.variedad || (item.id_producto === 3 ? 'Haba' : 'Hortaliza'),
+        imagen: item.foto_siembra_uri_local || 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800',
+        imagenRemota: item.foto_siembra_uri_local || null,
+        area: superficie,
+        comunidad: item.ubicacion || 'No especificada',
+        fechaSiembra: formatearFecha(item.fecha_siembra),
+        cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
+        fechaSiembraIso: item.fecha_siembra,
+        fechaCosechaIso: item.fecha_cosecha_est,
+        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
+        precioVentaEst: precio > 0 ? precio : 1,
+        progreso,
+        estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'En Crecimiento' : 'Pendiente Sync',
+        estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
+        faseActual,
+        estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
+        inversion: 0,
+        ingresoEstimado,
+        proyeccion: ingresoEstimado,
+        mostrarCosecha: false,
+      };
+    };
 
-        await marcarLoteComoSincronizado(lote.id_local, loteServidor.id_lote);
-      } catch {
-        // Si sigue sin red, se mantiene pendiente para el siguiente intento.
-      }
-    }
-  };
+    const datosLocales = await obtenerLotesLocales();
+    const filtrados = Array.isArray(datosLocales) ? datosLocales.filter(esLoteHortaliza) : [];
+    const visibles = filtrados.length > 0 ? filtrados : (Array.isArray(datosLocales) ? datosLocales : []);
+    const mapeados = visibles.map(mapearRapido);
+    setLotes(mapeados);
+    setDiagnosticoCarga(`Carga rapida local: ${mapeados.length}`);
+  }, []);
 
-  const cargarLotesLocales = async () => {
+  const cargarLotesLocales = useCallback(async () => {
     const mapearLoteLocal = (item) => {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
@@ -123,7 +145,7 @@ export default function MisLotes_Hortalizas() {
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
       return {
-        key: item.id_servidor ? `srv-${item.id_servidor}` : `local-${item.id_local}`,
+        key: `local-${item.id_local}`,
         id: item.id_servidor || item.id_local,
         idLocal: item.id_local,
         idServidor: item.id_servidor,
@@ -213,9 +235,29 @@ export default function MisLotes_Hortalizas() {
       );
     };
 
-    try {
-      await sincronizarLotesPendientes();
+    const cargarVistaLocalRapida = async () => {
+      try {
+        const datosLocales = await obtenerLotesLocales();
+        const locales = Array.isArray(datosLocales)
+          ? datosLocales.filter((item) => item.id_producto === 2 || item.id_producto === 3)
+          : [];
+        const localesMapeados = locales.map(mapearLoteLocal);
+        const localesConGastos = await enriquecerConGastos(localesMapeados);
+        setLotes(localesConGastos);
+      } catch (errorLocal) {
+        console.warn('No se pudieron cargar lotes locales rapidos de hortalizas:', errorLocal);
+      }
+    };
 
+    await cargarVistaLocalRapida();
+
+    try {
+      await sincronizarSiembrasPendientes();
+    } catch {
+      // Si no hay red o backend disponible, se mantiene fallback local.
+    }
+
+    try {
       const [datosLocales, productosHortalizasNuevos, productosHortalizaLegacy, productosTuberculoLegacy] = await Promise.all([
         obtenerLotesLocales(),
         obtenerProductosPorCategoriaApi('Hortalizas'),
@@ -242,9 +284,12 @@ export default function MisLotes_Hortalizas() {
       const remotos = lotesPorProducto.flat();
       const idsRemotos = new Set(remotos.map((item) => item.id_lote));
 
-      const localesSinDuplicado = locales.filter((item) => !item.id_servidor || !idsRemotos.has(item.id_servidor));
+      // Mostrar todos los lotes remotos (del backend)
+      const combinados = [...remotos.map(mapearLoteBackend)];
 
-      const combinados = [...remotos.map(mapearLoteBackend), ...localesSinDuplicado.map(mapearLoteLocal)];
+      // Agregar lotes locales PENDIENTES (no sincronizados)
+      const localesPendientes = locales.filter((item) => !item.id_servidor || !idsRemotos.has(item.id_servidor));
+      combinados.push(...localesPendientes.map(mapearLoteLocal));
       const combinadosConGastos = await enriquecerConGastos(combinados);
       setLotes(combinadosConGastos);
     } catch (error) {
@@ -263,20 +308,56 @@ export default function MisLotes_Hortalizas() {
         setLotes([]);
       }
     }
-  };
-
-  useEffect(() => {
-    cargarLotesLocales();
   }, []);
 
   useEffect(() => {
+    iniciarSincronizacionAutomaticaSiembras();
+    void cargarLotesLocalesInmediato();
+    void cargarLotesLocales();
+
+    return () => {
+      detenerSincronizacionAutomaticaSiembras();
+    };
+  }, [cargarLotesLocales, cargarLotesLocalesInmediato]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarLotesLocalesInmediato();
+      void cargarLotesLocales();
+    }, [cargarLotesLocales, cargarLotesLocalesInmediato])
+  );
+
+  useEffect(() => {
     if (!modalOpen) {
-      cargarLotesLocales();
+      void cargarLotesLocalesInmediato();
+      void cargarLotesLocales();
     }
-  }, [modalOpen]);
+  }, [modalOpen, cargarLotesLocales, cargarLotesLocalesInmediato]);
+
+  useEffect(() => {
+    const unsubscribe = suscribirEventosSincronizacionSiembras((evento) => {
+      if (evento.tipo === 'LOTE_SINCRONIZADO') {
+        setMensajeSync(`Lote ${evento.idLocal} sincronizado con backend.`);
+      }
+
+      if (evento.tipo === 'SINCRONIZACION_COMPLETADA' && evento.sincronizados > 0) {
+        setMensajeSync(`Sincronizacion completada: ${evento.sincronizados}/${evento.procesados} lote(s).`);
+        void cargarLotesLocales();
+      }
+    });
+
+    return unsubscribe;
+  }, [cargarLotesLocales]);
 
   const manejarCreacionLote = async () => {
-    await cargarLotesLocales();
+    setMensajeSync('Siembra creada en PENDIENTE. Se subira cuando haya conexion con backend.');
+    await cargarLotesLocalesInmediato();
+
+    void sincronizarSiembrasPendientes().catch(() => {
+      // Si falla backend/red, queda pendiente para reintento automatico.
+    });
+
+    void cargarLotesLocales();
   };
 
   const abrirModalEdicion = (lote) => {
@@ -471,6 +552,8 @@ export default function MisLotes_Hortalizas() {
         </View>
 
         {/* LISTA DE LOTES */}
+        {mensajeSync && <Text style={{ color: '#f59e0b', fontSize: 12, marginBottom: 8, paddingHorizontal: 12 }}>{mensajeSync}</Text>}
+        {diagnosticoCarga && <Text style={{ color: '#3b82f6', fontSize: 11, marginBottom: 8, paddingHorizontal: 12, fontStyle: 'italic' }}>{diagnosticoCarga}</Text>}
         {lotes.map((lote) => (
           <View key={lote.key} style={styles.loteCard}>
             
@@ -585,7 +668,6 @@ export default function MisLotes_Hortalizas() {
           visible={modalOpen}
           onClose={() => {
             setModalOpen(false);
-            cargarLotesLocales();
           }}
           onCreated={manejarCreacionLote}
         />

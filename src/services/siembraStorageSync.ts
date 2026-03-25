@@ -1,33 +1,27 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, type AppStateStatus } from 'react-native';
-import { crearLoteApi, obtenerOCrearProductoApi, subirFotoSiembraApi } from '@/src/services/api';
-import { actualizarLoteLocal, insertarLoteLocal } from '@/src/services/database';
+import NetInfo from '@react-native-community/netinfo';
+import { crearLoteApi, obtenerLotesPorProductoApi, subirFotoSiembraApi } from '@/src/services/api';
+import { insertarLoteLocal } from '@/src/services/database';
+import { getDb, getLoteServerColumn } from './sqlite';
 
-const STORAGE_QUEUE_KEY = 'agroconecta_siembras_queue_v1';
-const SYNC_INTERVAL_MS = 25000;
+const SYNC_INTERVAL_MS = 10000;
+const MAX_ITEMS_PER_SYNC = 6;
 
 type EstadoCola = 'PENDIENTE' | 'COMPLETADO';
 
-type SiembraQueueItem = {
-  id: string;
+type LotePendiente = {
   idLocal: number;
-  rubro: 'QUINUA' | 'HORTALIZA';
-  categoriaProducto: string;
-  productoDefaultId: number;
+  idServidor: number | null;
+  idProducto: number;
   nombreLote: string;
-  tipoCultivo: string;
   ubicacion: string;
+  tipoCultivo: string;
   superficie: number;
   fechaSiembraIso: string;
   fechaCosechaIso: string;
   rendimientoEstimado: number;
   precioVentaEstimado: number;
-  fotoTerrenoUri: string | null;
-  estado: EstadoCola;
-  intentos: number;
-  ultimoError: string | null;
-  createdAt: string;
-  updatedAt: string;
+  fotoSiembraUrl: string | null;
 };
 
 export type RegistrarSiembraInput = {
@@ -50,117 +44,170 @@ export type RegistrarSiembraResultado = {
   idLocal: number;
 };
 
+export type EventoSincronizacionSiembra =
+  | { tipo: 'LOTE_SINCRONIZADO'; idLocal: number; idServidor: number }
+  | { tipo: 'SINCRONIZACION_COMPLETADA'; procesados: number; sincronizados: number };
+
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 let appStateSubscription: { remove: () => void } | null = null;
+let netInfoUnsubscribe: (() => void) | null = null;
 let syncEnCurso = false;
+const listenersSincronizacion = new Set<(evento: EventoSincronizacionSiembra) => void>();
 
-function crearIdCola(): string {
-  return `siembra-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-}
-
-async function leerColaSiembras(): Promise<SiembraQueueItem[]> {
-  const contenido = await AsyncStorage.getItem(STORAGE_QUEUE_KEY);
-  if (!contenido) return [];
-
-  try {
-    const parsed = JSON.parse(contenido);
-    return Array.isArray(parsed) ? (parsed as SiembraQueueItem[]) : [];
-  } catch {
-    return [];
+function emitirEventoSincronizacion(evento: EventoSincronizacionSiembra): void {
+  for (const listener of listenersSincronizacion) {
+    try {
+      listener(evento);
+    } catch (error) {
+      console.warn('Listener de sincronizacion de siembras fallo:', error);
+    }
   }
 }
 
-async function guardarColaSiembras(items: SiembraQueueItem[]): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_QUEUE_KEY, JSON.stringify(items));
+export function suscribirEventosSincronizacionSiembras(
+  listener: (evento: EventoSincronizacionSiembra) => void
+): () => void {
+  listenersSincronizacion.add(listener);
+  return () => {
+    listenersSincronizacion.delete(listener);
+  };
 }
 
-async function agregarItemCola(item: SiembraQueueItem): Promise<void> {
-  const cola = await leerColaSiembras();
-  await guardarColaSiembras([item, ...cola]);
+async function hayConexionDisponible(): Promise<boolean> {
+  const state = await NetInfo.fetch();
+  if (!state.isConnected) return false;
+  if (state.isInternetReachable === false) return false;
+  return true;
 }
 
-async function actualizarItemCola(id: string, cambios: Partial<SiembraQueueItem>): Promise<void> {
-  const cola = await leerColaSiembras();
-  const actualizada = cola.map((item) => {
-    if (item.id !== id) return item;
-    return {
-      ...item,
-      ...cambios,
-      updatedAt: new Date().toISOString(),
-    };
-  });
+function mapRowToPendiente(row: Record<string, unknown>): LotePendiente {
+  const idServidorRaw = row.id_lote ?? row.id_servidor;
 
-  await guardarColaSiembras(actualizada);
+  return {
+    idLocal: Number(row.id_local),
+    idServidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
+    idProducto: Number(row.id_producto),
+    nombreLote: String(row.nombre_lote ?? ''),
+    ubicacion: String(row.ubicacion ?? ''),
+    tipoCultivo: String(row.variedad ?? ''),
+    superficie: Number(row.superficie ?? 0),
+    fechaSiembraIso: String(row.fecha_siembra ?? ''),
+    fechaCosechaIso: String(row.fecha_cosecha_est ?? ''),
+    rendimientoEstimado: Number(row.rendimiento_estimado ?? 0),
+    precioVentaEstimado: Number(row.precio_venta_est ?? 0),
+    fotoSiembraUrl: row.foto_siembra_url ? String(row.foto_siembra_url) : null,
+  };
 }
 
-async function prepararDatosServidor(item: SiembraQueueItem): Promise<{
-  idProducto: number;
-  fotoSiembraUrl: string | null;
-}> {
-  let idProducto = item.productoDefaultId;
-  let fotoSiembraUrl: string | null = null;
+async function obtenerLotesPendientes(): Promise<LotePendiente[]> {
+  const db = await getDb();
+  const serverColumn = await getLoteServerColumn();
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `
+      SELECT *
+      FROM lote
+      WHERE estado_sincronizacion <> 'SINCRONIZADO' OR ${serverColumn} IS NULL
+      ORDER BY id_local DESC
+      LIMIT ?
+    `,
+    MAX_ITEMS_PER_SYNC
+  );
 
-  if (item.fotoTerrenoUri) {
+  return rows.map(mapRowToPendiente);
+}
+
+async function marcarLoteSincronizado(idLocal: number, idServidor: number): Promise<void> {
+  const db = await getDb();
+  const serverColumn = await getLoteServerColumn();
+  await db.runAsync(
+    `
+      UPDATE lote
+      SET ${serverColumn} = ?, estado_sincronizacion = 'SINCRONIZADO', updated_at = ?
+      WHERE id_local = ?
+    `,
+    idServidor,
+    new Date().toISOString(),
+    idLocal
+  );
+}
+
+async function marcarLotePendienteConError(idLocal: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `
+      UPDATE lote
+      SET estado_sincronizacion = 'PENDIENTE', updated_at = ?
+      WHERE id_local = ?
+    `,
+    new Date().toISOString(),
+    idLocal
+  );
+}
+
+function normalizarTexto(valor: string | null | undefined): string {
+  return String(valor ?? '').trim().toLowerCase();
+}
+
+function sonNumerosCercanos(a: number, b: number): boolean {
+  return Math.abs(Number(a || 0) - Number(b || 0)) < 0.0001;
+}
+
+async function buscarLoteServidorExistente(item: LotePendiente): Promise<number | null> {
+  try {
+    const lotesServidor = await obtenerLotesPorProductoApi(item.idProducto);
+    const encontrado = lotesServidor.find((lote) => {
+      const coincideNombre = normalizarTexto(lote.nombre_lote) === normalizarTexto(item.nombreLote);
+      const coincideVariedad = normalizarTexto(lote.variedad) === normalizarTexto(item.tipoCultivo);
+      const coincideSiembra = normalizarTexto(lote.fecha_siembra) === normalizarTexto(item.fechaSiembraIso);
+      const coincideCosecha = normalizarTexto(lote.fecha_cosecha_est) === normalizarTexto(item.fechaCosechaIso);
+      const coincideSuperficie = sonNumerosCercanos(Number(lote.superficie), Number(item.superficie));
+      return coincideNombre && coincideVariedad && coincideSiembra && coincideCosecha && coincideSuperficie;
+    });
+
+    if (!encontrado) return null;
+    const id = Number(encontrado.id_lote);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function sincronizarLote(item: LotePendiente): Promise<number> {
+  let fotoSiembraUrl = item.fotoSiembraUrl;
+  if (fotoSiembraUrl && !fotoSiembraUrl.startsWith('http')) {
     try {
-      fotoSiembraUrl = await subirFotoSiembraApi(item.fotoTerrenoUri);
-    } catch (error) {
-      console.warn('No se pudo subir foto, se sincroniza el lote sin foto:', error);
+      fotoSiembraUrl = await subirFotoSiembraApi(fotoSiembraUrl);
+    } catch {
+      // Si el lote tiene foto local, no se crea en backend hasta subir la foto correctamente.
+      throw new Error('No se pudo subir la foto local del lote. Se mantiene pendiente.');
     }
   }
 
-  try {
-    const producto = await obtenerOCrearProductoApi({
-      nombre: item.tipoCultivo,
-      categoria: item.categoriaProducto,
-    });
-    idProducto = producto.id_producto;
-  } catch (error) {
-    console.warn('No se pudo obtener/crear producto, se usa producto por defecto:', error);
+  const idExistente = await buscarLoteServidorExistente(item);
+  if (idExistente) {
+    return idExistente;
   }
 
-  return { idProducto, fotoSiembraUrl };
-}
+  const loteServidor = await crearLoteApi({
+    id_productor: 1,
+    id_producto: item.idProducto,
+    nombre_lote: item.nombreLote,
+    superficie: item.superficie,
+    fecha_siembra: item.fechaSiembraIso,
+    fecha_cosecha_est: item.fechaCosechaIso,
+    rendimiento_estimado: item.rendimientoEstimado,
+    precio_venta_est: item.precioVentaEstimado,
+    foto_siembra_url: fotoSiembraUrl,
+    ubicacion: item.ubicacion || 'No especificada',
+    variedad: item.tipoCultivo || null,
+  });
 
-async function sincronizarItem(item: SiembraQueueItem): Promise<boolean> {
-  try {
-    const { idProducto, fotoSiembraUrl } = await prepararDatosServidor(item);
-
-    const loteServidor = await crearLoteApi({
-      id_productor: 1,
-      id_producto: idProducto,
-      nombre_lote: item.nombreLote,
-      superficie: item.superficie,
-      fecha_siembra: item.fechaSiembraIso,
-      fecha_cosecha_est: item.fechaCosechaIso,
-      rendimiento_estimado: item.rendimientoEstimado,
-      precio_venta_est: item.precioVentaEstimado,
-      foto_siembra_url: fotoSiembraUrl,
-      ubicacion: item.ubicacion,
-      variedad: item.tipoCultivo,
-    });
-
-    await actualizarLoteLocal(item.idLocal, {
-      id_servidor: loteServidor.id_lote,
-      id_producto: idProducto,
-      estado_sincronizacion: 'SINCRONIZADO',
-    });
-
-    await actualizarItemCola(item.id, {
-      estado: 'COMPLETADO',
-      intentos: item.intentos + 1,
-      ultimoError: null,
-    });
-
-    return true;
-  } catch (error) {
-    const mensaje = error instanceof Error ? error.message : String(error);
-    await actualizarItemCola(item.id, {
-      estado: 'PENDIENTE',
-      intentos: item.intentos + 1,
-      ultimoError: mensaje,
-    });
-    return false;
+  const idServidor = Number(loteServidor.id_lote);
+  if (!Number.isFinite(idServidor) || idServidor <= 0) {
+    throw new Error('El backend no devolvio un id_lote valido.');
   }
+
+  return idServidor;
 }
 
 export async function sincronizarSiembrasPendientes(): Promise<{
@@ -171,17 +218,36 @@ export async function sincronizarSiembrasPendientes(): Promise<{
     return { procesados: 0, sincronizados: 0 };
   }
 
+  if (!(await hayConexionDisponible())) {
+    return { procesados: 0, sincronizados: 0 };
+  }
+
   syncEnCurso = true;
 
   try {
-    const cola = await leerColaSiembras();
-    const pendientes = cola.filter((item) => item.estado === 'PENDIENTE');
+    const pendientes = await obtenerLotesPendientes();
     let sincronizados = 0;
 
     for (const item of pendientes) {
-      const ok = await sincronizarItem(item);
-      if (ok) sincronizados += 1;
+      try {
+        const idServidor = await sincronizarLote(item);
+        await marcarLoteSincronizado(item.idLocal, idServidor);
+        sincronizados += 1;
+        emitirEventoSincronizacion({
+          tipo: 'LOTE_SINCRONIZADO',
+          idLocal: item.idLocal,
+          idServidor,
+        });
+      } catch {
+        await marcarLotePendienteConError(item.idLocal);
+      }
     }
+
+    emitirEventoSincronizacion({
+      tipo: 'SINCRONIZACION_COMPLETADA',
+      procesados: pendientes.length,
+      sincronizados,
+    });
 
     return { procesados: pendientes.length, sincronizados };
   } finally {
@@ -196,6 +262,7 @@ export async function registrarSiembraOfflineFirst(
     id_servidor: null,
     id_producto: input.productoDefaultId,
     nombre_lote: input.nombreLote,
+    ubicacion: input.ubicacion,
     variedad: input.tipoCultivo,
     superficie: input.superficie,
     fecha_siembra: input.fechaSiembraIso,
@@ -206,34 +273,12 @@ export async function registrarSiembraOfflineFirst(
     estado_sincronizacion: 'PENDIENTE',
   });
 
-  const ahora = new Date().toISOString();
-  const itemCola: SiembraQueueItem = {
-    id: crearIdCola(),
-    idLocal,
-    rubro: input.rubro,
-    categoriaProducto: input.categoriaProducto,
-    productoDefaultId: input.productoDefaultId,
-    nombreLote: input.nombreLote,
-    tipoCultivo: input.tipoCultivo,
-    ubicacion: input.ubicacion,
-    superficie: input.superficie,
-    fechaSiembraIso: input.fechaSiembraIso,
-    fechaCosechaIso: input.fechaCosechaIso,
-    rendimientoEstimado: input.rendimientoEstimado,
-    precioVentaEstimado: input.precioVentaEstimado,
-    fotoTerrenoUri: input.fotoTerrenoUri ?? null,
-    estado: 'PENDIENTE',
-    intentos: 0,
-    ultimoError: null,
-    createdAt: ahora,
-    updatedAt: ahora,
-  };
-
-  await agregarItemCola(itemCola);
-  const sincronizado = await sincronizarItem(itemCola);
+  void sincronizarSiembrasPendientes().catch((error) => {
+    console.warn('No se pudo iniciar la sincronizacion en segundo plano:', error);
+  });
 
   return {
-    estado: sincronizado ? 'COMPLETADO' : 'PENDIENTE',
+    estado: 'PENDIENTE',
     idLocal,
   };
 }
@@ -259,6 +304,16 @@ export function iniciarSincronizacionAutomaticaSiembras(): void {
     appStateSubscription = AppState.addEventListener('change', manejarCambioAppState);
   }
 
+  if (!netInfoUnsubscribe) {
+    netInfoUnsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) {
+        sincronizarSiembrasPendientes().catch((error) => {
+          console.warn('Error al sincronizar siembras al volver internet:', error);
+        });
+      }
+    });
+  }
+
   sincronizarSiembrasPendientes().catch((error) => {
     console.warn('Error en sincronizacion inicial de siembras:', error);
   });
@@ -273,5 +328,10 @@ export function detenerSincronizacionAutomaticaSiembras(): void {
   if (appStateSubscription) {
     appStateSubscription.remove();
     appStateSubscription = null;
+  }
+
+  if (netInfoUnsubscribe) {
+    netInfoUnsubscribe();
+    netInfoUnsubscribe = null;
   }
 }

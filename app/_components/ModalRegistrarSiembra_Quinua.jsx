@@ -19,6 +19,8 @@ import {
   iniciarSincronizacionAutomaticaSiembras,
   registrarSiembraOfflineFirst,
 } from '@/src/services/siembraStorageSync';
+import { obtenerProductosPorCategoriaApi } from '@/src/services/api';
+import { listarProductosLocales, sincronizarProductosPendientes } from '@/src/services/offlineProductsSync';
 
 LocaleConfig.locales.es = {
   monthNames: [
@@ -61,7 +63,6 @@ const COMUNIDADES = [
   'Patacamaya - Collani',
 ];
 
-const ID_PRODUCTO_QUINUA = 1;
 const CATEGORIA_QUINUA = 'Quinua';
 
 const formatearFecha = (fechaIso) => {
@@ -99,10 +100,48 @@ export default function ModalRegistrarSiembra_Quinua({ visible, onClose, onCreat
   const [modalCalendarioOpen, setModalCalendarioOpen] = useState(false);
   const [campoFechaActivo, setCampoFechaActivo] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [idProductoQuinua, setIdProductoQuinua] = useState(1);
 
   useEffect(() => {
     iniciarSincronizacionAutomaticaSiembras();
   }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    const resolverProductoQuinua = async () => {
+      await sincronizarProductosPendientes().catch(() => {
+        // Si no hay internet, usamos catalogo local.
+      });
+
+      const [locales, apiQuinua, apiGrano] = await Promise.all([
+        listarProductosLocales(),
+        obtenerProductosPorCategoriaApi('Quinua').catch(() => []),
+        obtenerProductosPorCategoriaApi('Grano').catch(() => []),
+      ]);
+
+      const catalogo = [
+        ...(Array.isArray(locales) ? locales : []),
+        ...(Array.isArray(apiQuinua) ? apiQuinua : []),
+        ...(Array.isArray(apiGrano) ? apiGrano : []),
+      ];
+
+      const encontradoPorNombre = catalogo.find((producto) =>
+        String(producto.nombre ?? '').toLowerCase().includes('quinua')
+      );
+
+      const encontradoPorCategoria = catalogo.find((producto) => {
+        const categoria = String(producto.categoria ?? '').toLowerCase();
+        return categoria === 'quinua' || categoria === 'grano';
+      });
+
+      const candidato = encontradoPorNombre || encontradoPorCategoria;
+      const id = Number(candidato?.id_producto ?? candidato?.idLocal ?? 1);
+      setIdProductoQuinua(id > 0 ? id : 1);
+    };
+
+    void resolverProductoQuinua();
+  }, [visible]);
 
   const actualizarCampo = (campo, valor) => {
     setForm((anterior) => ({ ...anterior, [campo]: valor }));
@@ -186,7 +225,7 @@ export default function ModalRegistrarSiembra_Quinua({ visible, onClose, onCreat
       const resultado = await registrarSiembraOfflineFirst({
         rubro: 'QUINUA',
         categoriaProducto: CATEGORIA_QUINUA,
-        productoDefaultId: ID_PRODUCTO_QUINUA,
+        productoDefaultId: idProductoQuinua,
         nombreLote: nombre,
         tipoCultivo: form.tipoCultivo,
         ubicacion: form.ubicacion,
@@ -200,13 +239,13 @@ export default function ModalRegistrarSiembra_Quinua({ visible, onClose, onCreat
 
       const mensaje =
         resultado.estado === 'COMPLETADO'
-          ? 'Lote guardado en el celular y sincronizado con la base de datos.'
-          : 'Lote guardado en el celular. Se sincronizara automaticamente cuando haya internet.';
+          ? `Lote #${resultado.idLocal} guardado y sincronizado con backend.`
+          : `Lote #${resultado.idLocal} guardado en estado PENDIENTE. Se subira automaticamente cuando haya conexion con backend.`;
 
       Alert.alert('Listo', mensaje);
       limpiarFormulario();
       if (onCreated) {
-        await onCreated();
+        void onCreated();
       }
       onClose();
     } catch (error) {

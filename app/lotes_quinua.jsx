@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { 
   Alert,
   View, 
@@ -11,6 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ModalRegistrarSiembra from './_components/ModalRegistrarSiembra_Quinua';
 import CalculadoraCostos from './_components/CalculadoraCostos_quinua';
@@ -19,19 +20,21 @@ import {
   actualizarLoteLocalPorServidor,
   eliminarLoteLocal,
   eliminarLoteLocalPorServidor,
-  marcarLoteComoSincronizado,
   obtenerLotesLocales,
-  obtenerLotesPendientesLocales,
 } from '@/src/services/database';
 import {
   actualizarLoteApi,
-  crearLoteApi,
   eliminarLoteApi,
   obtenerGastosPorLoteApi,
   obtenerLotesPorProductoApi,
   obtenerProductosPorCategoriaApi,
-  subirFotoSiembraApi,
 } from '@/src/services/api';
+import { listarProductosLocales, sincronizarProductosPendientes } from '@/src/services/offlineProductsSync';
+import {
+  iniciarSincronizacionAutomaticaSiembras,
+  suscribirEventosSincronizacionSiembras,
+  sincronizarSiembrasPendientes,
+} from '@/src/services/siembraStorageSync';
 
 const formatearFecha = (iso) => {
   if (!iso) return 'N/D';
@@ -74,48 +77,19 @@ export default function MisLotes_Quinua() {
     nombre: '',
     superficie: '',
   });
+  const [diagnosticoCarga, setDiagnosticoCarga] = useState('');
+  const [mensajeSync, setMensajeSync] = useState('');
 
-  const sincronizarLotesPendientes = async () => {
-    const pendientes = await obtenerLotesPendientesLocales();
-    if (!pendientes.length) return;
+  const cargarLotesLocalesInmediato = useCallback(async () => {
+    const esLoteQuinua = (item) => {
+      const idProducto = Number(item.id_producto || 0);
+      if (idProducto === 1) return true;
+      const variedad = String(item.variedad ?? '').toLowerCase();
+      const nombre = String(item.nombre_lote ?? '').toLowerCase();
+      return variedad.includes('quinua') || nombre.includes('quinua');
+    };
 
-    for (const lote of pendientes) {
-      try {
-        const superficie = Number(lote.superficie || 0);
-        const rendimiento = Number(lote.rendimiento_estimado || 0);
-        const precio = Number(lote.precio_venta_est || 0);
-        let fotoSiembraUrl = null;
-        if (lote.foto_siembra_uri_local) {
-          try {
-            fotoSiembraUrl = await subirFotoSiembraApi(lote.foto_siembra_uri_local);
-          } catch (errorFoto) {
-            console.warn('No se pudo sincronizar foto de lote quinua, se sincroniza solo datos:', errorFoto);
-          }
-        }
-
-        const loteServidor = await crearLoteApi({
-          id_productor: 1,
-          id_producto: lote.id_producto,
-          nombre_lote: lote.nombre_lote,
-          superficie: superficie > 0 ? superficie : 1,
-          fecha_siembra: lote.fecha_siembra,
-          fecha_cosecha_est: lote.fecha_cosecha_est,
-          rendimiento_estimado: rendimiento > 0 ? rendimiento : 1,
-          precio_venta_est: precio > 0 ? precio : 1,
-          foto_siembra_url: fotoSiembraUrl,
-          ubicacion: null,
-          variedad: lote.variedad,
-        });
-
-        await marcarLoteComoSincronizado(lote.id_local, loteServidor.id_lote);
-      } catch {
-        // Si sigue sin red, se mantiene pendiente para el siguiente intento.
-      }
-    }
-  };
-
-  const cargarLotesLocales = async () => {
-    const mapearLoteLocal = (item) => {
+    const mapearRapido = (item) => {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
       const precio = Number(item.precio_venta_est || 0);
@@ -123,7 +97,7 @@ export default function MisLotes_Quinua() {
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
       return {
-        key: item.id_servidor ? `srv-${item.id_servidor}` : `local-${item.id_local}`,
+        key: `local-${item.id_local}`,
         id: item.id_servidor || item.id_local,
         idLocal: item.id_local,
         idServidor: item.id_servidor,
@@ -131,11 +105,11 @@ export default function MisLotes_Quinua() {
         codigo: item.id_servidor ? `Q-BD-${item.id_servidor}` : `Q-LOCAL-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         producto: 'Quinua',
-        tipoProducto: item.variedad || 'Quinua Real',
+        tipoProducto: item.variedad || 'Sin variedad',
         imagen: item.foto_siembra_uri_local || 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
         imagenRemota: item.foto_siembra_uri_local || null,
         area: superficie,
-        comunidad: 'Comunidad registrada',
+        comunidad: item.ubicacion || 'No especificada',
         fechaSiembra: formatearFecha(item.fecha_siembra),
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
@@ -154,7 +128,108 @@ export default function MisLotes_Quinua() {
       };
     };
 
-    const mapearLoteBackend = (item) => {
+    const datosLocales = await obtenerLotesLocales();
+    const filtrados = Array.isArray(datosLocales) ? datosLocales.filter(esLoteQuinua) : [];
+    const visibles = filtrados.length > 0 ? filtrados : (Array.isArray(datosLocales) ? datosLocales : []);
+    const mapeados = visibles.map(mapearRapido);
+    setLotes(mapeados);
+    setDiagnosticoCarga(`Carga rapida local: ${mapeados.length}`);
+  }, []);
+
+  const cargarLotesLocales = useCallback(async () => {
+    const categoriasQuinua = new Set(['quinua', 'grano']);
+    const nombresQuinua = ['quinua'];
+
+    const extraerIdProducto = (producto) => Number(producto.id_producto ?? producto.idLocal ?? 0);
+    const extraerNombreProducto = (producto) => String(producto.nombre ?? '').trim();
+    const extraerCategoriaProducto = (producto) => String(producto.categoria ?? '').trim();
+
+    const esProductoQuinua = (producto) => {
+      const categoria = extraerCategoriaProducto(producto).toLowerCase();
+      const nombre = extraerNombreProducto(producto).toLowerCase();
+      if (categoriasQuinua.has(categoria)) return true;
+      return nombresQuinua.some((token) => nombre.includes(token));
+    };
+
+    const construirCatalogo = (productos) => {
+      const mapaNombre = new Map();
+      const idsQuinua = new Set();
+
+      for (const producto of productos) {
+        const id = extraerIdProducto(producto);
+        if (!id) continue;
+
+        const nombre = extraerNombreProducto(producto);
+        if (nombre) {
+          mapaNombre.set(id, nombre);
+        }
+
+        if (esProductoQuinua(producto)) {
+          idsQuinua.add(id);
+        }
+      }
+
+      // Mantener compatibilidad con lotes locales historicos creados con id_producto = 1.
+      idsQuinua.add(1);
+
+      return { mapaNombre, idsQuinua };
+    };
+
+    const resolverNombreProducto = (idProducto, mapaNombre) => {
+      const id = Number(idProducto || 0);
+      if (!id) return 'Quinua';
+      return mapaNombre.get(id) || 'Quinua';
+    };
+
+    const esLoteQuinuaFlexible = (item, idsProductoQuinua) => {
+      const idProducto = Number(item.id_producto || 0);
+      if (idsProductoQuinua.has(idProducto)) return true;
+
+      const variedad = String(item.variedad ?? '').toLowerCase();
+      const nombre = String(item.nombre_lote ?? '').toLowerCase();
+      return variedad.includes('quinua') || nombre.includes('quinua');
+    };
+
+    const mapearLoteLocal = (item, mapaNombre) => {
+      const superficie = Number(item.superficie || 0);
+      const rendimiento = Number(item.rendimiento_estimado || 0);
+      const precio = Number(item.precio_venta_est || 0);
+      const ingresoEstimado = rendimiento * precio;
+      const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
+
+      return {
+        key: `local-${item.id_local}`,
+        id: item.id_servidor || item.id_local,
+        idLocal: item.id_local,
+        idServidor: item.id_servidor,
+        idProducto: item.id_producto,
+        codigo: item.id_servidor ? `Q-BD-${item.id_servidor}` : `Q-LOCAL-${item.id_local}`,
+        nombre: item.nombre_lote || `Lote ${item.id_local}`,
+        producto: resolverNombreProducto(item.id_producto, mapaNombre),
+        tipoProducto: item.variedad || 'Sin variedad',
+        imagen: item.foto_siembra_uri_local || 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
+        imagenRemota: item.foto_siembra_uri_local || null,
+        area: superficie,
+        comunidad: item.ubicacion || 'No especificada',
+        fechaSiembra: formatearFecha(item.fecha_siembra),
+        cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
+        fechaSiembraIso: item.fecha_siembra,
+        fechaCosechaIso: item.fecha_cosecha_est,
+        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
+        precioVentaEst: precio > 0 ? precio : 1,
+        progreso,
+        estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'En Crecimiento' : 'Pendiente Sync',
+        estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
+        faseActual,
+        estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
+        inversion: 0,
+        ingresoEstimado,
+        proyeccion: ingresoEstimado,
+        mostrarCosecha: false,
+      };
+    };
+
+    const mapearLoteBackend = (item, mapaNombre) => {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
       const precio = Number(item.precio_venta_est || 0);
@@ -169,8 +244,8 @@ export default function MisLotes_Quinua() {
         idProducto: item.id_producto,
         codigo: `Q-BD-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
-        producto: 'Quinua',
-        tipoProducto: item.variedad || 'Quinua Real',
+        producto: resolverNombreProducto(item.id_producto, mapaNombre),
+        tipoProducto: item.variedad || 'Sin variedad',
         imagen: item.foto_siembra_url || 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
         imagenRemota: item.foto_siembra_url || null,
         area: superficie,
@@ -193,6 +268,25 @@ export default function MisLotes_Quinua() {
       };
     };
 
+    const mapearTodosLocalesSinFiltro = (datosLocales, mapaNombre) => {
+      const origen = Array.isArray(datosLocales) ? datosLocales : [];
+      return origen.map((item) => mapearLoteLocal(item, mapaNombre));
+    };
+
+    const cargarSoloLocales = async () => {
+      const datosLocales = await obtenerLotesLocales();
+      const idsBase = new Set([1]);
+      const mapaNombreVacio = new Map();
+      const localesFiltradosBase = Array.isArray(datosLocales)
+        ? datosLocales.filter((item) => esLoteQuinuaFlexible(item, idsBase))
+        : [];
+      const localesFiltrados = localesFiltradosBase.length > 0
+        ? localesFiltradosBase
+        : (Array.isArray(datosLocales) ? datosLocales : []);
+      const localesMapeados = localesFiltrados.map((item) => mapearLoteLocal(item, mapaNombreVacio));
+      return enriquecerConGastos(localesMapeados);
+    };
+
     const enriquecerConGastos = async (lotesBase) => {
       return Promise.all(
         lotesBase.map(async (lote) => {
@@ -206,75 +300,180 @@ export default function MisLotes_Quinua() {
               inversion,
               proyeccion: (lote.ingresoEstimado || 0) - inversion,
             };
-          } catch {
+          } catch (error) {
+            console.warn(`No se pudieron cargar gastos del lote ${lote.idServidor}:`, error);
             return lote;
           }
         })
       );
     };
 
-    try {
-      await sincronizarLotesPendientes();
+    const cargarVistaLocalRapida = async (idsProductoQuinua, mapaNombre) => {
+      try {
+        const datosLocales = await obtenerLotesLocales();
+        const localesFiltradosBase = Array.isArray(datosLocales)
+          ? datosLocales.filter((item) => esLoteQuinuaFlexible(item, idsProductoQuinua))
+          : [];
+        const locales = localesFiltradosBase.length > 0
+          ? localesFiltradosBase
+          : (Array.isArray(datosLocales) ? datosLocales : []);
+        const localesMapeados = locales.map((item) => mapearLoteLocal(item, mapaNombre));
+        const localesConGastos = await enriquecerConGastos(localesMapeados);
+        setDiagnosticoCarga(`SQLite local: ${Array.isArray(datosLocales) ? datosLocales.length : 0} | visibles: ${localesConGastos.length}`);
+        setLotes(localesConGastos);
+      } catch (errorLocal) {
+        console.warn('No se pudieron cargar lotes locales rapidos de quinua:', errorLocal);
+        setDiagnosticoCarga('Error cargando SQLite local rapido');
+      }
+    };
 
-      const [datosLocales, productosQuinuaNuevos, productosQuinuaLegacy] = await Promise.all([
+    let lotesLocalesBootstrap = [];
+    try {
+      lotesLocalesBootstrap = await cargarSoloLocales();
+      if (lotesLocalesBootstrap.length > 0) {
+        setDiagnosticoCarga(`Bootstrap local visibles: ${lotesLocalesBootstrap.length}`);
+        setLotes(lotesLocalesBootstrap);
+      } else {
+        setDiagnosticoCarga('Bootstrap local sin lotes visibles');
+      }
+    } catch (errorLocalInicial) {
+      console.warn('No se pudieron cargar lotes locales iniciales de quinua:', errorLocalInicial);
+      setDiagnosticoCarga('Error en bootstrap local');
+    }
+
+    await sincronizarProductosPendientes().catch(() => {
+      // Si falla la sincronizacion de catalogo, continuamos con datos locales.
+    });
+
+    try {
+      const [datosLocales, productosLocales, productosQuinuaNuevos, productosQuinuaLegacy] = await Promise.all([
         obtenerLotesLocales(),
+        listarProductosLocales(),
         obtenerProductosPorCategoriaApi('Quinua'),
         obtenerProductosPorCategoriaApi('Grano'),
       ]);
 
-      const idsProductoQuinua = new Set([
-        1,
-        ...(Array.isArray(productosQuinuaNuevos) ? productosQuinuaNuevos : []).map((producto) => producto.id_producto),
-        ...(Array.isArray(productosQuinuaLegacy) ? productosQuinuaLegacy : []).map((producto) => producto.id_producto),
+      const catalogo = construirCatalogo([
+        ...(Array.isArray(productosLocales) ? productosLocales : []),
+        ...(Array.isArray(productosQuinuaNuevos) ? productosQuinuaNuevos : []),
+        ...(Array.isArray(productosQuinuaLegacy) ? productosQuinuaLegacy : []),
       ]);
 
+      await cargarVistaLocalRapida(catalogo.idsQuinua, catalogo.mapaNombre);
+
       const lotesPorProducto = await Promise.all(
-        [...idsProductoQuinua].map((idProducto) => obtenerLotesPorProductoApi(idProducto))
+        [...catalogo.idsQuinua].map((idProducto) => obtenerLotesPorProductoApi(idProducto))
       );
 
       const datosBackend = lotesPorProducto.flat();
 
       const locales = Array.isArray(datosLocales)
-        ? datosLocales.filter((item) => idsProductoQuinua.has(item.id_producto))
+        ? datosLocales.filter((item) => esLoteQuinuaFlexible(item, catalogo.idsQuinua))
         : [];
+      const localesFinales = locales.length > 0 ? locales : (Array.isArray(datosLocales) ? datosLocales : []);
 
       const remotos = Array.isArray(datosBackend) ? datosBackend : [];
       const idsRemotos = new Set(remotos.map((item) => item.id_lote));
-      const localesSinDuplicado = locales.filter((item) => !item.id_servidor || !idsRemotos.has(item.id_servidor));
+      
+      // Mostrar todos los lotes remotos (del backend)
+      const combinados = [...remotos.map((item) => mapearLoteBackend(item, catalogo.mapaNombre))];
 
-      const combinados = [...remotos.map(mapearLoteBackend), ...localesSinDuplicado.map(mapearLoteLocal)];
+      // Agregar lotes locales PENDIENTES (no sincronizados)
+      const localesPendientes = localesFinales.filter((item) => !item.id_servidor || !idsRemotos.has(item.id_servidor));
+      combinados.push(...localesPendientes.map((item) => mapearLoteLocal(item, catalogo.mapaNombre)));
       const combinadosConGastos = await enriquecerConGastos(combinados);
-      setLotes(combinadosConGastos);
+      if (combinadosConGastos.length > 0) {
+        setDiagnosticoCarga(`Remotos: ${remotos.length} | locales usados: ${localesPendientes.length} | visibles: ${combinadosConGastos.length}`);
+        setLotes(combinadosConGastos);
+      } else {
+        const todosLocalesMapeados = mapearTodosLocalesSinFiltro(datosLocales, catalogo.mapaNombre);
+        const todosLocalesConGastos = await enriquecerConGastos(todosLocalesMapeados);
+        setDiagnosticoCarga(`Fallback total SQLite: ${todosLocalesConGastos.length}`);
+        setLotes(todosLocalesConGastos);
+      }
     } catch (error) {
       console.warn('No se pudieron cargar lotes de quinua desde backend, usando local:', error);
 
       try {
-        const datosLocales = await obtenerLotesLocales();
-        const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item) => item.id_producto === 1)
+        const [datosLocales, productosLocales] = await Promise.all([
+          obtenerLotesLocales(),
+          listarProductosLocales(),
+        ]);
+
+        const catalogo = construirCatalogo(Array.isArray(productosLocales) ? productosLocales : []);
+        const localesFiltradosBase = Array.isArray(datosLocales)
+          ? datosLocales.filter((item) => esLoteQuinuaFlexible(item, catalogo.idsQuinua))
           : [];
-        const localesMapeados = locales.map(mapearLoteLocal);
+        const locales = localesFiltradosBase.length > 0
+          ? localesFiltradosBase
+          : (Array.isArray(datosLocales) ? datosLocales : []);
+        const localesMapeados = locales.map((item) => mapearLoteLocal(item, catalogo.mapaNombre));
         const localesConGastos = await enriquecerConGastos(localesMapeados);
-        setLotes(localesConGastos);
+        if (localesConGastos.length > 0) {
+          setDiagnosticoCarga(`Fallback local visibles: ${localesConGastos.length}`);
+          setLotes(localesConGastos);
+        } else {
+          const todosLocalesMapeados = mapearTodosLocalesSinFiltro(datosLocales, catalogo.mapaNombre);
+          const todosLocalesConGastos = await enriquecerConGastos(todosLocalesMapeados);
+          setDiagnosticoCarga(`Fallback total SQLite: ${todosLocalesConGastos.length}`);
+          setLotes(todosLocalesConGastos);
+        }
       } catch (localError) {
         console.warn('No se pudieron cargar lotes locales de quinua:', localError);
-        setLotes([]);
+        if (lotesLocalesBootstrap.length > 0) {
+          setDiagnosticoCarga(`Se mantiene bootstrap: ${lotesLocalesBootstrap.length}`);
+          setLotes(lotesLocalesBootstrap);
+        } else {
+          setDiagnosticoCarga('Sin datos para mostrar');
+        }
       }
     }
-  };
-
-  useEffect(() => {
-    cargarLotesLocales();
   }, []);
 
   useEffect(() => {
+    iniciarSincronizacionAutomaticaSiembras();
+    void cargarLotesLocalesInmediato();
+    void cargarLotesLocales();
+  }, [cargarLotesLocales, cargarLotesLocalesInmediato]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void cargarLotesLocalesInmediato();
+      void cargarLotesLocales();
+    }, [cargarLotesLocales, cargarLotesLocalesInmediato])
+  );
+
+  useEffect(() => {
     if (!modalOpen) {
-      cargarLotesLocales();
+      void cargarLotesLocalesInmediato();
+      void cargarLotesLocales();
     }
-  }, [modalOpen]);
+  }, [modalOpen, cargarLotesLocales, cargarLotesLocalesInmediato]);
+
+  useEffect(() => {
+    const unsubscribe = suscribirEventosSincronizacionSiembras((evento) => {
+      if (evento.tipo === 'LOTE_SINCRONIZADO') {
+        setMensajeSync(`Lote ${evento.idLocal} sincronizado con backend.`);
+      }
+
+      if (evento.tipo === 'SINCRONIZACION_COMPLETADA' && evento.sincronizados > 0) {
+        setMensajeSync(`Sincronizacion completada: ${evento.sincronizados}/${evento.procesados} lote(s).`);
+        void cargarLotesLocales();
+      }
+    });
+
+    return unsubscribe;
+  }, [cargarLotesLocales]);
 
   const manejarCreacionLote = async () => {
-    await cargarLotesLocales();
+    setMensajeSync('Siembra creada en PENDIENTE. Se subira cuando haya conexion con backend.');
+    await cargarLotesLocalesInmediato();
+
+    void sincronizarSiembrasPendientes().catch(() => {
+      // Si falla backend/red, queda pendiente para reintento automatico.
+    });
+
+    void cargarLotesLocales();
   };
 
   const abrirModalEdicion = (lote) => {
@@ -396,6 +595,8 @@ export default function MisLotes_Quinua() {
           <View>
             <Text style={styles.title}>Mis Lotes de Quinua</Text>
             <Text style={styles.subtitle}>Gestiona tus cultivos de quinua, costos y proyecciones</Text>
+            {!!mensajeSync && <Text style={styles.syncText}>{mensajeSync}</Text>}
+            <Text style={styles.debugText}>{diagnosticoCarga}</Text>
           </View>
           
           <TouchableOpacity 
@@ -490,7 +691,7 @@ export default function MisLotes_Quinua() {
             <View style={styles.loteContent}>
               <Text style={styles.loteNombre}>{lote.nombre}</Text>
               <Text style={styles.loteCultivo}>Producto: {lote.producto}</Text>
-              <Text style={styles.loteCultivo}>Tipo: {lote.tipoProducto}</Text>
+              <Text style={styles.loteCultivo}>Variedad: {lote.tipoProducto}</Text>
 
               <View style={styles.detallesGrid}>
                 <View style={styles.detalleRow}>
@@ -635,6 +836,8 @@ const styles = StyleSheet.create({
   header: { marginBottom: 20, marginTop: 10 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#1f2937', letterSpacing: -0.5 },
   subtitle: { fontSize: 13, color: '#6b7280', marginTop: 4, marginBottom: 16 },
+  syncText: { fontSize: 11, color: '#b45309', marginTop: -10, marginBottom: 6, fontWeight: '600' },
+  debugText: { fontSize: 11, color: '#2563eb', marginTop: -10, marginBottom: 8 },
   primaryButton: { backgroundColor: '#2eaa51', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8, elevation: 2 },
   primaryButtonText: { color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 6 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },

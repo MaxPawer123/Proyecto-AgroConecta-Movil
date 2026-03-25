@@ -205,13 +205,13 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
 
       const mensaje =
         resultado.estado === 'COMPLETADO'
-          ? 'Lote guardado en el celular y sincronizado con la base de datos.'
-          : 'Lote guardado en el celular. Se sincronizara automaticamente cuando haya internet.';
+          ? `Lote #${resultado.idLocal} guardado y sincronizado con backend.`
+          : `Lote #${resultado.idLocal} guardado en estado PENDIENTE. Se subira automaticamente cuando haya conexion con backend.`;
 
       Alert.alert('Listo', mensaje);
       limpiarFormulario();
       if (onCreated) {
-        await onCreated();
+        void onCreated();
       }
       onClose();
     } catch (error) {
@@ -244,7 +244,7 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
               <Text style={styles.label}>Nombre/Codigo del Lote</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Lote 1 - Quinua Real"
+                placeholder="Lote 1 - Zanahoria"
                 placeholderTextColor="#9ca3af"
                 value={form.nombre}
                 onChangeText={(texto) => actualizarCampo('nombre', texto)}
