@@ -205,8 +205,8 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
 
       const mensaje =
         resultado.estado === 'COMPLETADO'
-          ? `Lote #${resultado.idLocal} guardado y sincronizado con backend.`
-          : `Lote #${resultado.idLocal} guardado en estado PENDIENTE. Se subira automaticamente cuando haya conexion con backend.`;
+          ? `Lote guardado y sincronizado.`
+          : `Lote guardado en estado local. Se sincronizará automáticamente cuando haya conexión.`;
 
       Alert.alert('Listo', mensaje);
       limpiarFormulario();

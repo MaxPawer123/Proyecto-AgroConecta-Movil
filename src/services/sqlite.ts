@@ -220,6 +220,27 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   await runSafe(db, 'DROP TABLE IF EXISTS costos');
   await runSafe(db, 'DROP TABLE IF EXISTS siembras_queue');
   await runSafe(db, 'DROP TABLE IF EXISTS productos_offline');
+
+  // Compatibilidad con bases locales antiguas que no tienen todas las columnas offline.
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_gasto INTEGER');
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_lote_local INTEGER');
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_lote_servidor INTEGER');
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_lote INTEGER');
+  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN tipo_costo TEXT NOT NULL DEFAULT 'VARIABLE'");
+  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN modalidad_pago TEXT NOT NULL DEFAULT 'NA'");
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN fecha_gasto TEXT');
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN sincronizado INTEGER NOT NULL DEFAULT 0');
+  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN ultimo_error TEXT');
+  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
+  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+  await runSafe(db, "UPDATE gasto_lote SET fecha_gasto = datetime('now') WHERE fecha_gasto IS NULL OR fecha_gasto = ''");
+
+  await runSafe(db, 'ALTER TABLE produccion_lote ADD COLUMN id_produccion INTEGER');
+  await runSafe(db, 'ALTER TABLE produccion_lote ADD COLUMN id_lote_local INTEGER');
+  await runSafe(db, 'ALTER TABLE produccion_lote ADD COLUMN id_lote INTEGER');
+  await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE'");
+  await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
+  await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
 }
 
 export async function getLoteServerColumn(): Promise<'id_lote' | 'id_servidor'> {

@@ -68,7 +68,8 @@ const calcularProgresoYCiclo = (fechaSiembraIso, fechaCosechaIso) => {
 export default function MisLotes_Quinua() {
   const [modalOpen, setModalOpen] = useState(false);
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false);
-  const [loteSeleccionadoId, setLoteSeleccionadoId] = useState(null);
+  const [loteSeleccionadoIdServidor, setLoteSeleccionadoIdServidor] = useState(null);
+  const [loteSeleccionadoIdLocal, setLoteSeleccionadoIdLocal] = useState(null);
   const [lotes, setLotes] = useState([]);
   const [modalEditarOpen, setModalEditarOpen] = useState(false);
   const [loteEditando, setLoteEditando] = useState(null);
@@ -577,7 +578,8 @@ export default function MisLotes_Quinua() {
   if (mostrarCalculadora) {
     return (
       <CalculadoraCostos
-        idLote={loteSeleccionadoId ?? undefined}
+        idLoteServidor={loteSeleccionadoIdServidor ?? undefined}
+        idLoteLocal={loteSeleccionadoIdLocal ?? undefined}
         onBack={async () => {
           setMostrarCalculadora(false);
           await cargarLotesLocales();
@@ -596,7 +598,6 @@ export default function MisLotes_Quinua() {
             <Text style={styles.title}>Mis Lotes de Quinua</Text>
             <Text style={styles.subtitle}>Gestiona tus cultivos de quinua, costos y proyecciones</Text>
             {!!mensajeSync && <Text style={styles.syncText}>{mensajeSync}</Text>}
-            <Text style={styles.debugText}>{diagnosticoCarga}</Text>
           </View>
           
           <TouchableOpacity 
@@ -741,14 +742,8 @@ export default function MisLotes_Quinua() {
                 <TouchableOpacity 
                   style={styles.btnGestionar}
                   onPress={() => {
-                    if (!lote.idServidor) {
-                      Alert.alert(
-                        'Lote pendiente',
-                        'Este lote aún no está sincronizado con backend. Sincroniza primero para ver gastos por lote.'
-                      );
-                      return;
-                    }
-                    setLoteSeleccionadoId(lote.idServidor);
+                    setLoteSeleccionadoIdServidor(lote.idServidor);
+                    setLoteSeleccionadoIdLocal(lote.idLocal);
                     setMostrarCalculadora(true);
                   }}
                 >

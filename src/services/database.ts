@@ -31,18 +31,48 @@ export type LoteLocal = {
   estado_sincronizacion: string;
 };
 
+type ModalidadPago = 'CICLO' | 'ANUAL' | 'NA';
+
 type CostoLocal = {
   id_local: number;
   id_servidor: number | null;
   id_lote_local: number | null;
   id_lote_servidor: number | null;
-  concepto: string;
+  categoria: string;
+  descripcion: string | null;
   cantidad: number;
   costo_unitario: number;
+  monto_total: number;
   tipo_costo: 'FIJO' | 'VARIABLE';
-  fecha_costo_iso: string;
+  modalidad_pago: ModalidadPago;
+  fecha_gasto: string;
   sincronizado: boolean;
   ultimo_error: string | null;
+};
+
+type GuardarCostoLocalInput = {
+  id_lote_local?: number | null;
+  id_lote_servidor?: number | null;
+  categoria: string;
+  descripcion?: string | null;
+  cantidad: number;
+  costo_unitario: number;
+  tipo_costo?: 'FIJO' | 'VARIABLE';
+  modalidad_pago?: ModalidadPago;
+  fecha_gasto?: string;
+  sincronizado?: boolean;
+  ultimo_error?: string | null;
+};
+
+type ProduccionLocal = {
+  id_local: number;
+  id_produccion: number | null;
+  id_lote_local: number | null;
+  id_lote_servidor: number | null;
+  fecha_registro: string;
+  cantidad_obtenida: number;
+  precio_venta: number;
+  estado_sincronizacion: string;
 };
 
 function mapRowToLote(row: Record<string, unknown>): LoteLocal {
@@ -240,9 +270,14 @@ export async function eliminarLoteLocalPorServidor(idServidor: number): Promise<
 }
 
 // Funciones equivalentes para costos locales (tabla requerida para offline-first).
-export async function guardarCostoLocal(input: Omit<CostoLocal, 'id_local'>): Promise<number> {
+export async function guardarCostoLocal(input: GuardarCostoLocalInput): Promise<number> {
   const db = await getDb();
   const now = new Date().toISOString();
+  const fechaGasto = input.fecha_gasto ?? new Date().toISOString();
+  const tipoCosto = input.tipo_costo ?? 'VARIABLE';
+  const modalidad = input.modalidad_pago ?? 'NA';
+  const montoTotal = input.cantidad * input.costo_unitario;
+
   const result = await db.runAsync(
     `
       INSERT INTO gasto_lote (
@@ -264,18 +299,18 @@ export async function guardarCostoLocal(input: Omit<CostoLocal, 'id_local'>): Pr
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    input.id_servidor ?? null,
+    null,
     input.id_lote_local ?? null,
     input.id_lote_servidor ?? null,
     input.id_lote_servidor ?? null,
-    input.concepto,
-    null,
+    input.categoria,
+    input.descripcion ?? null,
     input.cantidad,
     input.costo_unitario,
-    input.cantidad * input.costo_unitario,
-    input.tipo_costo,
-    'NA',
-    input.fecha_costo_iso,
+    montoTotal,
+    tipoCosto,
+    modalidad,
+    fechaGasto,
     input.sincronizado ? 1 : 0,
     input.ultimo_error ?? null,
     now,
@@ -309,20 +344,7 @@ export async function obtenerCostosLocalesPorLote(params: {
     ...values
   );
 
-  return rows.map((row: Record<string, unknown>) => ({
-    id_local: Number(row.id_local),
-    id_servidor: row.id_gasto === null || row.id_gasto === undefined ? null : Number(row.id_gasto),
-    id_lote_local: row.id_lote_local === null || row.id_lote_local === undefined ? null : Number(row.id_lote_local),
-    id_lote_servidor:
-      row.id_lote_servidor === null || row.id_lote_servidor === undefined ? null : Number(row.id_lote_servidor),
-    concepto: String(row.categoria ?? ''),
-    cantidad: Number(row.cantidad ?? 0),
-    costo_unitario: Number(row.costo_unitario ?? 0),
-    tipo_costo: (String(row.tipo_costo ?? 'VARIABLE') as 'FIJO' | 'VARIABLE'),
-    fecha_costo_iso: String(row.fecha_gasto ?? ''),
-    sincronizado: Number(row.sincronizado ?? 0) === 1,
-    ultimo_error: row.ultimo_error ? String(row.ultimo_error) : null,
-  }));
+  return rows.map(mapRowToCostoLocal);
 }
 
 export async function actualizarCostoLocal(
@@ -334,11 +356,14 @@ export async function actualizarCostoLocal(
     id_servidor: 'id_gasto',
     id_lote_local: 'id_lote_local',
     id_lote_servidor: 'id_lote_servidor',
-    concepto: 'categoria',
+    categoria: 'categoria',
+    descripcion: 'descripcion',
     cantidad: 'cantidad',
     costo_unitario: 'costo_unitario',
+    monto_total: 'monto_total',
     tipo_costo: 'tipo_costo',
-    fecha_costo_iso: 'fecha_gasto',
+    modalidad_pago: 'modalidad_pago',
+    fecha_gasto: 'fecha_gasto',
     sincronizado: 'sincronizado',
     ultimo_error: 'ultimo_error',
   };
@@ -367,4 +392,170 @@ export async function marcarCostoComoSincronizado(idLocal: number, idServidor: n
     sincronizado: true,
     ultimo_error: null,
   });
+}
+
+export async function obtenerGastosPendientesPorLoteLocal(idLoteLocal: number): Promise<CostoLocal[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `
+      SELECT *
+      FROM gasto_lote
+      WHERE id_lote_local = ? AND sincronizado = 0
+      ORDER BY id_local DESC
+    `,
+    idLoteLocal
+  );
+
+  return rows.map(mapRowToCostoLocal);
+}
+
+export async function eliminarCostoLocal(idLocal: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM gasto_lote WHERE id_local = ?', idLocal);
+}
+
+function mapRowToCostoLocal(row: Record<string, unknown>): CostoLocal {
+  return {
+    id_local: Number(row.id_local),
+    id_servidor: row.id_gasto === null || row.id_gasto === undefined ? null : Number(row.id_gasto),
+    id_lote_local: row.id_lote_local === null || row.id_lote_local === undefined ? null : Number(row.id_lote_local),
+    id_lote_servidor:
+      row.id_lote_servidor === null || row.id_lote_servidor === undefined ? null : Number(row.id_lote_servidor),
+    categoria: String(row.categoria ?? ''),
+    descripcion: row.descripcion ? String(row.descripcion) : null,
+    cantidad: Number(row.cantidad ?? 0),
+    costo_unitario: Number(row.costo_unitario ?? 0),
+    monto_total: Number(row.monto_total ?? 0),
+    tipo_costo: (String(row.tipo_costo ?? 'VARIABLE') as 'FIJO' | 'VARIABLE'),
+    modalidad_pago: (String(row.modalidad_pago ?? 'NA') as ModalidadPago),
+    fecha_gasto: String(row.fecha_gasto ?? ''),
+    sincronizado: Number(row.sincronizado ?? 0) === 1,
+    ultimo_error: row.ultimo_error ? String(row.ultimo_error) : null,
+  };
+}
+
+function mapRowToProduccionLocal(row: Record<string, unknown>): ProduccionLocal {
+  return {
+    id_local: Number(row.id_local),
+    id_produccion: row.id_produccion === null || row.id_produccion === undefined ? null : Number(row.id_produccion),
+    id_lote_local: row.id_lote_local === null || row.id_lote_local === undefined ? null : Number(row.id_lote_local),
+    id_lote_servidor: row.id_lote === null || row.id_lote === undefined ? null : Number(row.id_lote),
+    fecha_registro: String(row.fecha_registro ?? ''),
+    cantidad_obtenida: Number(row.cantidad_obtenida ?? 0),
+    precio_venta: Number(row.precio_venta ?? 0),
+    estado_sincronizacion: String(row.estado_sincronizacion ?? 'PENDIENTE'),
+  };
+}
+
+export async function guardarBorradorProduccionLocal(input: {
+  idLoteLocal?: number | null;
+  idLoteServidor?: number | null;
+  cantidadObtenida: number;
+  precioVenta: number;
+}): Promise<void> {
+  if ((!input.idLoteLocal || input.idLoteLocal <= 0) && (!input.idLoteServidor || input.idLoteServidor <= 0)) {
+    return;
+  }
+
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const fechaRegistro = now.split('T')[0];
+
+  const where: string[] = [];
+  const values: number[] = [];
+
+  if (typeof input.idLoteLocal === 'number' && input.idLoteLocal > 0) {
+    where.push('id_lote_local = ?');
+    values.push(input.idLoteLocal);
+  }
+
+  if (typeof input.idLoteServidor === 'number' && input.idLoteServidor > 0) {
+    where.push('id_lote = ?');
+    values.push(input.idLoteServidor);
+  }
+
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' OR ')}` : '';
+  const existente = await db.getFirstAsync<Record<string, unknown>>(
+    `SELECT id_local FROM produccion_lote ${whereSql} ORDER BY id_local DESC LIMIT 1`,
+    ...values
+  );
+
+  if (existente?.id_local !== undefined && existente?.id_local !== null) {
+    await db.runAsync(
+      `
+        UPDATE produccion_lote
+        SET
+          id_lote_local = ?,
+          id_lote = ?,
+          fecha_registro = ?,
+          cantidad_obtenida = ?,
+          precio_venta = ?,
+          estado_sincronizacion = 'PENDIENTE',
+          updated_at = ?
+        WHERE id_local = ?
+      `,
+      input.idLoteLocal ?? null,
+      input.idLoteServidor ?? null,
+      fechaRegistro,
+      input.cantidadObtenida,
+      input.precioVenta,
+      now,
+      Number(existente.id_local)
+    );
+    return;
+  }
+
+  await db.runAsync(
+    `
+      INSERT INTO produccion_lote (
+        id_produccion,
+        id_lote_local,
+        id_lote,
+        fecha_registro,
+        cantidad_obtenida,
+        precio_venta,
+        estado_sincronizacion,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    null,
+    input.idLoteLocal ?? null,
+    input.idLoteServidor ?? null,
+    fechaRegistro,
+    input.cantidadObtenida,
+    input.precioVenta,
+    'PENDIENTE',
+    now,
+    now
+  );
+}
+
+export async function obtenerBorradorProduccionLocal(params: {
+  idLoteLocal?: number;
+  idLoteServidor?: number;
+}): Promise<ProduccionLocal | null> {
+  const db = await getDb();
+  const where: string[] = [];
+  const values: number[] = [];
+
+  if (typeof params.idLoteLocal === 'number' && params.idLoteLocal > 0) {
+    where.push('id_lote_local = ?');
+    values.push(params.idLoteLocal);
+  }
+
+  if (typeof params.idLoteServidor === 'number' && params.idLoteServidor > 0) {
+    where.push('id_lote = ?');
+    values.push(params.idLoteServidor);
+  }
+
+  if (where.length === 0) return null;
+
+  const row = await db.getFirstAsync<Record<string, unknown>>(
+    `SELECT * FROM produccion_lote WHERE ${where.join(' OR ')} ORDER BY id_local DESC LIMIT 1`,
+    ...values
+  );
+
+  if (!row) return null;
+  return mapRowToProduccionLocal(row);
 }

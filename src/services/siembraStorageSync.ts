@@ -1,7 +1,12 @@
 import { AppState, type AppStateStatus } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { crearLoteApi, obtenerLotesPorProductoApi, subirFotoSiembraApi } from '@/src/services/api';
-import { insertarLoteLocal } from '@/src/services/database';
+import { crearLoteApi, crearGastoApi, obtenerLotesPorProductoApi, subirFotoSiembraApi } from '@/src/services/api';
+import {
+  insertarLoteLocal,
+  obtenerGastosPendientesPorLoteLocal,
+  marcarCostoComoSincronizado,
+  actualizarCostoLocal,
+} from '@/src/services/database';
 import { getDb, getLoteServerColumn } from './sqlite';
 
 const SYNC_INTERVAL_MS = 10000;
@@ -210,6 +215,37 @@ async function sincronizarLote(item: LotePendiente): Promise<number> {
   return idServidor;
 }
 
+async function sincronizarGastosLocales(idLocal: number, idServidor: number): Promise<void> {
+  const gastosPendientes = await obtenerGastosPendientesPorLoteLocal(idLocal);
+  if (gastosPendientes.length === 0) return;
+
+  for (const gasto of gastosPendientes) {
+    try {
+      const nuevoGasto = await crearGastoApi({
+        id_lote: idServidor,
+        categoria: gasto.categoria,
+        descripcion: gasto.descripcion ?? undefined,
+        cantidad: gasto.cantidad,
+        costo_unitario: gasto.costo_unitario,
+        tipo_costo: gasto.tipo_costo,
+        modalidad_pago: gasto.modalidad_pago,
+      });
+
+      const idGasto = Number(nuevoGasto.id_gasto);
+      if (!Number.isFinite(idGasto) || idGasto <= 0) {
+        throw new Error('El backend devolvió un id_gasto inválido.');
+      }
+
+      await marcarCostoComoSincronizado(gasto.id_local, idGasto);
+    } catch (error) {
+      console.warn('No se pudo sincronizar gasto local:', error);
+      await actualizarCostoLocal(gasto.id_local, {
+        ultimo_error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
 export async function sincronizarSiembrasPendientes(): Promise<{
   procesados: number;
   sincronizados: number;
@@ -232,6 +268,11 @@ export async function sincronizarSiembrasPendientes(): Promise<{
       try {
         const idServidor = await sincronizarLote(item);
         await marcarLoteSincronizado(item.idLocal, idServidor);
+        try {
+          await sincronizarGastosLocales(item.idLocal, idServidor);
+        } catch (error) {
+          console.warn('Error al sincronizar gastos del lote:', error);
+        }
         sincronizados += 1;
         emitirEventoSincronizacion({
           tipo: 'LOTE_SINCRONIZADO',

@@ -22,6 +22,14 @@ import {
   registrarProduccionLoteApi,
   obtenerUltimaProduccionLoteApi,
 } from '@/src/services/api';
+import {
+  guardarCostoLocal,
+  obtenerCostosLocalesPorLote,
+  eliminarCostoLocal,
+  actualizarCostoLocal,
+  guardarBorradorProduccionLocal,
+  obtenerBorradorProduccionLocal,
+} from '@/src/services/database';
 
 type Fase = 'Siembra' | 'Crecimiento' | 'Cosecha';
 type UnidadCantidad = 'kg' | 'qq';
@@ -30,6 +38,8 @@ type UnidadCategoria = 'ha' | 'kg' | 'hora' | 'jornal' | 'unidad' | 'viaje';
 
 const KG_POR_QUINTAL = 46;
 
+type GastoOrigen = 'API' | 'LOCAL';
+
 type Gasto = {
   id: string;
   fase: Fase;
@@ -37,6 +47,9 @@ type Gasto = {
   descripcion: string;
   cantidad: string;
   monto: string;
+  origen?: GastoOrigen;
+  idLocal?: number;
+  sincronizado?: boolean;
 };
 
 type FormGasto = {
@@ -130,10 +143,11 @@ const validarCantidadPorCategoria = (
 
 type CalculadoraCostosProps = {
   onBack?: () => void;
-  idLote?: number;
+  idLoteServidor?: number;
+  idLoteLocal?: number;
 };
 
-export default function CalculadoraCostos_Quinua({ onBack, idLote }: CalculadoraCostosProps) {
+export default function CalculadoraCostos_Quinua({ onBack, idLoteServidor, idLoteLocal }: CalculadoraCostosProps) {
   const router = useRouter();
 
   //  ESTADOS -
@@ -219,62 +233,132 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
   ];
   const maxGrafico = Math.max(ingresosTotales * 1.3, totalCostos, 100);
 
-  const inferirFaseDesdeApi = (gasto: GastoApi): Fase => {
-    if (CATEGORIAS_POR_FASE.Cosecha.includes(gasto.categoria)) return 'Cosecha';
-    if (CATEGORIAS_POR_FASE.Crecimiento.includes(gasto.categoria)) return 'Crecimiento';
-    if (CATEGORIAS_POR_FASE.Siembra.includes(gasto.categoria)) return 'Siembra';
-    return gasto.tipo_costo === 'FIJO' ? 'Siembra' : 'Crecimiento';
+  const inferirFaseDesdeCategoria = (categoria: string, tipoCosto?: 'FIJO' | 'VARIABLE'): Fase => {
+    if (CATEGORIAS_POR_FASE.Cosecha.includes(categoria)) return 'Cosecha';
+    if (CATEGORIAS_POR_FASE.Crecimiento.includes(categoria)) return 'Crecimiento';
+    if (CATEGORIAS_POR_FASE.Siembra.includes(categoria)) return 'Siembra';
+    return tipoCosto === 'FIJO' ? 'Siembra' : 'Crecimiento';
+  };
+
+  const inferirFaseDesdeApi = (gasto: GastoApi): Fase =>
+    inferirFaseDesdeCategoria(gasto.categoria, gasto.tipo_costo);
+
+  const aplicarProduccionEnPantalla = (cantidadKg: number, precioKg: number) => {
+    const cantidadQq = cantidadKg > 0 ? cantidadKg / KG_POR_QUINTAL : 0;
+    const precioQq = precioKg > 0 ? precioKg * KG_POR_QUINTAL : 0;
+
+    setProduccion({
+      cantidad: cantidadQq > 0 ? cantidadQq.toFixed(2) : '',
+      precio: precioQq > 0 ? precioQq.toFixed(2) : '',
+    });
+    setUnidadCantidad('qq');
+    setUnidadPrecio('bsqq');
+  };
+
+  const cargarProduccionDesdeLoteLocal = async (): Promise<boolean> => {
+    const borrador = await obtenerBorradorProduccionLocal({
+      idLoteLocal,
+      idLoteServidor,
+    });
+    if (!borrador) return false;
+
+    const cantidadKg = Number(borrador.cantidad_obtenida || 0);
+    const precioKg = Number(borrador.precio_venta || 0);
+
+    if (cantidadKg <= 0 || precioKg <= 0) return false;
+
+    aplicarProduccionEnPantalla(cantidadKg, precioKg);
+    return true;
+  };
+
+  const persistirBorradorProduccionLocal = async () => {
+    if (!idLoteLocal && !idLoteServidor) return;
+
+    const cantidadKg = unidadCantidad === 'kg'
+      ? (parseFloat(produccion.cantidad) || 0)
+      : (parseFloat(produccion.cantidad) || 0) * KG_POR_QUINTAL;
+
+    const precioKg = unidadPrecio === 'bskg'
+      ? (parseFloat(produccion.precio) || 0)
+      : (parseFloat(produccion.precio) || 0) / KG_POR_QUINTAL;
+
+    if (cantidadKg <= 0 || precioKg <= 0) return;
+
+    await guardarBorradorProduccionLocal({
+      idLoteLocal,
+      idLoteServidor,
+      cantidadObtenida: cantidadKg,
+      precioVenta: precioKg,
+    });
   };
 
   const cargarGastosDelLote = async () => {
-    const loteDestino = idLote ?? 1;
     try {
-      const gastosApi = await obtenerGastosPorLoteApi(loteDestino);
-      const gastosMapeados: Gasto[] = gastosApi.map((gasto) => ({
+      const gastosRemote = idLoteServidor ? await obtenerGastosPorLoteApi(idLoteServidor) : [];
+      const gastosApi: Gasto[] = gastosRemote.map((gasto) => ({
         id: String(gasto.id_gasto),
         fase: inferirFaseDesdeApi(gasto),
         categoria: gasto.categoria,
         descripcion: gasto.descripcion || '',
         cantidad: String(gasto.cantidad ?? ''),
         monto: String(gasto.monto_total ?? 0),
+        origen: 'API',
       }));
-      setGastos(gastosMapeados);
+
+      const gastosLocales = await obtenerCostosLocalesPorLote({
+        idLoteLocal,
+        idLoteServidor,
+      });
+
+      const gastosLocalesPendientes = gastosLocales.filter((gasto) => !gasto.sincronizado);
+      const gastosLocalesMapeados: Gasto[] = gastosLocalesPendientes.map((gasto) => ({
+        id: `local-${gasto.id_local}`,
+        fase: inferirFaseDesdeCategoria(gasto.categoria, gasto.tipo_costo),
+        categoria: gasto.categoria,
+        descripcion: gasto.descripcion || '',
+        cantidad: String(gasto.cantidad),
+        monto: gasto.monto_total.toFixed(2),
+        origen: 'LOCAL',
+        idLocal: gasto.id_local,
+        sincronizado: gasto.sincronizado,
+      }));
+
+      setGastos([...gastosApi, ...gastosLocalesMapeados]);
     } catch (error) {
-      console.warn('No se pudieron cargar gastos del lote desde backend:', error);
+      console.warn('No se pudieron cargar gastos del lote:', error);
       setGastos([]);
     }
   };
 
   const cargarUltimaProduccionDelLote = async () => {
-    if (!idLote) {
-      setProduccion({ cantidad: '', precio: '' });
-      setUnidadCantidad('qq');
-      setUnidadPrecio('bsqq');
-      return;
-    }
-
     try {
-      const ultimaProduccion = await obtenerUltimaProduccionLoteApi(idLote);
-      if (!ultimaProduccion) {
+      if (idLoteServidor) {
+        const ultimaProduccion = await obtenerUltimaProduccionLoteApi(idLoteServidor);
+        if (ultimaProduccion) {
+          const cantidadKg = Number(ultimaProduccion.cantidad_obtenida) || 0;
+          const precioKg = Number(ultimaProduccion.precio_venta) || 0;
+
+          if (cantidadKg > 0 && precioKg > 0) {
+            aplicarProduccionEnPantalla(cantidadKg, precioKg);
+            return;
+          }
+        }
+      }
+
+      const cargadoLocal = await cargarProduccionDesdeLoteLocal();
+      if (!cargadoLocal) {
         setProduccion({ cantidad: '', precio: '' });
         setUnidadCantidad('qq');
         setUnidadPrecio('bsqq');
-        return;
       }
-
-      const cantidadKg = Number(ultimaProduccion.cantidad_obtenida) || 0;
-      const precioKg = Number(ultimaProduccion.precio_venta) || 0;
-      const cantidadQq = cantidadKg / KG_POR_QUINTAL;
-      const precioQq = precioKg * KG_POR_QUINTAL;
-
-      setProduccion({
-        cantidad: cantidadQq > 0 ? cantidadQq.toFixed(2) : '',
-        precio: precioQq > 0 ? precioQq.toFixed(2) : '',
-      });
-      setUnidadCantidad('qq');
-      setUnidadPrecio('bsqq');
     } catch (error) {
       console.warn('No se pudo cargar la ultima produccion del lote:', error);
+      const cargadoLocal = await cargarProduccionDesdeLoteLocal();
+      if (!cargadoLocal) {
+        setProduccion({ cantidad: '', precio: '' });
+        setUnidadCantidad('qq');
+        setUnidadPrecio('bsqq');
+      }
     }
   };
 
@@ -287,10 +371,20 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
     return () => {
       console.log('Pantalla de calculadora cerrándose - gastos sincronizados con BD');
     };
-  }, [idLote]);
+  }, [idLoteServidor, idLoteLocal]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      persistirBorradorProduccionLocal().catch((error) => {
+        console.warn('No se pudo guardar borrador local de produccion:', error);
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [produccion.cantidad, produccion.precio, unidadCantidad, unidadPrecio, idLoteLocal, idLoteServidor]);
 
   const guardarDatosProduccion = async () => {
-    if (!idLote) {
+    if (!idLoteServidor && !idLoteLocal) {
       Alert.alert('Lote inválido', 'No se encontró el lote para guardar los datos de producción.');
       return;
     }
@@ -310,19 +404,43 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
 
     setGuardandoProduccion(true);
     try {
-      await registrarProduccionLoteApi({
-        id_lote: idLote,
-        fecha_registro: new Date().toISOString().split('T')[0],
-        cantidad_obtenida: cantidad,
-        precio_venta: precio,
-      });
-      Alert.alert('Listo', 'Datos de producción guardados en la base de datos.');
+      if (idLoteServidor) {
+        try {
+          await registrarProduccionLoteApi({
+            id_lote: idLoteServidor,
+            fecha_registro: new Date().toISOString().split('T')[0],
+            cantidad_obtenida: cantidad,
+            precio_venta: precio,
+          });
+          Alert.alert('Listo', 'Datos de producción guardados en la base de datos.');
+        } catch (apiError) {
+          console.warn('API error al guardar producción, guardando localmente...', apiError);
+          if (idLoteLocal || idLoteServidor) {
+            await exportarProduccionALoteLocal(cantidad, precio);
+            Alert.alert('Guardado localmente', 'Se guardará en el servidor al sincronizar.');
+          } else {
+             throw apiError;
+          }
+        }
+      } else if (idLoteLocal || idLoteServidor) {
+        await exportarProduccionALoteLocal(cantidad, precio);
+        Alert.alert('Listo', 'Datos de producción guardados localmente.');
+      }
     } catch (error) {
       const mensaje = error instanceof Error ? error.message : 'No se pudo guardar la producción';
       Alert.alert('Error', mensaje);
     } finally {
       setGuardandoProduccion(false);
     }
+  };
+
+  const exportarProduccionALoteLocal = async (cant: number, prec: number) => {
+    await guardarBorradorProduccionLocal({
+      idLoteLocal,
+      idLoteServidor,
+      cantidadObtenida: cant,
+      precioVenta: prec,
+    });
   };
 
   // --- FUNCIONES ---
@@ -351,28 +469,69 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
     }
 
     const costoUnitario = monto / cantidad;
-    const loteDestino = idLote ?? 1;
+    const tipoCosto = fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
+    const tieneLoteLocal = typeof idLoteLocal === 'number' && idLoteLocal > 0;
+    const tieneLoteServidor = typeof idLoteServidor === 'number' && idLoteServidor > 0;
 
     try {
-      await crearGastoApi({
-        id_lote: loteDestino,
-        categoria: formGasto.categoria,
-        descripcion: formGasto.descripcion,
-        cantidad,
-        costo_unitario: costoUnitario,
-        tipo_costo: fase === 'Siembra' ? 'FIJO' : 'VARIABLE',
-        modalidad_pago: 'CICLO',
-      });
+      if (tieneLoteLocal && !tieneLoteServidor) {
+        await guardarCostoLocal({
+          id_lote_local: idLoteLocal,
+          id_lote_servidor: null,
+          categoria: formGasto.categoria,
+          descripcion: formGasto.descripcion || null,
+          cantidad,
+          costo_unitario: costoUnitario,
+          tipo_costo: tipoCosto,
+          modalidad_pago: 'CICLO',
+          sincronizado: false,
+        });
+        Alert.alert('Listo', 'Gasto guardado localmente y se enviará cuando sincronices el lote.');
+      } else if (tieneLoteServidor) {
+        try {
+          await crearGastoApi({
+            id_lote: idLoteServidor,
+            categoria: formGasto.categoria,
+            descripcion: formGasto.descripcion,
+            cantidad,
+            costo_unitario: costoUnitario,
+            tipo_costo: tipoCosto,
+            modalidad_pago: 'CICLO',
+          });
+          Alert.alert('Listo', 'Gasto registrado y guardado en la base de datos.');
+        } catch (apiError) {
+          console.warn('Fallo API al agregar gasto, intentando guardar localmente:', apiError);
+          if (tieneLoteLocal || tieneLoteServidor) {
+            await guardarCostoLocal({
+              id_lote_local: tieneLoteLocal ? idLoteLocal : null,
+              id_lote_servidor: tieneLoteServidor ? idLoteServidor : null,
+              categoria: formGasto.categoria,
+              descripcion: formGasto.descripcion || null,
+              cantidad,
+              costo_unitario: costoUnitario,
+              tipo_costo: tipoCosto,
+              modalidad_pago: 'CICLO',
+              sincronizado: false,
+            });
+            Alert.alert('Guardado Offline', 'Gasto guardado localmente por falta de conexión.');
+          } else {
+             throw apiError;
+          }
+        }
+      } else {
+        Alert.alert('Lote no disponible', 'Sin identificador del lote no se puede registrar el gasto.');
+        return;
+      }
+
       setFormGasto({ categoria: '', descripcion: '', cantidad: '', monto: '' });
       await cargarGastosDelLote();
-      Alert.alert('Listo', 'Gasto registrado y guardado en la base de datos.');
     } catch (error) {
-      console.warn('No se pudo registrar gasto en backend:', error);
-      Alert.alert('Sin conexión', 'No se pudo guardar el gasto en la base de datos. Intenta nuevamente.');
+      console.warn('No se pudo registrar gasto:', error);
+      Alert.alert('Sin conexión', 'No se pudo guardar el gasto. Intenta nuevamente.');
     }
   };
 
-  const eliminarGasto = async (id: string) => {
+  const eliminarGasto = async (gasto: Gasto) => {
     Alert.alert(
       'Eliminar Gasto',
       '¿Estás seguro que quieres eliminar este gasto?',
@@ -382,17 +541,19 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
           text: 'Eliminar',
           onPress: async () => {
             try {
-              const idGastoNum = parseInt(id);
-              if (!isNaN(idGastoNum)) {
-                await eliminarGastoApi(idGastoNum);
+              if (gasto.origen === 'LOCAL' && gasto.idLocal) {
+                await eliminarCostoLocal(gasto.idLocal);
+              } else {
+                const idGastoNum = parseInt(gasto.id);
+                if (!isNaN(idGastoNum)) {
+                  await eliminarGastoApi(idGastoNum);
+                }
               }
-              setGastos(gastos.filter(g => g.id !== id));
-              Alert.alert('Eliminado', 'Gasto eliminado de la base de datos.');
               await cargarGastosDelLote();
+              Alert.alert('Eliminado', 'Gasto eliminado de la base de datos.');
             } catch (error) {
               console.warn('Error al eliminar gasto:', error);
               Alert.alert('Error', 'No se pudo eliminar el gasto de la base de datos.');
-              setGastos(gastos.filter(g => g.id !== id));
               await cargarGastosDelLote();
             }
           },
@@ -433,27 +594,41 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
     }
 
     const costoUnitario = monto / cantidad;
-    const idGastoNum = parseInt(gastoEnEdicion.id);
+    const tipoCosto = gastoEnEdicion.fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
 
     try {
-      if (!isNaN(idGastoNum)) {
-        await actualizarGastoApi(idGastoNum, {
+      if (gastoEnEdicion.origen === 'LOCAL' && gastoEnEdicion.idLocal) {
+        await actualizarCostoLocal(gastoEnEdicion.idLocal, {
           categoria: formEdicion.categoria,
-          descripcion: formEdicion.descripcion,
-          cantidad,
+          descripcion: formEdicion.descripcion || null,
+          cantidad: cantidad,
           costo_unitario: costoUnitario,
-          tipo_costo: gastoEnEdicion.fase === 'Siembra' ? 'FIJO' : 'VARIABLE',
+          monto_total: monto,
+          tipo_costo: tipoCosto,
           modalidad_pago: 'CICLO',
+          sincronizado: false,
         });
+      } else {
+        const idGastoNum = parseInt(gastoEnEdicion.id);
+        if (!isNaN(idGastoNum)) {
+          await actualizarGastoApi(idGastoNum, {
+            categoria: formEdicion.categoria,
+            descripcion: formEdicion.descripcion,
+            cantidad,
+            costo_unitario: costoUnitario,
+            tipo_costo: tipoCosto,
+            modalidad_pago: 'CICLO',
+          });
+        }
       }
       
       setModalEdicion(false);
       setGastoEnEdicion(null);
       await cargarGastosDelLote();
-      Alert.alert('Actualizado', 'Gasto actualizado correctamente en la base de datos.');
+      Alert.alert('Actualizado', 'Gasto actualizado correctamente.');
     } catch (error) {
       console.warn('Error al actualizar gasto:', error);
-      Alert.alert('Sin conexión', 'No se pudo actualizar el gasto en la base de datos. Intenta nuevamente.');
+      Alert.alert('Sin conexión', 'No se pudo actualizar el gasto. Intenta nuevamente.');
     }
   };
 
@@ -484,7 +659,10 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
             // Aquí navegamos directamente a la página de resultados
             router.push({
               pathname: '/resultados_quinua',
-              params: { idLote: idLote || 1 }
+              params: { 
+                idLoteServidor: idLoteServidor || '', 
+                idLoteLocal: idLoteLocal || '' 
+              }
             });
           }}
         >
@@ -581,12 +759,15 @@ export default function CalculadoraCostos_Quinua({ onBack, idLote }: Calculadora
                   </View>
                   <Text style={styles.itemTitle}>{gasto.categoria}</Text>
                   {gasto.descripcion ? <Text style={styles.itemSub}>{gasto.descripcion}</Text> : null}
+                  {gasto.origen === 'LOCAL' && !gasto.sincronizado && (
+                    <Text style={styles.pendienteLabel}>Pendiente offline</Text>
+                  )}
                 </View>
                 <Text style={styles.itemPrice}>Bs {parseFloat(gasto.monto).toFixed(2)}</Text>
                 <TouchableOpacity style={styles.editBtn} onPress={() => editarGasto(gasto)}>
                   <Ionicons name="pencil-outline" size={18} color="#3b82f6" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminarGasto(gasto.id)}>
+                <TouchableOpacity style={styles.deleteBtn} onPress={() => eliminarGasto(gasto)}>
                   <Ionicons name="trash-outline" size={18} color="#ef4444" />
                 </TouchableOpacity>
               </View>
@@ -955,6 +1136,7 @@ const styles = StyleSheet.create({
   listDivider: { height: 1, backgroundColor: '#f3f4f6' },
   itemTitle: { fontSize: 14, fontWeight: '600', color: '#1f2937' },
   itemSub: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  pendienteLabel: { fontSize: 12, color: '#f97316', marginTop: 2, fontWeight: '600' },
   itemPrice: { fontSize: 14, fontWeight: 'bold', color: '#2eaa51', marginRight: 12 },
   editBtn: { padding: 6, backgroundColor: '#dbeafe', borderRadius: 6, marginRight: 8 },
   deleteBtn: { padding: 6, backgroundColor: '#fef2f2', borderRadius: 6 },

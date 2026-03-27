@@ -15,6 +15,9 @@ import {
   obtenerUltimaProduccionLoteApi,
 } from '@/src/services/api';
 
+
+import { obtenerCostosLocalesPorLote, obtenerBorradorProduccionLocal } from '@/src/services/database';
+
 const KG_POR_QUINTAL = 46;
 
 type Gasto = {
@@ -29,7 +32,10 @@ type Gasto = {
 export default function ResultadosQuinua() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const idLote = typeof params.idLote === 'string' ? parseInt(params.idLote, 10) : (Array.isArray(params.idLote) ? parseInt(params.idLote[0], 10) : 1);
+  const idLoteServidorStr = typeof params.idLoteServidor === 'string' ? params.idLoteServidor : (Array.isArray(params.idLoteServidor) ? params.idLoteServidor[0] : null);
+  const idLoteLocalStr = typeof params.idLoteLocal === 'string' ? params.idLoteLocal : (Array.isArray(params.idLoteLocal) ? params.idLoteLocal[0] : null);
+  const idLoteServidor = idLoteServidorStr ? parseInt(idLoteServidorStr, 10) : undefined;
+  const idLoteLocal = idLoteLocalStr ? parseInt(idLoteLocalStr, 10) : undefined;
 
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [produccion, setProduccion] = useState({
@@ -42,32 +48,72 @@ export default function ResultadosQuinua() {
 
   useEffect(() => {
     cargarDatos();
-  }, [idLote]);
+  }, [idLoteServidor, idLoteLocal]);
 
   const cargarDatos = async () => {
     try {
-      const gastosApi = await obtenerGastosPorLoteApi(idLote);
-      const gastoParcial: Gasto[] = (gastosApi || []).map((g: any, idx: number) => ({
-        id: String(idx),
+      const gastosRemote = idLoteServidor ? await obtenerGastosPorLoteApi(idLoteServidor) : [];
+      const gastosApi: Gasto[] = gastosRemote.map((g: any, idx: number) => ({
+        id: `api-${idx}`,
         fase: g.tipo_costo || 'Desconocida',
         categoria: g.categoria || 'Sin categoría',
         descripcion: g.descripcion || '',
         cantidad: String(g.cantidad || 0),
         monto: String((g.cantidad * g.costo_unitario) || 0),
       }));
-      setGastos(gastoParcial);
 
-      const produccionApi = await obtenerUltimaProduccionLoteApi(idLote);
-      if (produccionApi) {
-        const cantidadKg = parseFloat(produccionApi.cantidad_obtenida) || 0;
-        const precioKg = parseFloat(produccionApi.precio_venta) || 0;
-        const cantidadQq = cantidadKg > 0 ? cantidadKg / KG_POR_QUINTAL : 0;
-        const precioQq = precioKg > 0 ? precioKg * KG_POR_QUINTAL : 0;
+      const gastosLocalesRaw = await obtenerCostosLocalesPorLote({
+        idLoteLocal,
+        idLoteServidor,
+      });
+      const gastosLocalesPendientes = gastosLocalesRaw.filter((gasto) => !gasto.sincronizado);
+      const gastosLocalesMapeados: Gasto[] = gastosLocalesPendientes.map((gasto, idx) => ({
+        id: `local-${idx}`,
+        fase: gasto.tipo_costo || 'Desconocida',
+        categoria: gasto.categoria || 'Sin categoría',
+        descripcion: gasto.descripcion || '',
+        cantidad: String(gasto.cantidad),
+        monto: String(gasto.costo_unitario * gasto.cantidad),
+      }));
 
-        setProduccion({
-          cantidad: cantidadQq > 0 ? cantidadQq.toFixed(2) : '',
-          precio: precioQq > 0 ? precioQq.toFixed(2) : '',
+      setGastos([...gastosApi, ...gastosLocalesMapeados]);
+
+      let produccionCargada = false;
+      if (idLoteServidor) {
+        const produccionApi = await obtenerUltimaProduccionLoteApi(idLoteServidor);
+        if (produccionApi) {
+          const cantidadKg = parseFloat(produccionApi.cantidad_obtenida) || 0;
+          const precioKg = parseFloat(produccionApi.precio_venta) || 0;
+          const cantidadQq = cantidadKg > 0 ? cantidadKg / KG_POR_QUINTAL : 0;
+          const precioQq = precioKg > 0 ? precioKg * KG_POR_QUINTAL : 0;
+
+          setProduccion({
+            cantidad: cantidadQq > 0 ? cantidadQq.toFixed(2) : '',
+            precio: precioQq > 0 ? precioQq.toFixed(2) : '',
+          });
+          produccionCargada = true;
+        }
+      }
+
+      if (!produccionCargada) {
+        const borradorLocal = await obtenerBorradorProduccionLocal({
+          idLoteLocal,
+          idLoteServidor,
         });
+
+        if (borradorLocal) {
+          const cantidadKg = Number(borradorLocal.cantidad_obtenida) || 0;
+          const precioKg = Number(borradorLocal.precio_venta) || 0;
+          const cantidadQq = cantidadKg > 0 ? cantidadKg / KG_POR_QUINTAL : 0;
+          const precioQq = precioKg > 0 ? precioKg * KG_POR_QUINTAL : 0;
+
+          setProduccion({
+            cantidad: cantidadQq > 0 ? cantidadQq.toFixed(2) : '',
+            precio: precioQq > 0 ? precioQq.toFixed(2) : '',
+          });
+        } else {
+          setProduccion({ cantidad: '', precio: '' });
+        }
       }
     } catch (error) {
       console.warn('Error cargando datos:', error);

@@ -68,7 +68,8 @@ const calcularProgresoYCiclo = (fechaSiembraIso, fechaCosechaIso) => {
 export default function MisLotes_Hortalizas() {
   const [modalOpen, setModalOpen] = useState(false);
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false);
-  const [loteSeleccionadoId, setLoteSeleccionadoId] = useState(null);
+  const [loteSeleccionadoIdServidor, setLoteSeleccionadoIdServidor] = useState(null);
+  const [loteSeleccionadoIdLocal, setLoteSeleccionadoIdLocal] = useState(null);
   const [lotes, setLotes] = useState([]);
   const [modalEditarOpen, setModalEditarOpen] = useState(false);
   const [loteEditando, setLoteEditando] = useState(null);
@@ -461,7 +462,8 @@ export default function MisLotes_Hortalizas() {
   if (mostrarCalculadora) {
     return (
       <CalculadoraCostos
-        idLote={loteSeleccionadoId ?? undefined}
+        idLoteServidor={loteSeleccionadoIdServidor ?? undefined}
+        idLoteLocal={loteSeleccionadoIdLocal ?? undefined}
         onBack={async () => {
           setMostrarCalculadora(false);
           await cargarLotesLocales();
@@ -553,7 +555,6 @@ export default function MisLotes_Hortalizas() {
 
         {/* LISTA DE LOTES */}
         {mensajeSync && <Text style={{ color: '#f59e0b', fontSize: 12, marginBottom: 8, paddingHorizontal: 12 }}>{mensajeSync}</Text>}
-        {diagnosticoCarga && <Text style={{ color: '#3b82f6', fontSize: 11, marginBottom: 8, paddingHorizontal: 12, fontStyle: 'italic' }}>{diagnosticoCarga}</Text>}
         {lotes.map((lote) => (
           <View key={lote.key} style={styles.loteCard}>
             
@@ -625,14 +626,8 @@ export default function MisLotes_Hortalizas() {
                 <TouchableOpacity 
                   style={styles.btnGestionar}
                   onPress={() => {
-                    if (!lote.idServidor) {
-                      Alert.alert(
-                        'Lote pendiente',
-                        'Este lote aún no está sincronizado con backend. Sincroniza primero para ver gastos por lote.'
-                      );
-                      return;
-                    }
-                    setLoteSeleccionadoId(lote.idServidor);
+                    setLoteSeleccionadoIdServidor(lote.idServidor);
+                    setLoteSeleccionadoIdLocal(lote.idLocal);
                     setMostrarCalculadora(true);
                   }}
                 >
