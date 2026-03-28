@@ -5,7 +5,8 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   ImageBackground, 
-  StatusBar 
+  StatusBar,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
@@ -21,7 +22,7 @@ export default function Inicio() {
       
       {/* 1. Imagen de fondo (sustituye la URL por tu imagen local si prefieres) */}
       <ImageBackground 
-        source={{ uri: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=1000&auto=format&fit=crop' }} 
+        source={{ uri: 'https://images.unsplash.com/photo-1500382017468-9049fed747eaf?q=80&w=1000&auto=format&fit=crop' }} 
         style={styles.backgroundImage}
       >
         {/* 2. Overlay Verde (Capa de color) */}
@@ -29,7 +30,7 @@ export default function Inicio() {
           
           {/* Logo e Icono */}
           <View style={styles.headerContainer}>
-             <Ionicons name="leaf" size={50} color="#FFD700" />
+             <Image source={require('../assets/images/yapu_aroma.png')} style={styles.logo} />
              <Text style={styles.title}>Yapu Aroma</Text>
           </View>
 
@@ -84,6 +85,12 @@ const styles = StyleSheet.create({
   headerContainer: {
     alignItems: 'center',
     marginBottom: 40,
+  },
+  logo: {
+    width: 200,
+    height: 200,
+    resizeMode: 'contain',
+    marginBottom: 10,
   },
   title: {
     fontSize: 38,

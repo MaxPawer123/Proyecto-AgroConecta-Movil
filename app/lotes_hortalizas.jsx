@@ -600,7 +600,6 @@ export default function MisLotes_Hortalizas() {
         </View>
 
         {/* LISTA DE LOTES */}
-        {mensajeSync && <Text style={{ color: '#f59e0b', fontSize: 12, marginBottom: 8, paddingHorizontal: 12 }}>{mensajeSync}</Text>}
         {lotes.map((lote) => (
           <View key={lote.key} style={styles.loteCard}>
             

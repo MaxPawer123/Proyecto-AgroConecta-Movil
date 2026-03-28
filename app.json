@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "agroConectaMejor",
+    "name": "Yapu Aroma",
     "slug": "agroConectaMejor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/yapu_aroma.png",
     "scheme": "agroconectamejor",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
