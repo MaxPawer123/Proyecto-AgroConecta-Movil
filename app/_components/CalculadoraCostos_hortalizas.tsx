@@ -561,7 +561,6 @@ export default function CalculadoraCostos_Hortalizas({ onBack, idLoteServidor, i
               <Text style={styles.title}>Calculadora de Costos de Hortalizas</Text>
               <Text style={styles.subtitle}>Calcula tus gastos, ganancias y punto de equilibrio</Text>
             </View>
-            <View style={styles.badge}><Text style={styles.badgeText}>Q-2025</Text></View>
           </View>
         </View>
 

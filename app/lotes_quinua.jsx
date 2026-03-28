@@ -11,7 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { Stack, router, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ModalRegistrarSiembra from './_components/ModalRegistrarSiembra_Quinua';
 import CalculadoraCostos from './_components/CalculadoraCostos_quinua';
@@ -65,6 +65,27 @@ const calcularProgresoYCiclo = (fechaSiembraIso, fechaCosechaIso) => {
   return { progreso, faseActual };
 };
 
+const normalizarBaseApi = () => {
+  const base = (process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_API_BASE_URL_LAN || '').trim();
+  return base ? base.replace(/\/$/, '') : '';
+};
+
+const resolverUriImagen = (uri, fallback = '') => {
+  const valor = String(uri || '').trim();
+  if (!valor) return fallback;
+
+  if (/^(https?:\/\/|file:\/\/|content:\/\/|data:)/i.test(valor)) {
+    return valor;
+  }
+
+  const baseApi = normalizarBaseApi();
+  if (baseApi && valor.startsWith('/')) {
+    return `${baseApi}${valor}`;
+  }
+
+  return valor;
+};
+
 export default function MisLotes_Quinua() {
   const [modalOpen, setModalOpen] = useState(false);
   const [mostrarCalculadora, setMostrarCalculadora] = useState(false);
@@ -80,6 +101,20 @@ export default function MisLotes_Quinua() {
   });
   const [diagnosticoCarga, setDiagnosticoCarga] = useState('');
   const [mensajeSync, setMensajeSync] = useState('');
+  const [modalFotoVisible, setModalFotoVisible] = useState(false);
+  const [fotoSeleccionada, setFotoSeleccionada] = useState('');
+
+  const abrirVistaFoto = useCallback((uri) => {
+    const uriResuelta = resolverUriImagen(uri);
+    if (!uriResuelta) return;
+    setFotoSeleccionada(uriResuelta);
+    setModalFotoVisible(true);
+  }, []);
+
+  const cerrarVistaFoto = useCallback(() => {
+    setModalFotoVisible(false);
+    setFotoSeleccionada('');
+  }, []);
 
   const cargarLotesLocalesInmediato = useCallback(async () => {
     const esLoteQuinua = (item) => {
@@ -107,8 +142,11 @@ export default function MisLotes_Quinua() {
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         producto: 'Quinua',
         tipoProducto: item.variedad || 'Sin variedad',
-        imagen: item.foto_siembra_uri_local || 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
-        imagenRemota: item.foto_siembra_uri_local || null,
+        imagen: resolverUriImagen(
+          item.foto_siembra_uri_local || item.foto_siembra_url,
+          'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'
+        ),
+        imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
         comunidad: item.ubicacion || 'No especificada',
         fechaSiembra: formatearFecha(item.fecha_siembra),
@@ -118,7 +156,7 @@ export default function MisLotes_Quinua() {
         rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
         precioVentaEst: precio > 0 ? precio : 1,
         progreso,
-        estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'En Crecimiento' : 'Pendiente Sync',
+        estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'SUBIENDO' : 'PENDIENTE',
         estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
         faseActual,
         estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
@@ -208,8 +246,11 @@ export default function MisLotes_Quinua() {
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         producto: resolverNombreProducto(item.id_producto, mapaNombre),
         tipoProducto: item.variedad || 'Sin variedad',
-        imagen: item.foto_siembra_uri_local || 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
-        imagenRemota: item.foto_siembra_uri_local || null,
+        imagen: resolverUriImagen(
+          item.foto_siembra_uri_local || item.foto_siembra_url,
+          'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'
+        ),
+        imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
         comunidad: item.ubicacion || 'No especificada',
         fechaSiembra: formatearFecha(item.fecha_siembra),
@@ -247,8 +288,8 @@ export default function MisLotes_Quinua() {
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
         producto: resolverNombreProducto(item.id_producto, mapaNombre),
         tipoProducto: item.variedad || 'Sin variedad',
-        imagen: item.foto_siembra_url || 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
-        imagenRemota: item.foto_siembra_url || null,
+        imagen: resolverUriImagen(item.foto_siembra_url, 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'),
+        imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
         area: superficie,
         comunidad: item.ubicacion || 'Comunidad registrada',
         fechaSiembra: formatearFecha(item.fecha_siembra),
@@ -589,15 +630,19 @@ export default function MisLotes_Quinua() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color="#111827" />
+        </TouchableOpacity>
         
         {/* HEADER */}
-        <View style={styles.header}>
+        <View style={styles.header}>          
           <View>
             <Text style={styles.title}>Mis Lotes de Quinua</Text>
-            <Text style={styles.subtitle}>Gestiona tus cultivos de quinua, costos y proyecciones</Text>
-            {!!mensajeSync && <Text style={styles.syncText}>{mensajeSync}</Text>}
+            <Text style={styles.subtitle}>Calcula tus cultivos de quinua, costos y proyecciones</Text>
           </View>
           
           <TouchableOpacity 
@@ -675,9 +720,17 @@ export default function MisLotes_Quinua() {
           <View key={lote.key} style={styles.loteCard}>
             
             {/* Imagen Header */}
-            <View style={styles.loteImageContainer}>
+            <TouchableOpacity
+              style={styles.loteImageContainer}
+              activeOpacity={0.9}
+              onPress={() => abrirVistaFoto(lote.imagen)}
+            >
               <Image source={{ uri: lote.imagen }} style={styles.loteImage} />
               <View style={styles.loteImageOverlay} />
+              <View style={styles.zoomHintContainer}>
+                <Ionicons name="expand-outline" size={12} color="#fff" />
+                <Text style={styles.zoomHintText}>Tocar para ampliar</Text>
+              </View>
               
               <View style={[styles.badge, { backgroundColor: lote.estadoColor }]}>
                 <Text style={styles.badgeText}>{lote.estado}</Text>
@@ -686,7 +739,7 @@ export default function MisLotes_Quinua() {
               <View style={styles.codigoContainer}>
                 <Text style={styles.codigoText}>{lote.codigo}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
 
             {/* Contenido Lote */}
             <View style={styles.loteContent}>
@@ -711,17 +764,6 @@ export default function MisLotes_Quinua() {
                   <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
                   <Text style={styles.detalleText}>Cosecha est: {lote.cosechaEstimada}</Text>
                 </View>
-              </View>
-
-              <View style={styles.progresoContainer}>
-                <View style={styles.progresoHeader}>
-                  <Text style={styles.progresoLabel}>Progreso del Ciclo</Text>
-                  <Text style={[styles.progresoPorcentaje, { color: lote.estadoColor }]}>{lote.progreso}%</Text>
-                </View>
-                <View style={styles.progresoBarBg}>
-                  <View style={[styles.progresoBarFill, { width: `${lote.progreso}%`, backgroundColor: lote.estadoColor }]} />
-                </View>
-                <Text style={styles.faseText}>Fase actual: {lote.faseActual}</Text>
               </View>
 
               <View style={styles.divider} />
@@ -784,6 +826,17 @@ export default function MisLotes_Quinua() {
           onCreated={manejarCreacionLote}
         />
 
+        <Modal visible={modalFotoVisible} transparent animationType="fade" onRequestClose={cerrarVistaFoto}>
+          <View style={styles.photoModalOverlay}>
+            <TouchableOpacity style={styles.photoCloseButton} onPress={cerrarVistaFoto}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoBackdrop} activeOpacity={1} onPress={cerrarVistaFoto}>
+              {fotoSeleccionada ? <Image source={{ uri: fotoSeleccionada }} style={styles.photoModalImage} /> : null}
+            </TouchableOpacity>
+          </View>
+        </Modal>
+
         <Modal visible={modalEditarOpen} transparent animationType="fade" onRequestClose={() => setModalEditarOpen(false)}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
@@ -820,7 +873,8 @@ export default function MisLotes_Quinua() {
         
 
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </>
   );
 }
 
@@ -828,7 +882,15 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#fafafc' },
   container: { flex: 1 },
   content: { padding: 16, paddingBottom: 40 },
-  header: { marginBottom: 20, marginTop: 10 },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  header: { marginBottom: 20, marginTop: 0 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#1f2937', letterSpacing: -0.5 },
   subtitle: { fontSize: 13, color: '#6b7280', marginTop: 4, marginBottom: 16 },
   syncText: { fontSize: 11, color: '#b45309', marginTop: -10, marginBottom: 6, fontWeight: '600' },
@@ -847,6 +909,19 @@ const styles = StyleSheet.create({
   loteImageContainer: { height: 150, width: '100%', position: 'relative' },
   loteImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   loteImageOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
+  zoomHintContainer: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  zoomHintText: { color: '#fff', fontSize: 10, fontWeight: '600' },
   badge: { position: 'absolute', top: 12, right: 12, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   codigoContainer: { position: 'absolute', bottom: 12, left: 12 },
@@ -936,4 +1011,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563eb',
   },
   modalBtnSaveText: { color: '#fff', fontWeight: '600' },
+  photoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+  },
+  photoBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  photoModalImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
+  },
+  photoCloseButton: {
+    position: 'absolute',
+    top: 52,
+    right: 16,
+    zIndex: 2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
 });

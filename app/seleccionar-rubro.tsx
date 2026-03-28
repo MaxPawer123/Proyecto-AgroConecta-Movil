@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 
 export default function SeleccionarRubro() {
   const router = useRouter();
@@ -21,18 +21,19 @@ export default function SeleccionarRubro() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#1f2937" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Seleccionar Rubro</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.title}>¿Qué cultivo deseas gestionar hoy?</Text>
-        <Text style={styles.subtitle}>Selecciona el rubro para ver tus lotes específicos.</Text>
+        <Text style={styles.title}>¿Qué cultivo deseas calcular hoy?</Text>
+        <Text style={styles.subtitle}>Selecciona el rubro para ver tus lotes o parcelas específicos.</Text>
 
         <View style={styles.cardsContainer}>
           
@@ -46,7 +47,7 @@ export default function SeleccionarRubro() {
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>Lotes de Quinua</Text>
-              <Text style={styles.cardDesc}>Gestiona siembras de Quinua Real, Roja y Negra.</Text>
+              <Text style={styles.cardDesc}>Calcula la siembra de Quinua Real, Roja y Negra.</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#2eaa51" />
           </TouchableOpacity>
@@ -61,14 +62,15 @@ export default function SeleccionarRubro() {
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>Lotes de Hortalizas</Text>
-              <Text style={styles.cardDesc}>Gestiona tus cultivos de papa, cebolla, zanahoria, etc.</Text>
+              <Text style={styles.cardDesc}>Calcula la siembra de hortalizas como papa, cebolla, zanahoria, etc.</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#f97316" />
           </TouchableOpacity>
 
         </View>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </>
   );
 }
 

@@ -647,7 +647,6 @@ export default function CalculadoraCostos_Quinua({ onBack, idLoteServidor, idLot
               <Text style={styles.title}>Calculadora de Costos de Quinua</Text>
               <Text style={styles.subtitle}>Calcula tus gastos, ganancias y punto de equilibrio</Text>
             </View>
-            <View style={styles.badge}><Text style={styles.badgeText}>Q-2025</Text></View>
           </View>
         </View>
 
