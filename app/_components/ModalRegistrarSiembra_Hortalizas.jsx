@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
@@ -89,6 +90,7 @@ const parsearFecha = (valor) => {
 };
 
 export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onCreated }) {
+  const insets = useSafeAreaInsets();
   const [form, setForm] = useState({
     nombre: '',
     tipoCultivo: '',
@@ -341,7 +343,7 @@ export default function ModalRegistrarSiembra_Hortalizas({ visible, onClose, onC
             <View style={styles.bottomSpacer} />
           </ScrollView>
 
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Cancelar</Text>
             </TouchableOpacity>
