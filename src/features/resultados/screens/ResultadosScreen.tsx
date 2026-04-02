@@ -89,6 +89,7 @@ export function ResultadosScreen({ rubroOverride }: ResultadosScreenProps) {
   }
 
   return (
+    
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>

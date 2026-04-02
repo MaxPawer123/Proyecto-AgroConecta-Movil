@@ -235,7 +235,7 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
                   placeholder="Comunidad"
                 />
 
-                <Text style={styles.modalLabel}>Superficie (Ha)</Text>
+                <Text style={styles.modalLabel}>Superficie (ha)</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={formEdicion.superficie}

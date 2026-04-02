@@ -82,8 +82,8 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
 
   const qtyProducidaKg = unidadCantidad === 'kg' ? qtyIngresada : qtyIngresada * KG_POR_QUINTAL;
   const precioVentaKg = unidadPrecio === 'bskg' ? precioIngresado : precioIngresado / KG_POR_QUINTAL;
-
-  const equivalenciaTexto =
+//
+    const equivalenciaTexto =
     unidadCantidad === 'qq'
       ? `= ${(qtyProducidaKg || 0).toFixed(2)} kg`
       : `= ${((qtyProducidaKg || 0) / KG_POR_QUINTAL).toFixed(2)} qq`;
