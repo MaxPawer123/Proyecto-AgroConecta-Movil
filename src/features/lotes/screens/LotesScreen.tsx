@@ -14,8 +14,7 @@ import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ModalRegistrarSiembraHortalizas from '@/app/_components/ModalRegistrarSiembra_Hortalizas';
 import ModalRegistrarSiembraQuinua from '@/app/_components/ModalRegistrarSiembra_Quinua';
-import CalculadoraCostosHortalizas from '@/app/_components/CalculadoraCostos_hortalizas';
-import CalculadoraCostosQuinua from '@/app/_components/CalculadoraCostos_quinua';
+import { CalculadoraCostosScreen } from '@/src/features/calculadoraCostos';
 import { LoteItem } from '../components/LoteItem';
 import { RubroType } from '../types';
 import { useLotes } from '../hooks/useLotes';
@@ -68,21 +67,9 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
   );
 
   if (mostrarCalculadora) {
-    if (rubroResuelto === 'hortalizas') {
-      return (
-        <CalculadoraCostosHortalizas
-          idLoteServidor={loteSeleccionadoIdServidor ?? undefined}
-          idLoteLocal={loteSeleccionadoIdLocal ?? undefined}
-          onBack={async () => {
-            setMostrarCalculadora(false);
-            await cargarLotesLocales();
-          }}
-        />
-      );
-    }
-
     return (
-      <CalculadoraCostosQuinua
+      <CalculadoraCostosScreen
+        rubro={rubroResuelto}
         idLoteServidor={loteSeleccionadoIdServidor ?? undefined}
         idLoteLocal={loteSeleccionadoIdLocal ?? undefined}
         onBack={async () => {
