@@ -51,12 +51,18 @@ export default function Inicio() {
             </View>
           </View>
 
-          {/* BOTÓN DE INICIO */}
-          <TouchableOpacity 
-            style={styles.button} 
-            onPress={() => router.push('/seleccionar-rubro')} // Aquí pones la ruta a tu Dashboard actual
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.push('/auth/desbloqueo' as any)}
           >
-            <Text style={styles.buttonText}>INICIO</Text>
+            <Text style={styles.buttonText}>Iniciar Sesion</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => router.push('/auth/registro' as any)}
+          >
+            <Text style={styles.secondaryButtonText}>Crear Cuenta</Text>
           </TouchableOpacity>
 
         </View>
@@ -146,5 +152,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 1.2,
+  },
+  secondaryButton: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)',
+    paddingVertical: 14,
+    borderRadius: 30,
+    width: '100%',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  secondaryButtonText: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '700',
   },
 });
