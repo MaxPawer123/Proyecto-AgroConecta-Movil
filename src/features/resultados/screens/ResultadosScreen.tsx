@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { TarjetaResultado } from '../components/TarjetaResultado';
@@ -81,6 +81,7 @@ export function ResultadosScreen({ rubroOverride }: ResultadosScreenProps) {
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.centerContainer}>
           <Text>Cargando resultados...</Text>
         </View>
@@ -89,8 +90,8 @@ export function ResultadosScreen({ rubroOverride }: ResultadosScreenProps) {
   }
 
   return (
-    
     <SafeAreaView style={styles.safeArea}>
+      <Stack.Screen options={{ headerShown: false }} /> 
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.backButton}>
