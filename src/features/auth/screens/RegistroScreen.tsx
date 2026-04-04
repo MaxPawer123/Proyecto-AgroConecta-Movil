@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthLocal } from '../hooks/useAuthLocal';
+import { guardarRegistroPinDraft } from '../utils/registroPinDraft';
 
 type FormRegistro = {
   nombre: string;
@@ -43,6 +43,10 @@ const UBICACIONES: Record<string, UbicacionData> = {
         label: 'Viacha',
         comunidades: ['Chonchocoro', 'Jalsuri', 'Contorno'],
       },
+      Coroico: {
+        label: 'Coroico',
+        comunidades: ['Cruz Loma', 'Yolosa', 'Mururata', 'Suapi'],
+      },
     },
   },
   Oruro: {
@@ -56,6 +60,10 @@ const UBICACIONES: Record<string, UbicacionData> = {
         label: 'Huanuni',
         comunidades: ['Bombo', 'Morococala', 'Venta y Media'],
       },
+      SalinasDeGarciMendoza: {
+        label: 'Salinas de Garci Mendoza',
+        comunidades: ['Jirira', 'Tahua', 'Alcaya'],
+      },
     },
   },
   Cochabamba: {
@@ -68,6 +76,112 @@ const UBICACIONES: Record<string, UbicacionData> = {
       Punata: {
         label: 'Punata',
         comunidades: ['San Benito', 'Villa Rivero', 'Arani'],
+      },
+      Tiquipaya: {
+        label: 'Tiquipaya',
+        comunidades: ['Apote', 'Linde', 'Cuatro Esquinas'],
+      },
+    },
+  },
+  Potosi: {
+    label: 'Potosí',
+    municipios: {
+      Uyuni: {
+        label: 'Uyuni',
+        comunidades: ['Colchani', 'Pulacayo', 'Coroma', 'Chita'],
+      },
+      Tupiza: {
+        label: 'Tupiza',
+        comunidades: ['Palquiza', 'Suipacha', 'Peña Blanca'],
+      },
+      Villazon: {
+        label: 'Villazón',
+        comunidades: ['Mojo', 'Moraya', 'Casira', 'Yura'],
+      },
+    },
+  },
+  Chuquisaca: {
+    label: 'Chuquisaca',
+    municipios: {
+      Sucre: {
+        label: 'Sucre',
+        comunidades: ['Potolo', 'Maragua', 'Quila Quila', 'Chaunaca'],
+      },
+      Tarabuco: {
+        label: 'Tarabuco',
+        comunidades: ['Candelaria', 'Pisili', 'Morado K\'asa'],
+      },
+      Camargo: {
+        label: 'Camargo',
+        comunidades: ['Villa Abecia', 'Las Carreras', 'Tacaquira'],
+      },
+    },
+  },
+  Tarija: {
+    label: 'Tarija',
+    municipios: {
+      Uriondo: {
+        label: 'Uriondo',
+        comunidades: ['Calamuchita', 'Valle de Concepción', 'Muturayo', 'Juntas'],
+      },
+      SanLorenzo: {
+        label: 'San Lorenzo',
+        comunidades: ['Tomatitas', 'Sella', 'Canasmoro', 'Coimata'],
+      },
+      Padcaya: {
+        label: 'Padcaya',
+        comunidades: ['Chaguaya', 'Rosillas', 'Mecoya'],
+      },
+    },
+  },
+  SantaCruz: {
+    label: 'Santa Cruz',
+    municipios: {
+      Samaipata: {
+        label: 'Samaipata',
+        comunidades: ['Achira', 'Cuevas', 'Bermejo', 'Mairana'],
+      },
+      Montero: {
+        label: 'Montero',
+        comunidades: ['Guabirá', 'Muyurina', 'Naicó'],
+      },
+      ElTorno: {
+        label: 'El Torno',
+        comunidades: ['Limoncito', 'Jorochito', 'Tarumá'],
+      },
+    },
+  },
+  Beni: {
+    label: 'Beni',
+    municipios: {
+      Trinidad: {
+        label: 'Trinidad',
+        comunidades: ['Casarabe', 'Loma Suárez', 'Puerto Almacén', 'Puerto Ballivián'],
+      },
+      SanBorja: {
+        label: 'San Borja',
+        comunidades: ['Yucumo', 'Galilea', 'San Antonio'],
+      },
+      Rurrenabaque: {
+        label: 'Rurrenabaque',
+        comunidades: ['Villa Alcira', 'Carmen del Emero', 'El Real'],
+      },
+    },
+  },
+  Pando: {
+    label: 'Pando',
+    municipios: {
+      Cobija: {
+        label: 'Cobija',
+        comunidades: ['Villa Busch', 'Bajo Virtudes', 'Bella Vista'],
+      },
+      Porvenir: {
+        label: 'Porvenir',
+        comunidades: ['Cachuelita', 'San Luis', 'Mukden'],
+      },
+      PuertoRico: {
+        label: 'Puerto Rico',
+        comunidades: ['Conquista', 'El Carmen', 'Santa Victoria'],
       },
     },
   },
@@ -144,7 +258,6 @@ const formInicial: FormRegistro = {
 
 export function RegistroScreen() {
   const router = useRouter();
-  const { registrarProductor } = useAuthLocal();
   const [form, setForm] = useState<FormRegistro>(formInicial);
   const [guardando, setGuardando] = useState(false);
 
@@ -193,46 +306,33 @@ export function RegistroScreen() {
     }));
   };
 
-  const validar = (): string | null => {
-    if (!form.nombre.trim()) return 'Ingresa tus nombres.';
-    if (!form.apellido.trim()) return 'Ingresa tus apellidos.';
-    if (!/^\d{7,10}$/.test(form.telefono.trim())) return 'El telefono debe tener entre 7 y 10 digitos.';
-    if (!form.departamento) return 'Selecciona un departamento.';
-    if (!form.municipio) return 'Selecciona un municipio.';
-    if (!form.comunidad.trim()) return 'Selecciona o ingresa una comunidad.';
-    if (!/^\d{4}$/.test(form.pin)) return 'El PIN debe tener 4 digitos.';
-    if (form.pin !== form.pinConfirmacion) return 'La confirmacion del PIN no coincide.';
+  const validar = (datos: FormRegistro): string | null => {
+    if (!datos.nombre.trim()) return 'Ingresa tus nombres.';
+    if (!datos.apellido.trim()) return 'Ingresa tus apellidos.';
+    if (!/^\d{7,10}$/.test(datos.telefono.trim())) return 'El telefono debe tener entre 7 y 10 digitos.';
+    if (!datos.departamento) return 'Selecciona un departamento.';
+    if (!datos.municipio) return 'Selecciona un municipio.';
+    if (!datos.comunidad.trim()) return 'Selecciona o ingresa una comunidad.';
     return null;
   };
 
-  const onGuardar = async () => {
-    const error = validar();
+  const irCreacionPin = () => {
+    const error = validar(form);
     if (error) {
       Alert.alert('Verifica tus datos', error);
       return;
     }
 
-    setGuardando(true);
+    guardarRegistroPinDraft({
+      nombre: form.nombre.trim(),
+      apellido: form.apellido.trim(),
+      telefono: form.telefono.trim(),
+      departamento: form.departamento,
+      municipio: form.municipio,
+      comunidad: form.comunidad.trim(),
+    });
 
-    try {
-      await registrarProductor({
-        nombre: form.nombre,
-        apellido: form.apellido,
-        telefono: form.telefono,
-        pin: form.pin,
-        departamento: form.departamento,
-        municipio: form.municipio,
-        comunidad: form.comunidad,
-      });
-
-      Alert.alert('Registro completado', 'Tu perfil se guardo localmente y ya puedes desbloquear la app con PIN o huella.');
-      router.replace('/auth/desbloqueo' as any);
-    } catch (e) {
-      const mensaje = e instanceof Error ? e.message : 'No fue posible guardar tu perfil local.';
-      Alert.alert('Error al registrar', mensaje);
-    } finally {
-      setGuardando(false);
-    }
+    router.push('/auth/creacion-pin' as any);
   };
 
   return (
@@ -268,7 +368,7 @@ export function RegistroScreen() {
               placeholderTextColor="#98a2b3"
             />
 
-            <Text style={styles.label}>Cedula de Identidad / Telefono *</Text>
+            <Text style={styles.label}>Telefono *</Text>
             <TextInput
               style={styles.input}
               placeholder="Ej: 71234567"
@@ -320,34 +420,8 @@ export function RegistroScreen() {
             </View>
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.label}>Crea tu PIN de 4 digitos *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0000"
-              value={form.pin}
-              onChangeText={(valor) => actualizar('pin', valor.replace(/\D+/g, '').slice(0, 4))}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              placeholderTextColor="#98a2b3"
-            />
-
-            <Text style={styles.label}>Confirma tu PIN *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0000"
-              value={form.pinConfirmacion}
-              onChangeText={(valor) => actualizar('pinConfirmacion', valor.replace(/\D+/g, '').slice(0, 4))}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              placeholderTextColor="#98a2b3"
-            />
-          </View>
-
-          <TouchableOpacity style={[styles.submitBtn, guardando ? styles.submitBtnDisabled : null]} onPress={() => void onGuardar()} disabled={guardando}>
-            <Text style={styles.submitBtnText}>{guardando ? 'Guardando...' : 'Guardar y Continuar'}</Text>
+          <TouchableOpacity style={[styles.submitBtn, guardando ? styles.submitBtnDisabled : null]} onPress={() => void irCreacionPin()} disabled={guardando}>
+            <Text style={styles.submitBtnText}>Continuar con PIN</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>

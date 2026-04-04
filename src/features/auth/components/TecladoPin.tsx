@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 type TecladoPinProps = {
   valor: string;
@@ -7,6 +8,7 @@ type TecladoPinProps = {
   titulo?: string;
   subtitulo?: string;
   mostrarBorrar?: boolean;
+  autoCompletar?: boolean;
   onCambiar: (nuevoValor: string) => void;
   onCompletar?: (pin: string) => void;
 };
@@ -19,6 +21,7 @@ export function TecladoPin({
   titulo,
   subtitulo,
   mostrarBorrar = true,
+  autoCompletar = true,
   onCambiar,
   onCompletar,
 }: TecladoPinProps) {
@@ -27,7 +30,7 @@ export function TecladoPin({
     const siguiente = `${valor}${numero}`;
     onCambiar(siguiente);
 
-    if (siguiente.length === longitud && onCompletar) {
+    if (autoCompletar && siguiente.length === longitud && onCompletar) {
       onCompletar(siguiente);
     }
   };
@@ -53,20 +56,20 @@ export function TecladoPin({
 
       <View style={styles.teclado}>
         {TECLAS.map((tecla) => (
-          <TouchableOpacity key={tecla} style={styles.tecla} activeOpacity={0.85} onPress={() => manejarNumero(tecla)}>
+          <TouchableOpacity key={tecla} style={styles.tecla} activeOpacity={0.7} onPress={() => manejarNumero(tecla)}>
             <Text style={styles.textoTecla}>{tecla}</Text>
           </TouchableOpacity>
         ))}
 
         <View style={styles.teclaVacia} />
 
-        <TouchableOpacity style={styles.tecla} activeOpacity={0.85} onPress={() => manejarNumero('0')}>
+        <TouchableOpacity style={styles.tecla} activeOpacity={0.7} onPress={() => manejarNumero('0')}>
           <Text style={styles.textoTecla}>0</Text>
         </TouchableOpacity>
 
         {mostrarBorrar ? (
-          <TouchableOpacity style={styles.tecla} activeOpacity={0.85} onPress={manejarBorrar}>
-            <Text style={styles.textoTecla}>←</Text>
+          <TouchableOpacity style={styles.teclaBorrar} activeOpacity={0.7} onPress={manejarBorrar}>
+            <Ionicons name="backspace-outline" size={28} color="#475569" />
           </TouchableOpacity>
         ) : (
           <View style={styles.teclaVacia} />
@@ -80,17 +83,18 @@ const styles = StyleSheet.create({
   wrapper: {
     width: '100%',
     alignItems: 'center',
+    maxWidth: 320, // Evita que se estire demasiado en pantallas grandes
   },
   titulo: {
-    fontSize: 34,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 6,
+    fontSize: 16,
+    fontWeight: '400',
+    color: '#475569',
+    marginBottom: 24,
     textAlign: 'center',
   },
   subtitulo: {
-    fontSize: 16,
-    color: '#4b5563',
+    fontSize: 14,
+    color: '#64748b',
     marginBottom: 18,
     textAlign: 'center',
   },
@@ -98,34 +102,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 28,
+    marginBottom: 40,
   },
   indicador: {
-    width: 16,
-    height: 16,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#c9d1dc',
-    backgroundColor: '#f5f7fa',
-    marginHorizontal: 8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0', // Borde gris muy claro como en el diseño
+    backgroundColor: 'transparent',
+    marginHorizontal: 10,
   },
   indicadorActivo: {
-    backgroundColor: '#39a935',
-    borderColor: '#39a935',
+    backgroundColor: '#2BA14A', // Se llena de verde al teclear
+    borderColor: '#2BA14A',
   },
   teclado: {
     width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 14,
+    rowGap: 16, // Espacio vertical entre los botones
   },
   tecla: {
     width: '30%',
     aspectRatio: 1,
-    borderRadius: 999,
+    borderRadius: 100, // Círculo perfecto
     borderWidth: 1,
-    borderColor: '#d8dde6',
+    borderColor: '#E2E8F0', // Borde súper fino y sutil
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  teclaBorrar: {
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
@@ -135,8 +149,8 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
   },
   textoTecla: {
-    fontSize: 32,
-    color: '#0f1f3a',
-    fontWeight: '500',
+    fontSize: 28,
+    color: '#1e293b', // Gris/Azul oscuro elegante
+    fontWeight: '300', // Fuente más delgada para un look moderno
   },
 });

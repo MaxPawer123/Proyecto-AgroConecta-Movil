@@ -11,6 +11,7 @@ const CATEGORIAS_POR_FASE_BASE: Record<Fase, string[]> = {
     'Alquiler de Terreno',
     'Semillas',
     'Abonos',
+    'Agua/Riego',
     'Maquinaria para Roturar',
     'Maquinaria para Siembra',
     'Mano de obra para roturar',

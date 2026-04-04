@@ -1,4 +1,5 @@
 export { RegistroScreen } from './screens/RegistroScreen';
+export { CreacionPinScreen } from './screens/CreacionPinScreen';
 export { DesbloqueoScreen } from './screens/DesbloqueoScreen';
 export { CambiarPinScreen } from './screens/CambiarPinScreen';
 export { TecladoPin } from './components/TecladoPin';

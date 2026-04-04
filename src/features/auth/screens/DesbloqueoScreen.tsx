@@ -12,7 +12,7 @@ export function DesbloqueoScreen() {
   const { desbloquearApp } = useAuthLocal();
 
   const [pin, setPin] = useState('');
-  const [mostrarTeclado, setMostrarTeclado] = useState(false);
+  const [mostrarTeclado, setMostrarTeclado] = useState(true); 
   const [intentandoHuella, setIntentandoHuella] = useState(false);
 
   const irMenu = () => {
@@ -65,27 +65,26 @@ export function DesbloqueoScreen() {
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={styles.container}>
-        {/* Header con espaciado mejorado */}
+      <View style={styles.screen}>
         <View style={styles.header}>
           <Text style={styles.brand}>Yapu Aroma</Text>
-          <Text style={styles.greeting}>Hola de nuevo</Text>
+          <Text style={styles.holaNuevo}>Hola de nuevo</Text>
         </View>
 
         {!mostrarTeclado ? (
           <View style={styles.huellaContainer}>
             <View style={styles.huellaIconBox}>
-              <Ionicons name="finger-print" size={70} color="#2b9b3c" />
+              <Ionicons name="finger-print" size={80} color="#2ba14a" />
             </View>
             <Text style={styles.huellaTexto}>
               {intentandoHuella ? 'Validando identidad...' : 'Toca el sensor para entrar'}
             </Text>
-            <TouchableOpacity onPress={() => setMostrarTeclado(true)} style={styles.btnPinSecundario}>
-              <Text style={styles.enlace}>Usar PIN de seguridad</Text>
+            <TouchableOpacity onPress={() => setMostrarTeclado(true)}>
+              <Text style={styles.enlace}>Usar PIN</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.pinContent}>
+          <View style={styles.pinContainer}>
             <View style={styles.tecladoWrapper}>
               <TecladoPin
                 valor={pin}
@@ -94,22 +93,15 @@ export function DesbloqueoScreen() {
                   void onCompletarPin(valor);
                 }}
                 titulo="Ingresa tu PIN de seguridad"
-                // Asegúrate de que tu componente TecladoPin use círculos perfectos
               />
             </View>
 
-            <View style={styles.footer}>
-              <TouchableOpacity 
-                onPress={() => Alert.alert('Recuperar', 'Lógica para recuperar PIN')}
-                style={styles.footerBtn}
-              >
+            <View style={styles.linksContainer}>
+              <TouchableOpacity onPress={() => Alert.alert('Recuperar', 'Lógica para recuperar PIN')}>
                 <Text style={styles.olvidastePin}>¿Olvidaste tu PIN?</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                onPress={() => router.replace('/')}
-                style={styles.footerBtn}
-              >
+              <TouchableOpacity onPress={() => router.replace('/')}>
                 <Text style={styles.regresarInicio}>← Volver al inicio</Text>
               </TouchableOpacity>
             </View>
@@ -125,87 +117,77 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  container: {
+  screen: {
     flex: 1,
-    paddingHorizontal: 30,
-    paddingTop: 40,
+    paddingHorizontal: 24,
+    paddingTop: 50, // Más espacio arriba para que no quede pegado
     alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 20,
-    width: '100%',
+    marginBottom: 40,
   },
   brand: {
-    color: '#2b9b3c',
-    fontSize: 32,
-    fontWeight: 'bold',
-    letterSpacing: -0.5,
+    color: '#2BA14A',
+    fontSize: 28, // Tamaño idéntico al diseño
+    fontWeight: '700',
+    marginBottom: 8,
   },
-  greeting: {
-    color: '#64748b',
+  holaNuevo: {
+    color: '#334155',
     fontSize: 18,
-    marginTop: 5,
+    fontWeight: '400',
+  },
+  pinContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  tecladoWrapper: {
+    flexGrow: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   huellaContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
+    justifyContent: 'center',
   },
   huellaIconBox: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#f0fdf4',
+    backgroundColor: '#F0FDF4',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: '#dcfce7',
+    marginBottom: 20,
   },
   huellaTexto: {
     color: '#475569',
     fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 30,
-  },
-  pinContent: {
-    flex: 1,
-    width: '100%',
-    justifyContent: 'space-between',
-  },
-  tecladoWrapper: {
-    flex: 1,
-    justifyContent: 'center',
-    marginTop: -20, // Ajuste para centrar visualmente
-  },
-  footer: {
-    paddingBottom: 20,
-    alignItems: 'center',
-  },
-  footerBtn: {
-    paddingVertical: 10,
-    width: '100%',
-    alignItems: 'center',
-  },
-  olvidastePin: {
-    color: '#2b9b3c',
-    fontSize: 16,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  regresarInicio: {
-    color: '#94a3b8',
-    fontSize: 14,
-    marginTop: 10,
+    marginBottom: 20,
   },
   enlace: {
-    color: '#2b9b3c',
+    color: '#2BA14A',
+    textDecorationLine: 'underline',
     fontSize: 16,
-    fontWeight: '600',
   },
-  btnPinSecundario: {
-    padding: 10,
-  }
+  linksContainer: {
+    alignItems: 'center',
+    paddingBottom: 30, // Separación inferior
+  },
+  olvidastePin: {
+    color: '#2BA14A',
+    fontSize: 15,
+    textDecorationLine: 'underline',
+    marginBottom: 20,
+  },
+  regresarInicio: {
+    color: '#64748B',
+    fontSize: 14,
+    textDecorationLine: 'underline', // Subrayado para igualar al diseño
+  },
 });
