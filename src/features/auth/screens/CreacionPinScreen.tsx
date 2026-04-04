@@ -43,7 +43,7 @@ export function CreacionPinScreen() {
     setGuardando(true);
 
     try {
-      await registrarProductor({
+      const resultadoRegistro = await registrarProductor({
         nombre: borrador.nombre,
         apellido: borrador.apellido,
         telefono: borrador.telefono,
@@ -54,8 +54,11 @@ export function CreacionPinScreen() {
       });
 
       limpiarRegistroPinDraft();
-      Alert.alert('Registro completado', 'Tu perfil se guardo localmente y ya puedes desbloquear la app con PIN o huella.');
-      router.replace('/auth/desbloqueo' as any);
+      Alert.alert(
+        'Registro completado',
+        'Tu perfil se guardo localmente. La sincronizacion con el backend se ejecuta en segundo plano.'
+      );
+      router.replace('/home' as any);
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'No fue posible guardar tu perfil local.';
       Alert.alert('Error al registrar', mensaje);

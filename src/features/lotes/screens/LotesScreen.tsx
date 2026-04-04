@@ -51,8 +51,6 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
     cargarLotesLocalesInmediato,
     cargarLotesLocales,
     manejarCreacionLote,
-    diagnosticoCarga,
-    mensajeSync,
     modalFotoVisible,
     fotoSeleccionada,
     abrirVistaFoto,
@@ -95,14 +93,14 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
               <Text style={styles.subtitle}>{rubroConfig.subtitle}</Text>
             </View>
 
-            <TouchableOpacity style={styles.primaryButton} onPress={() => setModalOpen(true)}>
-              <Ionicons name="add" size={18} color="#fff" />
-              <Text style={styles.primaryButtonText}>Registrar Siembra</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.actionsRow}>
 
-          {!!mensajeSync && <Text style={styles.syncText}>{mensajeSync}</Text>}
-          {!!diagnosticoCarga && <Text style={styles.debugText}>{diagnosticoCarga}</Text>}
+              <TouchableOpacity style={styles.primaryButton} onPress={() => setModalOpen(true)}>
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.primaryButtonText}>Registrar Siembra</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           <View style={styles.kpiGrid}>
             <View style={[styles.kpiCard, { backgroundColor: '#eefcf2', borderColor: '#dcfce7' }]}>
@@ -227,12 +225,12 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
                   placeholder="Ej: Quinua Jacha Grano / Haba"
                 />
 
-                <Text style={styles.modalLabel}>Ubicacion</Text>
+                <Text style={styles.modalLabel}>Ubicacion GPS</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={formEdicion.ubicacion}
                   onChangeText={(t) => setFormEdicion({ ...formEdicion, ubicacion: t })}
-                  placeholder="Comunidad"
+                  placeholder="GPS: lat, lon | referencia local"
                 />
 
                 <Text style={styles.modalLabel}>Superficie (ha)</Text>
@@ -302,7 +300,20 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, color: '#6b7280', marginTop: 4, marginBottom: 16 },
   syncText: { fontSize: 11, color: '#b45309', marginTop: -10, marginBottom: 6, fontWeight: '600' },
   debugText: { fontSize: 11, color: '#2563eb', marginTop: -4, marginBottom: 8 },
-  primaryButton: { backgroundColor: '#2eaa51', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8, elevation: 2 },
+  actionsRow: { flexDirection: 'row', gap: 8 },
+  secondaryButton: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#86efac',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    flex: 1,
+  },
+  secondaryButtonText: { color: '#166534', fontWeight: '600', fontSize: 13, marginLeft: 4 },
+  primaryButton: { backgroundColor: '#2eaa51', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8, elevation: 2, flex: 1 },
   primaryButtonText: { color: '#fff', fontWeight: '600', fontSize: 14, marginLeft: 6 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
   kpiCard: { width: '48%', borderRadius: 16, padding: 14, marginBottom: 12, borderWidth: 1 },

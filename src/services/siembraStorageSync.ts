@@ -1,6 +1,12 @@
 import { AppState, type AppStateStatus } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { crearLoteApi, crearGastoApi, obtenerLotesPorProductoApi, subirFotoSiembraApi } from '@/src/services/api';
+import {
+  crearLoteApi,
+  crearGastoApi,
+  obtenerLotesPorProductoApi,
+  obtenerOCrearProductoApi,
+  subirFotoSiembraApi,
+} from '@/src/services/api';
 import {
   insertarLoteLocal,
   obtenerGastosPendientesPorLoteLocal,
@@ -121,6 +127,28 @@ async function obtenerLotesPendientes(): Promise<LotePendiente[]> {
   return rows.map(mapRowToPendiente);
 }
 
+async function obtenerProductoLocalPorId(idProducto: number): Promise<{ nombre: string; categoria: string } | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ nombre: string; categoria: string }>(
+    `
+      SELECT nombre, categoria
+      FROM producto
+      WHERE id_producto = ?
+      LIMIT 1
+    `,
+    idProducto
+  );
+
+  if (!row?.nombre || !row?.categoria) {
+    return null;
+  }
+
+  return {
+    nombre: String(row.nombre),
+    categoria: String(row.categoria),
+  };
+}
+
 async function marcarLoteSincronizado(idLocal: number, idServidor: number): Promise<void> {
   const db = await getDb();
   const serverColumn = await getLoteServerColumn();
@@ -157,9 +185,9 @@ function sonNumerosCercanos(a: number, b: number): boolean {
   return Math.abs(Number(a || 0) - Number(b || 0)) < 0.0001;
 }
 
-async function buscarLoteServidorExistente(item: LotePendiente): Promise<number | null> {
+async function buscarLoteServidorExistente(item: LotePendiente, idProductoServidor: number): Promise<number | null> {
   try {
-    const lotesServidor = await obtenerLotesPorProductoApi(item.idProducto);
+    const lotesServidor = await obtenerLotesPorProductoApi(idProductoServidor);
     const encontrado = lotesServidor.find((lote) => {
       const coincideNombre = normalizarTexto(lote.nombre_lote) === normalizarTexto(item.nombreLote);
       const coincideVariedad = normalizarTexto(lote.variedad) === normalizarTexto(item.tipoCultivo);
@@ -188,14 +216,29 @@ async function sincronizarLote(item: LotePendiente): Promise<number> {
     }
   }
 
-  const idExistente = await buscarLoteServidorExistente(item);
+  const productoLocal = await obtenerProductoLocalPorId(item.idProducto);
+  if (!productoLocal) {
+    throw new Error(`No se encontro el producto local con id ${item.idProducto}.`);
+  }
+
+  const productoServidor = await obtenerOCrearProductoApi({
+    nombre: productoLocal.nombre,
+    categoria: productoLocal.categoria,
+  });
+
+  const idProductoServidor = Number(productoServidor.id_producto);
+  if (!Number.isFinite(idProductoServidor) || idProductoServidor <= 0) {
+    throw new Error('El backend no devolvio un id_producto valido.');
+  }
+
+  const idExistente = await buscarLoteServidorExistente(item, idProductoServidor);
   if (idExistente) {
     return idExistente;
   }
 
   const loteServidor = await crearLoteApi({
     id_productor: 1,
-    id_producto: item.idProducto,
+    id_producto: idProductoServidor,
     nombre_lote: item.nombreLote,
     superficie: item.superficie,
     fecha_siembra: item.fechaSiembraIso,

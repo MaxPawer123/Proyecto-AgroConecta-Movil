@@ -34,7 +34,6 @@ export function LoteItem({ lote, productLabel, onOpenPhoto, onCalcular, onEditar
 
       <View style={styles.loteContent}>
         <Text style={styles.loteNombre}>{lote.nombre}</Text>
-        <Text style={styles.loteCultivo}>Producto: {lote.producto}</Text>
         <Text style={styles.loteCultivo}>{productLabel}: {lote.tipoProducto}</Text>
 
         <View style={styles.detallesGrid}>

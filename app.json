@@ -41,6 +41,12 @@
           }
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Yapu Aroma necesita acceder a tu ubicacion GPS para registrar la ubicacion real del lote."
+        }
+      ],
       "expo-sqlite"
     ],
     "experiments": {

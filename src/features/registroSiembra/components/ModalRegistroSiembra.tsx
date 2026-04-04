@@ -52,11 +52,14 @@ export function ModalRegistroSiembra({
     form,
     fotoTerreno,
     guardando,
+    cargandoUbicacionGps,
+    errorUbicacionGps,
     modalOpcionesOpen,
     modalCalendarioOpen,
     campoFechaActivo,
     campoOpcionesActivo,
     actualizarCampo,
+    capturarUbicacionGps,
     abrirSelectorOpciones,
     cerrarSelectorOpciones,
     abrirSelectorFecha,
@@ -132,6 +135,36 @@ export function ModalRegistroSiembra({
             </Text>
             <Ionicons name="chevron-down" size={18} color="#6b7280" />
           </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (campo.tipo === 'gps') {
+      const valorActual = form[campo.key as keyof typeof form] as string;
+      return (
+        <View key={campo.key} style={wrapperStyle}>
+          <Text style={styles.label}>{campo.label}</Text>
+          <TouchableOpacity
+            style={[styles.gpsInput, cargandoUbicacionGps && styles.gpsInputDisabled]}
+            onPress={() => void capturarUbicacionGps()}
+            activeOpacity={0.9}
+            disabled={cargandoUbicacionGps}
+          >
+            <Ionicons name="location-outline" size={20} color="#2eaa51" />
+            <View style={styles.gpsInputContent}>
+              <Text style={valorActual ? styles.selectValue : styles.selectPlaceholder} numberOfLines={2}>
+                {cargandoUbicacionGps ? 'Capturando GPS...' : valorActual || campo.placeholder}
+              </Text>
+              <Text style={styles.gpsInputSubtext} numberOfLines={2}>
+                {valorActual
+                  ? 'Guardado localmente. Se sincroniza automaticamente cuando vuelve internet.'
+                  : 'Toca para registrar la ubicacion GPS del lote.'}
+              </Text>
+            </View>
+            <Ionicons name={cargandoUbicacionGps ? 'sync' : 'refresh'} size={18} color="#6b7280" />
+          </TouchableOpacity>
+          {errorUbicacionGps ? <Text style={styles.gpsError}>{errorUbicacionGps}</Text> : null}
+          {campo.hint ? <Text style={styles.hint}>{campo.hint}</Text> : null}
         </View>
       );
     }
@@ -395,6 +428,33 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     flex: 1,
     marginRight: 8,
+  },
+  gpsInput: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  gpsInputDisabled: {
+    opacity: 0.75,
+  },
+  gpsInputContent: {
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  gpsInputSubtext: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 3,
+  },
+  gpsError: {
+    fontSize: 11,
+    color: '#b91c1c',
+    marginTop: 4,
   },
   inputWithSuffix: {
     backgroundColor: '#f9fafb',

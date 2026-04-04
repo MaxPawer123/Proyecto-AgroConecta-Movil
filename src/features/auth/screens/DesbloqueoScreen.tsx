@@ -16,7 +16,7 @@ export function DesbloqueoScreen() {
   const [intentandoHuella, setIntentandoHuella] = useState(false);
 
   const irMenu = () => {
-    router.replace('/menu');
+    router.replace('/home' as any);
   };
 
   const intentarBiometria = async () => {

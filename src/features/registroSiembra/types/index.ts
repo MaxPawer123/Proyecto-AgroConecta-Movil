@@ -9,7 +9,7 @@ export type CampoFormularioKey =
 	| 'fechaCosecha'
 	| 'fotoTerreno';
 
-export type TipoCampoFormulario = 'text' | 'number' | 'select' | 'date' | 'photo';
+export type TipoCampoFormulario = 'text' | 'number' | 'select' | 'date' | 'photo' | 'gps';
 
 export interface FormRegistroSiembra {
 	nombre: string;
@@ -61,11 +61,14 @@ export interface UseRegistroSiembraResult {
 	form: FormRegistroSiembra;
 	fotoTerreno: string | null;
 	guardando: boolean;
+	cargandoUbicacionGps: boolean;
+	errorUbicacionGps: string | null;
 	modalOpcionesOpen: boolean;
 	modalCalendarioOpen: boolean;
 	campoFechaActivo: 'fechaSiembra' | 'fechaCosecha' | null;
 	campoOpcionesActivo: 'tipoCultivo' | 'ubicacion' | null;
 	actualizarCampo: (campo: keyof FormRegistroSiembra, valor: string) => void;
+	capturarUbicacionGps: () => Promise<void>;
 	abrirSelectorOpciones: (campo: 'tipoCultivo' | 'ubicacion') => void;
 	cerrarSelectorOpciones: () => void;
 	abrirSelectorFecha: (campo: 'fechaSiembra' | 'fechaCosecha') => void;

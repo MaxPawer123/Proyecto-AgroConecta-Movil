@@ -65,7 +65,7 @@ export function CambiarPinScreen() {
     try {
       await cambiarPin({ pinActual, pinNuevo: pin });
       Alert.alert('PIN actualizado', 'Tu PIN de seguridad fue actualizado correctamente.');
-      router.replace('/menu' as any);
+      router.replace('/home' as any);
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'No fue posible cambiar el PIN.';
       Alert.alert('Error', mensaje);
@@ -97,7 +97,7 @@ export function CambiarPinScreen() {
           <Text style={styles.ghostButtonText}>Reiniciar</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/menu' as any)} disabled={guardando}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/home' as any)} disabled={guardando}>
           <Text style={styles.backButtonText}>Volver</Text>
         </TouchableOpacity>
       </View>

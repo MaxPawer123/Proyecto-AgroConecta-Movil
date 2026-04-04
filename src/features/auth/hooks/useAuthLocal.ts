@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { getDb } from '@/src/services/sqlite';
+import { recuperarPinApi, registrarProductorApi } from '@/src/services/api';
 import { hashearPin } from '../utils/crypto';
 
 type RegistroProductorInput = {
@@ -116,8 +117,8 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
     `ALTER TABLE ${tablaUsuario} ADD COLUMN apellido TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN rol TEXT NOT NULL DEFAULT 'productor'`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN estado TEXT DEFAULT 'activo'`,
-    `ALTER TABLE ${tablaUsuario} ADD COLUMN correo TEXT UNIQUE`,
-    `ALTER TABLE ${tablaUsuario} ADD COLUMN telefono TEXT UNIQUE`,
+    `ALTER TABLE ${tablaUsuario} ADD COLUMN correo TEXT`,
+    `ALTER TABLE ${tablaUsuario} ADD COLUMN telefono TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN contrasena TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN fecha_registro TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN sincronizado INTEGER NOT NULL DEFAULT 0`,
@@ -137,6 +138,18 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
       await db.runAsync(sql);
     } catch {
       // Ignora cuando la columna ya existe o la migracion no aplica en una base previa.
+    }
+  }
+
+  for (const indice of [
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_usuario_correo ON ${tablaUsuario}(correo)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_usuario_telefono ON ${tablaUsuario}(telefono)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_productor_id_usuario ON ${tablaProductor}(id_usuario)`,
+  ]) {
+    try {
+      await db.runAsync(indice);
+    } catch {
+      // Si hay datos heredados duplicados, se mantiene el acceso al esquema sin bloquear el login.
     }
   }
 
@@ -281,30 +294,67 @@ async function obtenerSesionLocal(db: Awaited<ReturnType<typeof getDb>>): Promis
 
 async function obtenerCredencialesRecientes(
   db: Awaited<ReturnType<typeof getDb>>,
+  tablaUsuario: string,
   tablaProductor: string
-): Promise<{ idUsuario: number; pinHash: string } | null> {
+): Promise<{ idUsuario: number; telefono: string; pinHash: string } | null> {
+  const columnasUsuario = await columnasTabla(db, tablaUsuario);
+  const nombresUsuario = new Set(columnasUsuario.map((c) => c.name));
   const columnas = await columnasTabla(db, tablaProductor);
   const nombres = new Set(columnas.map((c) => c.name));
 
   const campoHash = nombres.has('pin_hash') ? 'pin_hash' : nombres.has('pin') ? 'pin' : null;
   if (!campoHash) return null;
 
-  const row = await db.getFirstAsync<{ id_usuario: number; pin_guardado: string }>(
+  const columnaTelefonoUsuario = nombresUsuario.has('telefono') ? 'u.telefono' : 'NULL as telefono';
+
+  const row = await db.getFirstAsync<{ id_usuario: number; telefono: string; pin_guardado: string }>(
     `
-      SELECT id_usuario, ${campoHash} as pin_guardado
-      FROM ${tablaProductor}
-      WHERE ${campoHash} IS NOT NULL
-      ORDER BY id_productor DESC
+      SELECT u.id_usuario, ${columnaTelefonoUsuario}, p.${campoHash} as pin_guardado
+      FROM usuario u
+      INNER JOIN ${tablaProductor} p ON p.id_usuario = u.id_usuario
+      WHERE p.${campoHash} IS NOT NULL
+      ORDER BY p.id_productor DESC
       LIMIT 1
     `
   );
 
-  if (!row?.id_usuario || !row?.pin_guardado) return null;
+  if (!row?.id_usuario || !row?.telefono || !row?.pin_guardado) return null;
 
   return {
     idUsuario: Number(row.id_usuario),
+    telefono: String(row.telefono),
     pinHash: String(row.pin_guardado),
   };
+}
+
+async function sincronizarRegistroEnBackend(input: RegistroProductorInput): Promise<boolean> {
+  try {
+    await registrarProductorApi({
+      nombre: input.nombre.trim(),
+      apellido: input.apellido.trim(),
+      telefono: input.telefono.trim(),
+      pin: input.pin,
+      departamento: input.departamento.trim(),
+      municipio: input.municipio.trim(),
+      comunidad: input.comunidad.trim(),
+    });
+
+    return true;
+  } catch (error) {
+    console.warn('No se pudo sincronizar el registro con el backend:', error);
+    return false;
+  }
+}
+
+async function sincronizarPinEnBackend(telefono: string, nuevoPin: string): Promise<void> {
+  try {
+    await recuperarPinApi({
+      telefono: telefono.trim(),
+      nuevo_pin: nuevoPin,
+    });
+  } catch (error) {
+    console.warn('No se pudo sincronizar el cambio de PIN con el backend:', error);
+  }
 }
 
 export function useAuthLocal() {
@@ -365,13 +415,23 @@ export function useAuthLocal() {
       await abrirSesionLocal(db, idUsuario);
     });
 
+    void sincronizarRegistroEnBackend({
+      nombre,
+      apellido,
+      telefono,
+      pin: input.pin,
+      departamento,
+      municipio,
+      comunidad,
+    });
+
     return { idUsuario, idProductor };
   }, []);
 
   const desbloquearApp = useCallback(async (pinIngresado?: string): Promise<DesbloqueoResult> => {
     const db = await getDb();
-    const { tablaProductor } = await asegurarEsquemaAuth(db);
-    const credenciales = await obtenerCredencialesRecientes(db, tablaProductor);
+    const { tablaUsuario, tablaProductor } = await asegurarEsquemaAuth(db);
+    const credenciales = await obtenerCredencialesRecientes(db, tablaUsuario, tablaProductor);
 
     const tieneHardware = await LocalAuthentication.hasHardwareAsync();
     const tieneBiometriaRegistrada = await LocalAuthentication.isEnrolledAsync();
@@ -418,13 +478,13 @@ export function useAuthLocal() {
     await cerrarSesionLocal(db);
   }, []);
 
-  const resolverRutaInicial = useCallback(async (): Promise<'/auth/registro' | '/auth/desbloqueo' | '/menu'> => {
+  const resolverRutaInicial = useCallback(async (): Promise<'/auth/registro' | '/auth/desbloqueo' | '/home'> => {
     const db = await getDb();
     const { tablaProductor } = await asegurarEsquemaAuth(db);
 
     const sesion = await obtenerSesionLocal(db);
     if (sesion.activa && sesion.idUsuario) {
-      return '/menu';
+      return '/home';
     }
 
     const registro = await db.getFirstAsync<{ total: number }>(`SELECT COUNT(*) as total FROM ${tablaProductor}`);
@@ -435,12 +495,12 @@ export function useAuthLocal() {
 
   const cambiarPin = useCallback(async (input: CambiarPinInput): Promise<void> => {
     const db = await getDb();
-    const { tablaProductor } = await asegurarEsquemaAuth(db);
+    const { tablaUsuario, tablaProductor } = await asegurarEsquemaAuth(db);
 
     const pinActualHash = await hashearPin(input.pinActual);
     const pinNuevoHash = await hashearPin(input.pinNuevo);
 
-    const credenciales = await obtenerCredencialesRecientes(db, tablaProductor);
+    const credenciales = await obtenerCredencialesRecientes(db, tablaUsuario, tablaProductor);
     if (!credenciales) {
       throw new Error('No existe un productor registrado para actualizar el PIN.');
     }
@@ -479,6 +539,10 @@ export function useAuthLocal() {
       `UPDATE ${tablaProductor} SET ${setParts.join(', ')} WHERE id_usuario = ?`,
       ...values
     );
+
+    if (credenciales.telefono) {
+      await sincronizarPinEnBackend(credenciales.telefono, input.pinNuevo);
+    }
   }, []);
 
   return {

@@ -5,26 +5,6 @@ import {
   SeccionCamposConfig,
 } from '../types';
 
-const COMUNIDADES_QUINUA = [
-  'Patacamaya - Centro',
-  'Sica Sica - Milla Milla',
-  'Sica Sica - Imilla  Imilla',
-  'Sica Sica - Taruca',
-  'Patacamaya - Colchani',
-  'Patacamaya - Viscachani',
-  'Patacamaya - Collani',
-];
-
-const COMUNIDADES_HORTALIZAS = [
-  'Patacamaya - Centro',
-  'Sica Sica - Milla Milla',
-  'Sica Sica - Imilla  Imilla',
-  'Sica Sica - Taruca',
-  'Patacamaya - Colchani',
-  'Patacamaya - Viscachani',
-  'Sica Sica - Aroma',
-];
-
 const TIPOS_QUINUA = [
   'Quinua Real Blanca',
   'Quinua Roja Pasankalla',
@@ -45,19 +25,17 @@ const camposBase = {
   } satisfies CampoFormularioConfig,
   ubicacionQuinua: {
     key: 'ubicacion',
-    tipo: 'select',
-    label: 'Ubicacion',
-    placeholder: 'Selecciona una comunidad (Patacamaya o Sica Sica)',
-    tituloSelector: 'Selecciona una comunidad',
-    opciones: COMUNIDADES_QUINUA,
+    tipo: 'gps',
+    label: 'Ubicacion GPS',
+    placeholder: 'Toca para capturar la ubicacion GPS del lote',
+    hint: 'Se guarda localmente con coordenadas y se sincroniza automaticamente cuando hay internet.',
   } satisfies CampoFormularioConfig,
   ubicacionHortalizas: {
     key: 'ubicacion',
-    tipo: 'select',
-    label: 'Ubicacion',
-    placeholder: 'Selecciona una comunidad (Patacamaya o Sica Sica)',
-    tituloSelector: 'Selecciona una comunidad',
-    opciones: COMUNIDADES_HORTALIZAS,
+    tipo: 'gps',
+    label: 'Ubicacion GPS',
+    placeholder: 'Toca para capturar la ubicacion GPS del lote',
+    hint: 'Se guarda localmente con coordenadas y se sincroniza automaticamente cuando hay internet.',
   } satisfies CampoFormularioConfig,
   fotoTerreno: {
     key: 'fotoTerreno',
