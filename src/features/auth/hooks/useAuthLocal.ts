@@ -478,13 +478,13 @@ export function useAuthLocal() {
     await cerrarSesionLocal(db);
   }, []);
 
-  const resolverRutaInicial = useCallback(async (): Promise<'/auth/registro' | '/auth/desbloqueo' | '/home'> => {
+  const resolverRutaInicial = useCallback(async (): Promise<'/auth/registro' | '/auth/desbloqueo' | '/(tabs)'> => {
     const db = await getDb();
     const { tablaProductor } = await asegurarEsquemaAuth(db);
 
     const sesion = await obtenerSesionLocal(db);
     if (sesion.activa && sesion.idUsuario) {
-      return '/home';
+      return '/(tabs)';
     }
 
     const registro = await db.getFirstAsync<{ total: number }>(`SELECT COUNT(*) as total FROM ${tablaProductor}`);

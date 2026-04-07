@@ -109,6 +109,8 @@ export type GastoApi = {
 
 export type ProductoApi = {
   id_producto: number;
+  id_lote?: number | null;
+  id_productor?: number | null;
   nombre: string;
   categoria: string;
   imagen_url?: string | null;
@@ -647,6 +649,8 @@ export async function obtenerProductosPorCategoriaApi(categoria: string): Promis
 export async function crearProductoApi(payload: {
   nombre: string;
   categoria: string;
+  id_lote?: number;
+  id_productor?: number;
 }): Promise<ProductoApi> {
   const response = await requestJson<ApiResponse<ProductoApi>>('/api/productos', {
     method: 'POST',
@@ -663,6 +667,8 @@ export async function crearProductoApi(payload: {
 export async function obtenerOCrearProductoApi(payload: {
   nombre: string;
   categoria: string;
+  id_lote?: number;
+  id_productor?: number;
 }): Promise<ProductoApi> {
   const productosCategoria = await obtenerProductosPorCategoriaApi(payload.categoria);
   const nombreNormalizado = payload.nombre.trim().toLowerCase();

@@ -1,6 +1,5 @@
 import React from 'react';
-import { DashboardScreen } from '@/src/features/dashboard';
-
+import { Redirect } from 'expo-router';
 export default function HomeRoute() {
-  return <DashboardScreen />;
+  return <Redirect href="/" />;
 }

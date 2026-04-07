@@ -7,10 +7,14 @@ const DEFAULT_INTERVAL_MS = 10000;
 type ProductoInput = {
   nombre: string;
   categoria: string;
+  id_lote?: number | null;
+  id_productor?: number | null;
 };
 
 export type ProductoOffline = {
   idLocal: string;
+  idLote: number | null;
+  idProductor: number | null;
   nombre: string;
   categoria: string;
   synced: boolean;
@@ -30,8 +34,12 @@ const CATEGORIAS_SYNC = ['Quinua', 'Grano', 'Hortaliza', 'Tuberculo'] as const;
 
 function mapProducto(row: Record<string, unknown>): ProductoOffline {
   const now = new Date().toISOString();
+  const idLote = row.id_lote == null ? null : Number(row.id_lote);
+  const idProductor = row.id_productor == null ? null : Number(row.id_productor);
   return {
     idLocal: String(row.id_producto ?? ''),
+    idLote: Number.isFinite(idLote) ? idLote : null,
+    idProductor: Number.isFinite(idProductor) ? idProductor : null,
     nombre: String(row.nombre ?? ''),
     categoria: String(row.categoria ?? ''),
     synced: true,
@@ -59,9 +67,11 @@ export async function guardarProductoLocal(input: ProductoInput): Promise<Produc
   const db = await getDb();
   await db.runAsync(
     `
-      INSERT INTO producto (nombre, categoria, unidad_medida_base)
-      VALUES (?, ?, ?)
+      INSERT INTO producto (id_lote, id_productor, nombre, categoria, unidad_medida_base)
+      VALUES (?, ?, ?, ?, ?)
     `,
+    input.id_lote ?? null,
+    input.id_productor ?? null,
     nombre,
     categoria,
     'Kg'
@@ -121,14 +131,18 @@ export async function sincronizarProductosPendientes(): Promise<SyncResult> {
   for (const producto of productos.values()) {
     await db.runAsync(
       `
-        INSERT INTO producto (id_producto, nombre, categoria, unidad_medida_base)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO producto (id_producto, id_lote, id_productor, nombre, categoria, unidad_medida_base)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(id_producto) DO UPDATE SET
+          id_lote = excluded.id_lote,
+          id_productor = excluded.id_productor,
           nombre = excluded.nombre,
           categoria = excluded.categoria,
           unidad_medida_base = excluded.unidad_medida_base
       `,
       producto.id_producto,
+      producto.id_lote ?? null,
+      producto.id_productor ?? null,
       producto.nombre,
       producto.categoria ?? '',
       'Kg'

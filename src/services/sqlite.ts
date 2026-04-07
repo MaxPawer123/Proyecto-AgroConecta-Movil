@@ -40,9 +40,13 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     `
       CREATE TABLE IF NOT EXISTS producto (
         id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_lote INTEGER,
+        id_productor INTEGER,
         nombre TEXT NOT NULL,
         categoria TEXT,
-        unidad_medida_base TEXT DEFAULT 'Kg'
+        unidad_medida_base TEXT DEFAULT 'Kg',
+        FOREIGN KEY (id_lote) REFERENCES lote(id_lote) ON DELETE CASCADE,
+        FOREIGN KEY (id_productor) REFERENCES productor(id_productor) ON DELETE CASCADE
       )
     `,
     `
@@ -241,6 +245,40 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE'");
   await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
   await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+
+  // Campos opcionales para relacionar producto con lote/productor cuando existe ese contexto.
+  await runSafe(db, 'ALTER TABLE producto ADD COLUMN id_lote INTEGER');
+  await runSafe(db, 'ALTER TABLE producto ADD COLUMN id_productor INTEGER');
+
+  await runSafe(
+    db,
+    `
+      UPDATE producto
+      SET
+        id_lote = COALESCE(
+          id_lote,
+          (
+            SELECT l.id_lote
+            FROM lote l
+            WHERE l.id_producto = producto.id_producto
+              AND l.id_lote IS NOT NULL
+            ORDER BY l.id_local DESC
+            LIMIT 1
+          )
+        ),
+        id_productor = COALESCE(
+          id_productor,
+          (
+            SELECT l.id_productor
+            FROM lote l
+            WHERE l.id_producto = producto.id_producto
+              AND l.id_productor IS NOT NULL
+            ORDER BY l.id_local DESC
+            LIMIT 1
+          )
+        )
+    `
+  );
 }
 
 export async function getLoteServerColumn(): Promise<'id_lote' | 'id_servidor'> {

@@ -58,7 +58,7 @@ export function CreacionPinScreen() {
         'Registro completado',
         'Tu perfil se guardo localmente. La sincronizacion con el backend se ejecuta en segundo plano.'
       );
-      router.replace('/home' as any);
+      router.replace('/(tabs)' as any);
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'No fue posible guardar tu perfil local.';
       Alert.alert('Error al registrar', mensaje);

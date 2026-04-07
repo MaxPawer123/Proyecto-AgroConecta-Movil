@@ -59,8 +59,10 @@ CREATE TABLE IF NOT EXISTS productor (
 -- Tabla de Productos (Catálogo General)
 CREATE TABLE producto (
     id_producto SERIAL PRIMARY KEY,
+    id_lote INT NOT NULL REFERENCES lote(id_lote),
+     id_productor INT NOT NULL REFERENCES productor(id_productor),
     nombre VARCHAR(100) NOT NULL, -- Ej: Quinua Real
-    categoria VARCHAR(50) CHECK (categoria IN ('Grano', 'Tuberculo', 'Hortaliza', 'Forraje')),
+    categoria VARCHAR(50) CHECK (categoria IN ('Hortalizas', 'Quinua')),
     unidad_medida_base VARCHAR(20) DEFAULT 'Kg'
 );
 

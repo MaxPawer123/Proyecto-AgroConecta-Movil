@@ -23,6 +23,7 @@ type EstadoCola = 'PENDIENTE' | 'COMPLETADO';
 type LotePendiente = {
   idLocal: number;
   idServidor: number | null;
+  idProductor: number;
   idProducto: number;
   nombreLote: string;
   ubicacion: string;
@@ -97,6 +98,7 @@ function mapRowToPendiente(row: Record<string, unknown>): LotePendiente {
   return {
     idLocal: Number(row.id_local),
     idServidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
+    idProductor: Number(row.id_productor ?? 1),
     idProducto: Number(row.id_producto),
     nombreLote: String(row.nombre_lote ?? ''),
     ubicacion: String(row.ubicacion ?? ''),
@@ -224,6 +226,7 @@ async function sincronizarLote(item: LotePendiente): Promise<number> {
   const productoServidor = await obtenerOCrearProductoApi({
     nombre: productoLocal.nombre,
     categoria: productoLocal.categoria,
+    id_productor: item.idProductor,
   });
 
   const idProductoServidor = Number(productoServidor.id_producto);
@@ -237,7 +240,7 @@ async function sincronizarLote(item: LotePendiente): Promise<number> {
   }
 
   const loteServidor = await crearLoteApi({
-    id_productor: 1,
+    id_productor: item.idProductor || 1,
     id_producto: idProductoServidor,
     nombre_lote: item.nombreLote,
     superficie: item.superficie,
