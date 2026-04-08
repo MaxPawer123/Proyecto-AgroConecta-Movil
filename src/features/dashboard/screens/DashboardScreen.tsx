@@ -6,6 +6,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useDashboard } from '../hooks/useDashboard';
 import { sincronizarProductosPendientes } from '@/src/services/offlineProductsSync';
 import { sincronizarSiembrasPendientes } from '@/src/services/siembraStorageSync';
+import { RubroCalculadora } from '@/src/features/calculadoraCostos/types';
 
 type StatCardProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -21,6 +22,15 @@ type QuickActionProps = {
   variant: 'primary' | 'secondary';
   onPress: () => void;
 };
+
+function normalizarRubro(tipoCultivo?: string): RubroCalculadora {
+  if (!tipoCultivo) return 'quinua';
+  const lower = tipoCultivo.toLowerCase();
+  if (lower.includes('hortaliza')) return 'hortalizas';
+  if (lower.includes('quinua')) return 'quinua';
+  if (lower.includes('haba')) return 'quinua'; // mapear haba a quinua por defecto
+  return 'quinua'; // defecto
+}
 
 export function DashboardScreen() {
   const router = useRouter();
@@ -145,14 +155,27 @@ export function DashboardScreen() {
     <View style={styles.sectionBlock}>
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionTitle}>Lotes Recientes</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/menu' as any)}>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/seleccionar-rubro' as any)}>
           <Text style={styles.sectionAction}>Ver todos</Text>
         </TouchableOpacity>
-      </View>
+      </View>   
 
       <View style={styles.recentList}>
         {lotesRecientes.map((lote) => (
-          <View key={lote.id} style={styles.lotCard}>
+          <TouchableOpacity
+            key={lote.id}
+            style={styles.lotCard}
+            activeOpacity={0.85}
+            onPress={() => {
+              router.push({
+                pathname: '/calculadora-costos' as any,
+                params: {
+                  idLoteServidor: String(lote.id),
+                  rubro: normalizarRubro(lote.tipoCultivo),
+                },
+              });
+            }}
+          >
             <View style={styles.lotInfo}>
               <Text style={styles.lotName}>{lote.nombre}</Text>
               <Text style={styles.lotVariety}>{lote.variedad}</Text>
@@ -161,7 +184,7 @@ export function DashboardScreen() {
               </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
     </View>

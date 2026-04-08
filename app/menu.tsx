@@ -14,12 +14,12 @@ import { useAuthLocal } from '@/src/features/auth';
 
 export default function Inicio() {
   const router = useRouter();
-  const { cerrarSesion } = useAuthLocal();
+  const { cerrarSesionLocal } = useAuthLocal();
 
   const onCerrarSesion = async () => {
     try {
-      await cerrarSesion();
-      router.replace('/auth/desbloqueo' as any);
+      await cerrarSesionLocal();
+      router.replace('/' as any);
     } catch {
       Alert.alert('Error', 'No se pudo cerrar la sesion local.');
     }

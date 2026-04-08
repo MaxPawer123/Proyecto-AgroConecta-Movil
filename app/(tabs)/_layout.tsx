@@ -76,7 +76,7 @@ export default function TabLayout() {
           } else if (route.name === 'reportes') {
             iconName = focused ? 'bar-chart' : 'bar-chart-outline';
           } else if (route.name === 'creditos') {
-            iconName = focused ? 'information-circle' : 'information-circle-outline';
+            iconName = focused ? 'person' : 'person-outline';
           } else {
             iconName = focused ? 'home' : 'home-outline';
           }
@@ -106,7 +106,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="creditos"
         options={{
-          title: 'Créditos',
+          title: 'Perfil',
         }}
       />
     </Tabs>
@@ -124,15 +124,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopColor: '#E2E8F0',
     borderTopWidth: 1,
-    height: 66,
-    paddingTop: 8,
-    paddingBottom: 8,
+    height: 70,
+    paddingTop: 2,
+    paddingBottom: 18,
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
   },
   tabItem: {
-    paddingVertical: 2,
+    paddingVertical: 0,
   },
 });

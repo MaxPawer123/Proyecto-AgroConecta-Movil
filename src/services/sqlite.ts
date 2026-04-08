@@ -38,26 +38,13 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       )
     `,
     `
-      CREATE TABLE IF NOT EXISTS producto (
-        id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_lote INTEGER,
-        id_productor INTEGER,
-        nombre TEXT NOT NULL,
-        categoria TEXT,
-        unidad_medida_base TEXT DEFAULT 'Kg',
-        FOREIGN KEY (id_lote) REFERENCES lote(id_lote) ON DELETE CASCADE,
-        FOREIGN KEY (id_productor) REFERENCES productor(id_productor) ON DELETE CASCADE
-      )
-    `,
-    `
       CREATE TABLE IF NOT EXISTS lote (
         id_local INTEGER PRIMARY KEY AUTOINCREMENT,
         id_lote INTEGER,
         id_productor INTEGER NOT NULL DEFAULT 1,
-        id_producto INTEGER NOT NULL,
+        tipo_cultivo TEXT NOT NULL,
         nombre_lote TEXT NOT NULL,
         ubicacion TEXT,
-        variedad TEXT,
         superficie REAL,
         fecha_siembra TEXT NOT NULL,
         fecha_cosecha_est TEXT NOT NULL,
@@ -70,8 +57,7 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         estado TEXT NOT NULL DEFAULT 'ACTIVO',
         estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE',
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `,
     'CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_id_lote ON lote(id_lote)',
@@ -112,7 +98,7 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       )
     `,
     'CREATE UNIQUE INDEX IF NOT EXISTS uq_produccion_lote_id_produccion ON produccion_lote(id_produccion)',
-    'CREATE INDEX IF NOT EXISTS idx_lote_producto ON lote(id_producto)',
+    'CREATE INDEX IF NOT EXISTS idx_lote_tipo_cultivo ON lote(tipo_cultivo)',
     'CREATE INDEX IF NOT EXISTS idx_lote_servidor ON lote(id_lote)',
     'CREATE INDEX IF NOT EXISTS idx_lote_sync ON lote(estado_sincronizacion)',
     'CREATE INDEX IF NOT EXISTS idx_gasto_sync ON gasto_lote(sincronizado)',
@@ -123,46 +109,12 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     await runSafe(db, statement);
   }
 
-  await runSafe(
-    db,
-    `
-      INSERT OR IGNORE INTO producto (id_producto, nombre, categoria, unidad_medida_base)
-      VALUES (?, ?, ?, ?)
-    `,
-    1,
-    'Quinua Real',
-    'Grano',
-    'Kg'
-  );
-
-  await runSafe(
-    db,
-    `
-      INSERT OR IGNORE INTO producto (id_producto, nombre, categoria, unidad_medida_base)
-      VALUES (?, ?, ?, ?)
-    `,
-    2,
-    'Hortaliza General',
-    'Hortaliza',
-    'Kg'
-  );
-
-  await runSafe(
-    db,
-    `
-      INSERT OR IGNORE INTO producto (id_producto, nombre, categoria, unidad_medida_base)
-      VALUES (?, ?, ?, ?)
-    `,
-    3,
-    'Haba',
-    'Hortaliza',
-    'Kg'
-  );
 }
 
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN id_lote INTEGER');
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN id_productor INTEGER NOT NULL DEFAULT 1');
+  await runSafe(db, 'ALTER TABLE lote ADD COLUMN tipo_cultivo TEXT');
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN ubicacion TEXT');
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN fecha_cierre_real TEXT');
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN rendimiento_real REAL');
@@ -181,14 +133,18 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
   await runSafe(
     db,
+    "UPDATE lote SET tipo_cultivo = COALESCE(tipo_cultivo, variedad, 'Sin especificar') WHERE tipo_cultivo IS NULL OR TRIM(tipo_cultivo) = ''"
+  );
+
+  await runSafe(
+    db,
     `
       INSERT INTO lote (
         id_local,
         id_lote,
         id_productor,
-        id_producto,
+        tipo_cultivo,
         nombre_lote,
-        variedad,
         superficie,
         fecha_siembra,
         fecha_cosecha_est,
@@ -203,9 +159,8 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
         id_local,
         id_servidor,
         1,
-        id_producto,
+        COALESCE(variedad, 'Sin especificar'),
         nombre_lote,
-        variedad,
         superficie,
         fecha_siembra,
         fecha_cosecha_est,
@@ -224,6 +179,7 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   await runSafe(db, 'DROP TABLE IF EXISTS costos');
   await runSafe(db, 'DROP TABLE IF EXISTS siembras_queue');
   await runSafe(db, 'DROP TABLE IF EXISTS productos_offline');
+  await runSafe(db, 'DROP TABLE IF EXISTS producto');
 
   // Compatibilidad con bases locales antiguas que no tienen todas las columnas offline.
   await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_gasto INTEGER');
@@ -246,39 +202,6 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
   await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
 
-  // Campos opcionales para relacionar producto con lote/productor cuando existe ese contexto.
-  await runSafe(db, 'ALTER TABLE producto ADD COLUMN id_lote INTEGER');
-  await runSafe(db, 'ALTER TABLE producto ADD COLUMN id_productor INTEGER');
-
-  await runSafe(
-    db,
-    `
-      UPDATE producto
-      SET
-        id_lote = COALESCE(
-          id_lote,
-          (
-            SELECT l.id_lote
-            FROM lote l
-            WHERE l.id_producto = producto.id_producto
-              AND l.id_lote IS NOT NULL
-            ORDER BY l.id_local DESC
-            LIMIT 1
-          )
-        ),
-        id_productor = COALESCE(
-          id_productor,
-          (
-            SELECT l.id_productor
-            FROM lote l
-            WHERE l.id_producto = producto.id_producto
-              AND l.id_productor IS NOT NULL
-            ORDER BY l.id_local DESC
-            LIMIT 1
-          )
-        )
-    `
-  );
 }
 
 export async function getLoteServerColumn(): Promise<'id_lote' | 'id_servidor'> {

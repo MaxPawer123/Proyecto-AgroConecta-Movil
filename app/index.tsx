@@ -1,18 +1,45 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   TouchableOpacity, 
+  Alert,
   ImageBackground, 
   StatusBar,
   Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
+import { useAuthLocal } from '@/src/features/auth';
 
 export default function Inicio() {
   const router = useRouter();
+  const { verificarCuentaExistente } = useAuthLocal();
+  const [verificandoCuenta, setVerificandoCuenta] = useState(false);
+
+  const onCrearCuenta = useCallback(async () => {
+    if (verificandoCuenta) return;
+
+    try {
+      setVerificandoCuenta(true);
+      const existe = await verificarCuentaExistente();
+
+      if (existe) {
+        Alert.alert(
+          'Cuenta Existente',
+          'Ya tienes una cuenta registrada en este dispositivo. Por favor, presiona Iniciar Sesión.'
+        );
+        return;
+      }
+
+      router.push('/auth/registro' as any);
+    } catch {
+      Alert.alert('Error', 'No se pudo validar la cuenta local. Intenta nuevamente.');
+    } finally {
+      setVerificandoCuenta(false);
+    }
+  }, [router, verificarCuentaExistente, verificandoCuenta]);
 
   return (
     <>
@@ -60,7 +87,8 @@ export default function Inicio() {
 
           <TouchableOpacity
             style={styles.secondaryButton}
-            onPress={() => router.push('/auth/registro' as any)}
+            onPress={() => void onCrearCuenta()}
+            disabled={verificandoCuenta}
           >
             <Text style={styles.secondaryButtonText}>Crear Cuenta</Text>
           </TouchableOpacity>

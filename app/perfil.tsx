@@ -141,17 +141,34 @@ async function obtenerPerfilProductor(): Promise<PerfilProductor | null> {
 
 export default function PerfilScreen() {
   const router = useRouter();
-  const { cerrarSesion } = useAuthLocal();
+  const { cerrarSesionLocal } = useAuthLocal();
   const [perfil, setPerfil] = useState<PerfilProductor | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
 
   const onCerrarSesion = async () => {
     try {
-      await cerrarSesion();
-      router.replace('/auth/desbloqueo' as any);
+      await cerrarSesionLocal();
+      router.replace('/inicio' as any);
     } catch {
       Alert.alert('Error', 'No se pudo cerrar la sesion local.');
     }
+  };
+
+  const confirmarCierreSesion = () => {
+    Alert.alert(
+      'Cerrar sesion',
+      'Vas a salir de tu cuenta. Se borraran los datos locales de este dispositivo. ¿Deseas continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cerrar sesion',
+          style: 'destructive',
+          onPress: () => {
+            void onCerrarSesion();
+          },
+        },
+      ]
+    );
   };
 
   const cargarPerfil = useCallback(async () => {
@@ -272,7 +289,7 @@ export default function PerfilScreen() {
                 <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.settingsItem} onPress={() => void onCerrarSesion()} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.settingsItem} onPress={confirmarCierreSesion} activeOpacity={0.85}>
                 <View style={styles.settingsLeft}>
                   <View style={[styles.roundIcon, { backgroundColor: '#feecee' }]}>
                     <Ionicons name="log-out-outline" size={18} color="#ef4444" />

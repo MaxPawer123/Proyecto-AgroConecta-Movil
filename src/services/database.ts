@@ -2,10 +2,9 @@ import { getDb, getLoteServerColumn } from './sqlite';
 
 type LoteInsertInput = {
   id_servidor?: number | null;
-  id_producto: number;
+  tipo_cultivo: string;
   nombre_lote: string;
   ubicacion?: string | null;
-  variedad?: string | null;
   superficie: number | null;
   fecha_siembra: string;
   fecha_cosecha_est: string;
@@ -18,10 +17,11 @@ type LoteInsertInput = {
 export type LoteLocal = {
   id_local: number;
   id_servidor: number | null;
-  id_producto: number;
+  tipo_cultivo: string;
+  variedad?: string;
+  id_producto?: number;
   nombre_lote: string;
   ubicacion: string | null;
-  variedad: string | null;
   superficie: number | null;
   fecha_siembra: string;
   fecha_cosecha_est: string;
@@ -29,6 +29,8 @@ export type LoteLocal = {
   precio_venta_est: number | null;
   foto_siembra_uri_local: string | null;
   estado_sincronizacion: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type ModalidadPago = 'CICLO' | 'ANUAL' | 'NA';
@@ -77,14 +79,18 @@ type ProduccionLocal = {
 
 function mapRowToLote(row: Record<string, unknown>): LoteLocal {
   const idServidorRaw = row.id_lote ?? row.id_servidor;
+  const tipoCultivo = String(row.tipo_cultivo ?? row.variedad ?? '');
+  const tipoCultivoLower = tipoCultivo.toLowerCase();
+  const idProductoLegacy = tipoCultivoLower.includes('quinua') ? 1 : tipoCultivoLower.includes('haba') ? 3 : 2;
 
   return {
     id_local: Number(row.id_local),
     id_servidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
-    id_producto: Number(row.id_producto),
+    tipo_cultivo: tipoCultivo,
+    variedad: tipoCultivo,
+    id_producto: idProductoLegacy,
     nombre_lote: String(row.nombre_lote ?? ''),
     ubicacion: row.ubicacion === null || row.ubicacion === undefined ? null : String(row.ubicacion),
-    variedad: row.variedad === null || row.variedad === undefined ? null : String(row.variedad),
     superficie: row.superficie === null || row.superficie === undefined ? null : Number(row.superficie),
     fecha_siembra: String(row.fecha_siembra ?? ''),
     fecha_cosecha_est: String(row.fecha_cosecha_est ?? ''),
@@ -93,6 +99,8 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     precio_venta_est: row.precio_venta_est === null || row.precio_venta_est === undefined ? null : Number(row.precio_venta_est),
     foto_siembra_uri_local: row.foto_siembra_url === null || row.foto_siembra_url === undefined ? null : String(row.foto_siembra_url),
     estado_sincronizacion: String(row.estado_sincronizacion ?? 'PENDIENTE'),
+    created_at: row.created_at === null || row.created_at === undefined ? undefined : String(row.created_at),
+    updated_at: row.updated_at === null || row.updated_at === undefined ? undefined : String(row.updated_at),
   };
 }
 
@@ -136,10 +144,9 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
       INSERT INTO lote (
         ${serverColumn},
         id_productor,
-        id_producto,
+        tipo_cultivo,
         nombre_lote,
         ubicacion,
-        variedad,
         superficie,
         fecha_siembra,
         fecha_cosecha_est,
@@ -149,14 +156,13 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
         estado_sincronizacion,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     loteData.id_servidor ?? null,
     1,
-    loteData.id_producto,
+    loteData.tipo_cultivo,
     loteData.nombre_lote,
     loteData.ubicacion ?? null,
-    loteData.variedad ?? null,
     loteData.superficie ?? null,
     loteData.fecha_siembra,
     loteData.fecha_cosecha_est,
@@ -169,6 +175,10 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
   );
 
   return Number(result.lastInsertRowId);
+}
+
+export async function guardarLoteLocal(datos: LoteInsertInput): Promise<number> {
+  return insertarLoteLocal(datos);
 }
 
 export async function obtenerLotesLocales(): Promise<LoteLocal[]> {
@@ -187,10 +197,9 @@ export async function obtenerLotesLocales(): Promise<LoteLocal[]> {
 const columnasActualizables: Record<string, string> = {
   id_lote: 'id_lote',
   id_servidor: 'id_servidor',
-  id_producto: 'id_producto',
+  tipo_cultivo: 'tipo_cultivo',
   nombre_lote: 'nombre_lote',
   ubicacion: 'ubicacion',
-  variedad: 'variedad',
   superficie: 'superficie',
   fecha_siembra: 'fecha_siembra',
   fecha_cosecha_est: 'fecha_cosecha_est',

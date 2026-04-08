@@ -12,10 +12,8 @@ import {
   actualizarLoteApi,
   eliminarLoteApi,
   obtenerGastosPorLoteApi,
-  obtenerLotesPorProductoApi,
-  obtenerProductosPorCategoriaApi,
+  obtenerLotesPorTipoCultivoApi,
 } from '@/src/services/api';
-import { listarProductosLocales, sincronizarProductosPendientes } from '@/src/services/offlineProductsSync';
 import {
   iniciarSincronizacionAutomaticaSiembras,
   detenerSincronizacionAutomaticaSiembras,
@@ -213,31 +211,14 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
   const cargarLotesLocalesInmediato = useCallback(async () => {
     const esLoteQuinua = (item: any) => {
-      const idProducto = Number(item.id_producto || 0);
-      if (idProducto === 1) return true;
-      const variedad = String(item.variedad ?? '').toLowerCase();
-      const nombre = String(item.nombre_lote ?? '').toLowerCase();
-      return variedad.includes('quinua') || nombre.includes('quinua');
+      const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').toLowerCase();
+      return tipo.includes('quinua');
     };
 
     const esLoteHortaliza = (item: any) => {
-      const idProducto = Number(item.id_producto || 0);
-      if (idProducto === 2 || idProducto === 3) return true;
-      const variedad = String(item.variedad ?? '').toLowerCase();
-      const nombre = String(item.nombre_lote ?? '').toLowerCase();
-      if (variedad.includes('quinua') || nombre.includes('quinua')) return false;
-      return (
-        variedad.includes('hortaliza') ||
-        nombre.includes('hortaliza') ||
-        variedad.includes('haba') ||
-        nombre.includes('haba') ||
-        variedad.includes('zanahoria') ||
-        nombre.includes('zanahoria') ||
-        variedad.includes('lechuga') ||
-        nombre.includes('lechuga') ||
-        variedad.includes('papa') ||
-        nombre.includes('papa')
-      );
+      const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase();
+      if (!tipo) return true;
+      return !tipo.includes('quinua');
     };
 
     const mapearRapido = (item: any): LoteViewModel => {
@@ -247,9 +228,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       const ingresoEstimado = rendimiento * precio;
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
-      const defaultVariedad = rubro === 'quinua'
-        ? rubroConfig.defaultVariedad
-        : (item.id_producto === 3 ? 'Haba' : rubroConfig.defaultVariedad);
+      const tipoProducto = String(item.tipo_cultivo ?? item.variedad ?? rubroConfig.defaultVariedad);
 
       return {
         key: `local-${item.id_local}`,
@@ -262,7 +241,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           : `${rubroConfig.codePrefix}-LOCAL-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         producto: rubroConfig.defaultProductName,
-        tipoProducto: item.variedad || defaultVariedad,
+        tipoProducto,
         imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
@@ -305,12 +284,14 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         const idServidor = normalizarIdServidor(remoto?.id_lote);
         if (!idServidor) continue;
 
+        const tipoCultivo = String(remoto?.tipo_cultivo ?? remoto?.variedad ?? 'sin_tipo');
+
         const payload = {
           id_servidor: idServidor,
-          id_producto: Number(remoto?.id_producto ?? rubroConfig.fallbackProductoId),
+          tipo_cultivo: tipoCultivo,
           nombre_lote: String(remoto?.nombre_lote ?? `Lote ${idServidor}`),
           ubicacion: remoto?.ubicacion ? String(remoto.ubicacion) : null,
-          variedad: remoto?.variedad ? String(remoto.variedad) : null,
+          variedad: remoto?.variedad ? String(remoto.variedad) : undefined,
           superficie: normalizarNumero(remoto?.superficie),
           fecha_siembra: String(remoto?.fecha_siembra ?? ''),
           fecha_cosecha_est: String(remoto?.fecha_cosecha_est ?? ''),
@@ -379,7 +360,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           codigo: item.id_servidor ? `H-BD-${item.id_servidor}` : `H-LOCAL-${item.id_local}`,
           nombre: item.nombre_lote || `Lote ${item.id_local}`,
           producto: 'Hortalizas',
-          tipoProducto: item.variedad || (item.id_producto === 3 ? 'Haba' : 'Hortaliza'),
+          tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
           imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800'),
           imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
           area: superficie,
@@ -396,6 +377,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           faseActual,
           estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
           inversion: 0,
+          
           ingresoEstimado,
           proyeccion: ingresoEstimado,
           mostrarCosecha: false,
@@ -418,7 +400,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           codigo: `H-BD-${item.id_lote}`,
           nombre: item.nombre_lote || `Lote ${item.id_lote}`,
           producto: 'Hortalizas',
-          tipoProducto: item.variedad || (item.id_producto === 3 ? 'Haba' : 'Hortaliza'),
+          tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
           imagen: resolverUriImagen(item.foto_siembra_url, 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800'),
           imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
           area: superficie,
@@ -441,39 +423,17 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         };
       };
 
-      const esProductoHortaliza = (producto: any) => {
-        const categoria = String(producto?.categoria ?? '').toLowerCase();
-        const nombre = String(producto?.nombre ?? '').toLowerCase();
-        if (categoria === 'hortalizas' || categoria === 'hortaliza' || categoria === 'tuberculo') return true;
-        if (nombre.includes('quinua')) return false;
-        return (
-          nombre.includes('hortaliza') ||
-          nombre.includes('haba') ||
-          nombre.includes('zanahoria') ||
-          nombre.includes('lechuga') ||
-          nombre.includes('papa')
-        );
-      };
-
-      const construirIdsProductoHortalizas = (productos: any[]) => {
-        const ids = new Set<number>([2, 3]);
-        for (const producto of productos) {
-          const id = Number(producto?.id_producto ?? producto?.idLocal ?? 0);
-          if (!id) continue;
-          if (esProductoHortaliza(producto)) ids.add(id);
-        }
-        return ids;
+      const esLoteHortaliza = (item: any) => {
+        const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').toLowerCase();
+        if (!tipo) return true;
+        return !tipo.includes('quinua');
       };
 
       const cargarVistaLocalRapida = async () => {
         try {
-          const [datosLocales, productosLocales] = await Promise.all([
-            obtenerLotesLocales(),
-            listarProductosLocales(),
-          ]);
-          const idsProductoHortalizas = construirIdsProductoHortalizas(Array.isArray(productosLocales) ? productosLocales : []);
+          const datosLocales = await obtenerLotesLocales();
           const locales = Array.isArray(datosLocales)
-            ? datosLocales.filter((item: any) => idsProductoHortalizas.has(Number(item.id_producto || 0)))
+            ? datosLocales.filter((item: any) => esLoteHortaliza(item))
             : [];
           const localesMapeados = locales.map(mapearLoteLocal);
           const localesConGastos = await enriquecerConGastos(localesMapeados);
@@ -492,34 +452,21 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       }
 
       try {
-        const [
-          datosLocales,
-          productosLocales,
-          productosHortalizasNuevos,
-          productosHortalizaLegacy,
-          productosTuberculoLegacy,
-        ] = await Promise.all([
-          obtenerLotesLocales(),
-          listarProductosLocales(),
-          obtenerProductosPorCategoriaApi('Hortalizas'),
-          obtenerProductosPorCategoriaApi('Hortaliza'),
-          obtenerProductosPorCategoriaApi('Tuberculo'),
-        ]);
+        const datosLocales = await obtenerLotesLocales();
 
-        const idsProductoHortalizas = construirIdsProductoHortalizas([
-          ...(Array.isArray(productosLocales) ? productosLocales : []),
-          ...(Array.isArray(productosHortalizasNuevos) ? productosHortalizasNuevos : []),
-          ...(Array.isArray(productosHortalizaLegacy) ? productosHortalizaLegacy : []),
-          ...(Array.isArray(productosTuberculoLegacy) ? productosTuberculoLegacy : []),
-        ]);
+        const tiposCultivo = new Set(
+          (Array.isArray(datosLocales) ? datosLocales : [])
+            .map((item: any) => String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase())
+            .filter((tipo) => tipo && !tipo.includes('quinua'))
+        );
 
-        const lotesPorProducto = await Promise.all([...idsProductoHortalizas].map((idProducto) => obtenerLotesPorProductoApi(idProducto)));
+        const lotesPorTipo = await Promise.all([...tiposCultivo].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
 
         const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item: any) => idsProductoHortalizas.has(item.id_producto))
+          ? datosLocales.filter((item: any) => esLoteHortaliza(item))
           : [];
 
-        const remotos = deduplicarRemotosPorId(lotesPorProducto.flat());
+        const remotos = deduplicarRemotosPorId(lotesPorTipo.flat());
         await sincronizarCacheLocalConRemotos(remotos, Array.isArray(datosLocales) ? datosLocales : []);
 
         const combinados = [...remotos.map(mapearLoteBackend)];
@@ -532,13 +479,9 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         console.warn('No se pudieron cargar lotes de hortalizas desde backend, usando local:', error);
 
         try {
-          const [datosLocales, productosLocales] = await Promise.all([
-            obtenerLotesLocales(),
-            listarProductosLocales(),
-          ]);
-          const idsProductoHortalizas = construirIdsProductoHortalizas(Array.isArray(productosLocales) ? productosLocales : []);
+          const datosLocales = await obtenerLotesLocales();
           const locales = Array.isArray(datosLocales)
-            ? datosLocales.filter((item: any) => idsProductoHortalizas.has(Number(item.id_producto || 0)))
+            ? datosLocales.filter((item: any) => esLoteHortaliza(item))
             : [];
           const localesMapeados = locales.map(mapearLoteLocal);
           const localesConGastos = await enriquecerConGastos(localesMapeados);
@@ -552,59 +495,12 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       return;
     }
 
-    const categoriasQuinua = new Set(['quinua', 'grano']);
-    const nombresQuinua = ['quinua'];
-
-    const extraerIdProducto = (producto: any) => Number(producto.id_producto ?? producto.idLocal ?? 0);
-    const extraerNombreProducto = (producto: any) => String(producto.nombre ?? '').trim();
-    const extraerCategoriaProducto = (producto: any) => String(producto.categoria ?? '').trim();
-
-    const esProductoQuinua = (producto: any) => {
-      const categoria = extraerCategoriaProducto(producto).toLowerCase();
-      const nombre = extraerNombreProducto(producto).toLowerCase();
-      if (categoriasQuinua.has(categoria)) return true;
-      return nombresQuinua.some((token) => nombre.includes(token));
+    const esLoteQuinua = (item: any) => {
+      const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').toLowerCase();
+      return tipo.includes('quinua');
     };
 
-    const construirCatalogo = (productos: any[]) => {
-      const mapaNombre = new Map<number, string>();
-      const idsQuinua = new Set<number>();
-
-      for (const producto of productos) {
-        const id = extraerIdProducto(producto);
-        if (!id) continue;
-
-        const nombre = extraerNombreProducto(producto);
-        if (nombre) {
-          mapaNombre.set(id, nombre);
-        }
-
-        if (esProductoQuinua(producto)) {
-          idsQuinua.add(id);
-        }
-      }
-
-      idsQuinua.add(1);
-
-      return { mapaNombre, idsQuinua };
-    };
-
-    const resolverNombreProducto = (idProducto: number, mapaNombre: Map<number, string>) => {
-      const id = Number(idProducto || 0);
-      if (!id) return 'Quinua';
-      return mapaNombre.get(id) || 'Quinua';
-    };
-
-    const esLoteQuinuaFlexible = (item: any, idsProductoQuinua: Set<number>) => {
-      const idProducto = Number(item.id_producto || 0);
-      if (idsProductoQuinua.has(idProducto)) return true;
-
-      const variedad = String(item.variedad ?? '').toLowerCase();
-      const nombre = String(item.nombre_lote ?? '').toLowerCase();
-      return variedad.includes('quinua') || nombre.includes('quinua');
-    };
-
-    const mapearLoteLocal = (item: any, mapaNombre: Map<number, string>): LoteViewModel => {
+    const mapearLoteLocal = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
       const precio = Number(item.precio_venta_est || 0);
@@ -619,8 +515,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idProducto: item.id_producto,
         codigo: item.id_servidor ? `Q-BD-${item.id_servidor}` : `Q-LOCAL-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
-        producto: resolverNombreProducto(item.id_producto, mapaNombre),
-        tipoProducto: item.variedad || 'Sin variedad',
+        producto: 'Quinua',
+        tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
         imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'),
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
@@ -643,7 +539,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       };
     };
 
-    const mapearLoteBackend = (item: any, mapaNombre: Map<number, string>): LoteViewModel => {
+    const mapearLoteBackend = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
       const precio = Number(item.precio_venta_est || 0);
@@ -658,8 +554,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idProducto: item.id_producto,
         codigo: `Q-BD-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
-        producto: resolverNombreProducto(item.id_producto, mapaNombre),
-        tipoProducto: item.variedad || 'Sin variedad',
+        producto: 'Quinua',
+        tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
         imagen: resolverUriImagen(item.foto_siembra_url, 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'),
         imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
         area: superficie,
@@ -684,22 +580,20 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
     const cargarSoloLocales = async () => {
       const datosLocales = await obtenerLotesLocales();
-      const idsBase = new Set([1]);
-      const mapaNombreVacio = new Map<number, string>();
       const localesFiltrados = Array.isArray(datosLocales)
-        ? datosLocales.filter((item: any) => esLoteQuinuaFlexible(item, idsBase))
+        ? datosLocales.filter((item: any) => esLoteQuinua(item))
         : [];
-      const localesMapeados = localesFiltrados.map((item) => mapearLoteLocal(item, mapaNombreVacio));
+      const localesMapeados = localesFiltrados.map((item) => mapearLoteLocal(item));
       return enriquecerConGastos(localesMapeados);
     };
 
-    const cargarVistaLocalRapida = async (idsProductoQuinua: Set<number>, mapaNombre: Map<number, string>) => {
+    const cargarVistaLocalRapida = async () => {
       try {
         const datosLocales = await obtenerLotesLocales();
         const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item: any) => esLoteQuinuaFlexible(item, idsProductoQuinua))
+          ? datosLocales.filter((item: any) => esLoteQuinua(item))
           : [];
-        const localesMapeados = locales.map((item) => mapearLoteLocal(item, mapaNombre));
+        const localesMapeados = locales.map((item) => mapearLoteLocal(item));
         const localesConGastos = await enriquecerConGastos(localesMapeados);
         setDiagnosticoCarga(`SQLite local: ${Array.isArray(datosLocales) ? datosLocales.length : 0} | visibles: ${localesConGastos.length}`);
         setLotesOrdenados(localesConGastos);
@@ -723,41 +617,33 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       setDiagnosticoCarga('Error en bootstrap local');
     }
 
-    await sincronizarProductosPendientes().catch(() => {
-      // Si falla la sincronizacion de catalogo, continuamos con datos locales.
-    });
-
     try {
-      const [datosLocales, productosLocales, productosQuinuaNuevos, productosQuinuaLegacy] = await Promise.all([
-        obtenerLotesLocales(),
-        listarProductosLocales(),
-        obtenerProductosPorCategoriaApi('Quinua'),
-        obtenerProductosPorCategoriaApi('Grano'),
+      const datosLocales = await obtenerLotesLocales();
+
+      const tiposCultivo = new Set([
+        'quinua',
+        ...(Array.isArray(datosLocales) ? datosLocales : [])
+          .map((item: any) => String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase())
+          .filter((tipo) => tipo && tipo.includes('quinua')),
       ]);
 
-      const catalogo = construirCatalogo([
-        ...(Array.isArray(productosLocales) ? productosLocales : []),
-        ...(Array.isArray(productosQuinuaNuevos) ? productosQuinuaNuevos : []),
-        ...(Array.isArray(productosQuinuaLegacy) ? productosQuinuaLegacy : []),
-      ]);
+      const lotesPorTipo = await Promise.all([...tiposCultivo].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
 
-      await cargarVistaLocalRapida(catalogo.idsQuinua, catalogo.mapaNombre);
+      await cargarVistaLocalRapida();
 
-      const lotesPorProducto = await Promise.all([...catalogo.idsQuinua].map((idProducto) => obtenerLotesPorProductoApi(idProducto)));
-
-      const datosBackend = lotesPorProducto.flat();
+      const datosBackend = lotesPorTipo.flat();
 
       const locales = Array.isArray(datosLocales)
-        ? datosLocales.filter((item: any) => esLoteQuinuaFlexible(item, catalogo.idsQuinua))
+        ? datosLocales.filter((item: any) => esLoteQuinua(item))
         : [];
 
       const remotos = deduplicarRemotosPorId(Array.isArray(datosBackend) ? datosBackend : []);
       await sincronizarCacheLocalConRemotos(remotos, Array.isArray(datosLocales) ? datosLocales : []);
 
-      const combinados = [...remotos.map((item: any) => mapearLoteBackend(item, catalogo.mapaNombre))];
+      const combinados = [...remotos.map((item: any) => mapearLoteBackend(item))];
 
       const localesPendientes = filtrarLocalesNoDuplicados(locales, remotos);
-      combinados.push(...localesPendientes.map((item: any) => mapearLoteLocal(item, catalogo.mapaNombre)));
+      combinados.push(...localesPendientes.map((item: any) => mapearLoteLocal(item)));
       const combinadosConGastos = await enriquecerConGastos(combinados);
       setDiagnosticoCarga(`Remotos: ${remotos.length} | locales usados: ${localesPendientes.length} | visibles: ${combinadosConGastos.length}`);
       setLotesOrdenados(combinadosConGastos);
@@ -765,16 +651,12 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       console.warn('No se pudieron cargar lotes de quinua desde backend, usando local:', error);
 
       try {
-        const [datosLocales, productosLocales] = await Promise.all([
-          obtenerLotesLocales(),
-          listarProductosLocales(),
-        ]);
+        const datosLocales = await obtenerLotesLocales();
 
-        const catalogo = construirCatalogo(Array.isArray(productosLocales) ? productosLocales : []);
         const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item: any) => esLoteQuinuaFlexible(item, catalogo.idsQuinua))
+          ? datosLocales.filter((item: any) => esLoteQuinua(item))
           : [];
-        const localesMapeados = locales.map((item) => mapearLoteLocal(item, catalogo.mapaNombre));
+        const localesMapeados = locales.map((item) => mapearLoteLocal(item));
         const localesConGastos = await enriquecerConGastos(localesMapeados);
         setDiagnosticoCarga(`Fallback local visibles: ${localesConGastos.length}`);
         setLotesOrdenados(localesConGastos);
@@ -928,9 +810,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           estado: loteEditando.estadoRaw || 'ACTIVO',
           foto_siembra_url: fotoSiembra || null,
           ubicacion: ubicacion || null,
-          variedad: tipoCultivo,
+          tipo_cultivo: tipoCultivo,
           id_productor: 1,
-          id_producto: loteEditando.idProducto || rubroConfig.fallbackProductoId,
         })
           .then(() => {
             void cargarLotesLocales();

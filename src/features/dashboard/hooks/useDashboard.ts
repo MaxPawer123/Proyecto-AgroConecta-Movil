@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getDb } from '@/src/services/sqlite';
 import { obtenerLotesLocales } from '@/src/services/database';
-import { obtenerLotesPorProductoApi, type LoteApi } from '@/src/services/api';
+import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '@/src/services/api';
 
 export type EstadisticasDashboard = {
   lotesActivos: number;
@@ -15,6 +15,7 @@ export type LoteRecienteDashboard = {
   nombre: string;
   variedad: string;
   estado: string;
+  tipoCultivo?: string;
 };
 
 export type DashboardData = {
@@ -39,6 +40,7 @@ type LoteResumido = {
   estado: string;
   area: number;
   orderKey: number;
+  tipoCultivo?: string;
 };
 
 const estadoInicial: Omit<DashboardData, 'actualizar'> = {
@@ -140,7 +142,8 @@ async function obtenerUsuarioLocal(): Promise<UsuarioResumen> {
 
 function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[number]): LoteResumido {
   const nombre = String(item.nombre_lote ?? '').trim() || `Lote ${item.id_local}`;
-  const variedad = String(item.variedad ?? '').trim() || 'Sin variedad';
+  const variedad = String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad';
+  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || undefined;
 
   return {
     id: `local-${item.id_local}`,
@@ -150,12 +153,14 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
     estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'Sincronizado' : 'Pendiente de sync',
     area: Number(item.superficie ?? 0),
     orderKey: item.id_local,
+    tipoCultivo,
   };
 }
 
 function mapearLoteBackend(item: LoteApi): LoteResumido {
   const nombre = String(item.nombre_lote ?? '').trim() || `Lote ${item.id_lote}`;
-  const variedad = String(item.variedad ?? '').trim() || String(item.nombre_producto ?? 'Sin variedad').trim();
+  const variedad = String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad';
+  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || undefined;
 
   return {
     id: `server-${item.id_lote}`,
@@ -165,6 +170,7 @@ function mapearLoteBackend(item: LoteApi): LoteResumido {
     estado: String(item.estado ?? 'Activo'),
     area: Number(item.superficie ?? 0),
     orderKey: item.id_lote,
+    tipoCultivo,
   };
 }
 
@@ -217,6 +223,7 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
       nombre: item.nombre,
       variedad: item.variedad,
       estado: item.estado,
+      tipoCultivo: item.tipoCultivo,
     })),
     origenDatos: [`SQLite: ${lotesCombinados.length}`],
   };
@@ -229,7 +236,7 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
   const cargar = async () => {
     try {
       const [lotesBackendResultados, lotesLocales] = await Promise.all([
-        Promise.allSettled([1, 2, 3].map((idProducto) => obtenerLotesPorProductoApi(idProducto))),
+        Promise.allSettled(['quinua', 'hortaliza', 'haba'].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo))),
         obtenerLotesLocales().catch(() => []),
       ]);
 
@@ -273,6 +280,7 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
           nombre: item.nombre,
           variedad: item.variedad,
           estado: item.estado,
+          tipoCultivo: item.tipoCultivo,
         })),
         origenDatos: [`SQLite: ${lotesLocales.length}`, `Backend: ${lotesBackend.length}`],
       };

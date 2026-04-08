@@ -40,7 +40,7 @@ type UploadFotoResponse = {
 
 export type CrearLotePayload = {
   id_productor: number;
-  id_producto: number;
+  tipo_cultivo: string;
   nombre_lote: string;
   superficie: number;
   fecha_siembra: string;
@@ -49,7 +49,6 @@ export type CrearLotePayload = {
   precio_venta_est: number;
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
-  variedad?: string | null;
 };
 
 export type ActualizarLotePayload = Partial<CrearLotePayload> & {
@@ -59,7 +58,10 @@ export type ActualizarLotePayload = Partial<CrearLotePayload> & {
 export type LoteApi = {
   id_lote: number;
   id_productor: number;
-  id_producto: number;
+  tipo_cultivo: string;
+  variedad?: string;
+  id_producto?: number;
+  nombre_producto?: string;
   nombre_lote: string;
   superficie: string;
   fecha_siembra: string;
@@ -68,10 +70,8 @@ export type LoteApi = {
   precio_venta_est: string;
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
-  variedad?: string | null;
   estado: string;
   created_at: string;
-  nombre_producto?: string;
 };
 
 export type ProduccionApi = {
@@ -511,13 +511,33 @@ export async function crearLoteApi(payload: CrearLotePayload): Promise<LoteApi> 
 }
 
 export async function obtenerLotesPorProductoApi(idProducto: number): Promise<LoteApi[]> {
+  const mapaTipoCultivo: Record<number, string> = {
+    1: 'quinua',
+    2: 'hortaliza',
+    3: 'haba',
+  };
+  const tipoCultivoCompat = mapaTipoCultivo[idProducto] ?? String(idProducto);
   const response = await fetchGetBackendConFallback<ListResponse<LoteApi>>(
-    `/api/lotes/producto/${idProducto}`,
+    `/api/lotes/tipo-cultivo/${encodeURIComponent(tipoCultivoCompat)}`,
     () => ({ success: true, data: [], count: 0, message: 'Fallback local por error de red' })
   );
 
   if (!response?.success || !Array.isArray(response.data)) {
     throw new Error(response?.message || 'No se pudieron obtener lotes por producto desde el servidor');
+  }
+
+  return response.data;
+}
+
+export async function obtenerLotesPorTipoCultivoApi(tipoCultivo: string): Promise<LoteApi[]> {
+  const tipoCultivoSeguro = encodeURIComponent(tipoCultivo);
+  const response = await fetchGetBackendConFallback<ListResponse<LoteApi>>(
+    `/api/lotes/tipo-cultivo/${tipoCultivoSeguro}`,
+    () => ({ success: true, data: [], count: 0, message: 'Fallback local por error de red' })
+  );
+
+  if (!response?.success || !Array.isArray(response.data)) {
+    throw new Error(response?.message || 'No se pudieron obtener lotes por tipo de cultivo desde el servidor');
   }
 
   return response.data;

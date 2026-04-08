@@ -6,12 +6,7 @@ import {
   iniciarSincronizacionAutomaticaSiembras,
   registrarSiembraOfflineFirst,
 } from '@/src/services/siembraStorageSync';
-import { obtenerProductosPorCategoriaApi } from '@/src/services/api';
-import { listarProductosLocales, sincronizarProductosPendientes } from '@/src/services/offlineProductsSync';
 import { FormRegistroSiembra, UseRegistroSiembraParams, UseRegistroSiembraResult } from '../types';
-
-const CATEGORIA_QUINUA = 'Quinua';
-const CATEGORIA_HORTALIZAS = 'Hortalizas';
 
 const formInicial: FormRegistroSiembra = {
   nombre: '',
@@ -20,11 +15,6 @@ const formInicial: FormRegistroSiembra = {
   superficie: '',
   fechaSiembra: '',
   fechaCosecha: '',
-};
-
-const obtenerProductoHortaliza = (tipoCultivo: string): number => {
-  if (tipoCultivo === 'Haba') return 3;
-  return 2;
 };
 
 const formatearFecha = (fechaIso: string): string => {
@@ -82,48 +72,10 @@ export function useRegistroSiembra({
   const [guardando, setGuardando] = useState(false);
   const [cargandoUbicacionGps, setCargandoUbicacionGps] = useState(false);
   const [errorUbicacionGps, setErrorUbicacionGps] = useState<string | null>(null);
-  const [idProductoQuinua, setIdProductoQuinua] = useState(1);
 
   useEffect(() => {
     iniciarSincronizacionAutomaticaSiembras();
   }, []);
-
-  useEffect(() => {
-    if (!visible || rubro !== 'quinua') return;
-
-    const resolverProductoQuinua = async () => {
-      await sincronizarProductosPendientes().catch(() => {
-        // Si no hay internet, usamos catalogo local.
-      });
-
-      const [locales, apiQuinua, apiGrano] = await Promise.all([
-        listarProductosLocales(),
-        obtenerProductosPorCategoriaApi('Quinua').catch(() => []),
-        obtenerProductosPorCategoriaApi('Grano').catch(() => []),
-      ]);
-
-      const catalogo = [
-        ...(Array.isArray(locales) ? locales : []),
-        ...(Array.isArray(apiQuinua) ? apiQuinua : []),
-        ...(Array.isArray(apiGrano) ? apiGrano : []),
-      ];
-
-      const encontradoPorNombre = catalogo.find((producto) =>
-        String(producto.nombre ?? '').toLowerCase().includes('quinua')
-      );
-
-      const encontradoPorCategoria = catalogo.find((producto) => {
-        const categoria = String(producto.categoria ?? '').toLowerCase();
-        return categoria === 'quinua' || categoria === 'grano';
-      });
-
-      const candidato = encontradoPorNombre || encontradoPorCategoria;
-      const id = Number((candidato as any)?.id_producto ?? (candidato as any)?.idLocal ?? 1);
-      setIdProductoQuinua(id > 0 ? id : 1);
-    };
-
-    void resolverProductoQuinua();
-  }, [visible, rubro]);
 
   const actualizarCampo = useCallback((campo: keyof FormRegistroSiembra, valor: string) => {
     setForm((anterior) => ({ ...anterior, [campo]: valor }));
@@ -260,8 +212,6 @@ export function useRegistroSiembra({
       if (rubro === 'quinua') {
         const resultado = await registrarSiembraOfflineFirst({
           rubro: 'QUINUA',
-          categoriaProducto: CATEGORIA_QUINUA,
-          productoDefaultId: idProductoQuinua,
           nombreLote: nombre,
           tipoCultivo: form.tipoCultivo,
           ubicacion: form.ubicacion,
@@ -280,12 +230,8 @@ export function useRegistroSiembra({
 
         Alert.alert('Listo', mensaje);
       } else {
-        const idProducto = obtenerProductoHortaliza(form.tipoCultivo);
-
         const resultado = await registrarSiembraOfflineFirst({
           rubro: 'HORTALIZA',
-          categoriaProducto: CATEGORIA_HORTALIZAS,
-          productoDefaultId: idProducto,
           nombreLote: nombre,
           tipoCultivo: form.tipoCultivo,
           ubicacion: form.ubicacion,

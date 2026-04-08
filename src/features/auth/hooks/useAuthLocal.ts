@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import * as LocalAuthentication from 'expo-local-authentication';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from '@/src/services/sqlite';
 import { recuperarPinApi, registrarProductorApi } from '@/src/services/api';
 import { hashearPin } from '../utils/crypto';
@@ -267,7 +268,7 @@ async function abrirSesionLocal(db: Awaited<ReturnType<typeof getDb>>, idUsuario
   );
 }
 
-async function cerrarSesionLocal(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
+async function marcarSesionLocalCerrada(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
   await db.runAsync(
     `
       INSERT INTO auth_sesion (id, id_usuario, activa, updated_at)
@@ -279,6 +280,22 @@ async function cerrarSesionLocal(db: Awaited<ReturnType<typeof getDb>>): Promise
     `,
     new Date().toISOString()
   );
+}
+
+async function limpiarDatosAuthLocal(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.execAsync('PRAGMA foreign_keys = OFF');
+
+    try {
+      for (const tabla of [...TABLAS_PRODUCTOR, ...TABLAS_USUARIO, 'auth_sesion']) {
+        if (await existeTabla(db, tabla)) {
+          await db.runAsync(`DELETE FROM ${tabla}`);
+        }
+      }
+    } finally {
+      await db.execAsync('PRAGMA foreign_keys = ON');
+    }
+  });
 }
 
 async function obtenerSesionLocal(db: Awaited<ReturnType<typeof getDb>>): Promise<SesionLocal> {
@@ -358,6 +375,14 @@ async function sincronizarPinEnBackend(telefono: string, nuevoPin: string): Prom
 }
 
 export function useAuthLocal() {
+  const verificarCuentaExistente = useCallback(async (): Promise<boolean> => {
+    const db = await getDb();
+    const { tablaUsuario } = await asegurarEsquemaAuth(db);
+
+    const row = await db.getFirstAsync<{ total: number }>(`SELECT COUNT(*) as total FROM ${tablaUsuario}`);
+    return Number(row?.total ?? 0) > 0;
+  }, []);
+
   const registrarProductor = useCallback(async (input: RegistroProductorInput): Promise<RegistroProductorResult> => {
     const nombre = input.nombre.trim();
     const apellido = input.apellido.trim();
@@ -472,10 +497,16 @@ export function useAuthLocal() {
     return { desbloqueado: false, metodo: 'pin' };
   }, []);
 
-  const cerrarSesion = useCallback(async (): Promise<void> => {
+  const cerrarSesionLocal = useCallback(async (): Promise<void> => {
     const db = await getDb();
     await asegurarEsquemaAuth(db);
-    await cerrarSesionLocal(db);
+    await limpiarDatosAuthLocal(db);
+    await AsyncStorage.clear();
+    await marcarSesionLocalCerrada(db);
+  }, []);
+
+  const cerrarSesion = useCallback(async (): Promise<void> => {
+    await cerrarSesionLocal();
   }, []);
 
   const resolverRutaInicial = useCallback(async (): Promise<'/auth/registro' | '/auth/desbloqueo' | '/(tabs)'> => {
@@ -548,6 +579,8 @@ export function useAuthLocal() {
   return {
     registrarProductor,
     desbloquearApp,
+    verificarCuentaExistente,
+    cerrarSesionLocal,
     cerrarSesion,
     resolverRutaInicial,
     cambiarPin,
