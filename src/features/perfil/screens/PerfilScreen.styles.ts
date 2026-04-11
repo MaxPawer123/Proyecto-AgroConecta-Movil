@@ -1,0 +1,122 @@
+import { StyleSheet } from 'react-native';
+
+export const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#e9e9e9',
+  },
+  scrollContent: {
+    paddingBottom: 32,
+  },
+  headerArea: {
+    backgroundColor: '#38a837',
+    alignItems: 'center',
+    paddingTop: 24,
+    paddingBottom: 62,
+  },
+  avatarWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#f2f2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  nombre: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#ffffff',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  contentWrap: {
+    marginTop: -48,
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  card: {
+    backgroundColor: '#f3f3f3',
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  cardTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
+    columnGap: 10,
+  },
+  infoTextWrap: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 19,
+    color: '#64748b',
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 21,
+    color: '#0f172a',
+    lineHeight: 28,
+  },
+  cardAjustes: {
+    backgroundColor: '#f3f3f3',
+    borderRadius: 14,
+    paddingTop: 12,
+    paddingBottom: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  settingsItem: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  settingsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 10,
+  },
+  roundIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  settingsText: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#0f172a',
+    flexShrink: 1,
+  },
+  logoutText: {
+    color: '#ef4444',
+  },
+});

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -9,11 +10,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Modal,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { guardarRegistroPinDraft } from '../utils/registroPinDraft';
+import { useAuthLocal } from '../hooks/useAuthLocal';
 
 type FormRegistro = {
   nombre: string;
@@ -22,8 +22,6 @@ type FormRegistro = {
   departamento: string;
   municipio: string;
   comunidad: string;
-  pin: string;
-  pinConfirmacion: string;
 };
 
 type UbicacionData = {
@@ -198,17 +196,19 @@ type SelectorProps = {
 
 function SelectorCampo({ label, value, placeholder, options, onSelect, disabled }: SelectorProps) {
   const [visible, setVisible] = useState(false);
+  const sinOpciones = options.length === 0;
 
   return (
     <View style={styles.campoContainer}>
       <Text style={styles.label}>{label}</Text>
 
       <TouchableOpacity
-        style={[styles.selectorInput, disabled ? styles.selectorInputDisabled : null]}
+        style={[styles.selectorInput, disabled || sinOpciones ? styles.selectorInputDisabled : null]}
         onPress={() => {
-          if (!disabled) setVisible(true);
+          if (!disabled && !sinOpciones) setVisible(true);
         }}
         activeOpacity={0.9}
+        disabled={disabled || sinOpciones}
       >
         <Text style={value ? styles.selectorValor : styles.selectorPlaceholder}>{value || placeholder}</Text>
         <Ionicons name="chevron-down" size={18} color="#6b7280" />
@@ -230,7 +230,7 @@ function SelectorCampo({ label, value, placeholder, options, onSelect, disabled 
                   }}
                 >
                   <Text style={styles.modalOpcionTexto}>{option}</Text>
-                  {value === option ? <Ionicons name="checkmark" size={18} color="#39a935" /> : null}
+                  {value === option ? <Ionicons name="checkmark" size={18} color="#2BA14A" /> : null}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -252,13 +252,15 @@ const formInicial: FormRegistro = {
   departamento: '',
   municipio: '',
   comunidad: '',
-  pin: '',
-  pinConfirmacion: '',
 };
+
+type PasoWizard = 1 | 2 | 3;
 
 export function RegistroScreen() {
   const router = useRouter();
+  const { registrarProductor } = useAuthLocal();
   const [form, setForm] = useState<FormRegistro>(formInicial);
+  const [pasoActual, setPasoActual] = useState<PasoWizard>(1);
   const [guardando, setGuardando] = useState(false);
 
   const departamentos = useMemo(() => Object.values(UBICACIONES).map((item) => item.label), []);
@@ -306,34 +308,215 @@ export function RegistroScreen() {
     }));
   };
 
-  const validar = (datos: FormRegistro): string | null => {
+  const validarPaso1 = (datos: FormRegistro): string | null => {
     if (!datos.nombre.trim()) return 'Ingresa tus nombres.';
     if (!datos.apellido.trim()) return 'Ingresa tus apellidos.';
-    if (!/^\d{7,10}$/.test(datos.telefono.trim())) return 'El telefono debe tener entre 7 y 10 digitos.';
-    if (!datos.departamento) return 'Selecciona un departamento.';
-    if (!datos.municipio) return 'Selecciona un municipio.';
-    if (!datos.comunidad.trim()) return 'Selecciona o ingresa una comunidad.';
+    if (!/^[\d]{7,10}$/.test(datos.telefono.trim())) return 'El telefono debe tener entre 7 y 10 digitos.';
     return null;
   };
 
-  const irCreacionPin = () => {
-    const error = validar(form);
+  const validarPaso2 = (datos: FormRegistro): string | null => {
+    if (!datos.departamento) return 'Selecciona un departamento.';
+    if (!datos.municipio) return 'Selecciona un municipio.';
+    if (!datos.comunidad.trim()) return 'Selecciona una comunidad.';
+    return null;
+  };
+
+  const irSiguiente = () => {
+    const error = validarPaso1(form);
     if (error) {
       Alert.alert('Verifica tus datos', error);
       return;
     }
 
-    guardarRegistroPinDraft({
-      nombre: form.nombre.trim(),
-      apellido: form.apellido.trim(),
-      telefono: form.telefono.trim(),
-      departamento: form.departamento,
-      municipio: form.municipio,
-      comunidad: form.comunidad.trim(),
-    });
-
-    router.push('/auth/creacion-pin' as any);
+    setPasoActual(2);
   };
+
+  const completarRegistro = async () => {
+    const error = validarPaso2(form);
+    if (error) {
+      Alert.alert('Verifica tus datos', error);
+      return;
+    }
+
+    if (guardando) return;
+
+    setGuardando(true);
+
+    try {
+      await registrarProductor({
+        nombre: form.nombre.trim(),
+        apellido: form.apellido.trim(),
+        telefono: form.telefono.trim(),
+        departamento: form.departamento,
+        municipio: form.municipio,
+        comunidad: form.comunidad.trim(),
+      });
+      setPasoActual(3);
+    } catch (e) {
+      const mensaje = e instanceof Error ? e.message : 'No fue posible completar el registro.';
+      Alert.alert('Error al registrar', mensaje);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const irAtras = () => {
+    if (pasoActual === 2) {
+      setPasoActual(1);
+      return;
+    }
+
+    router.replace('/' as any);
+  };
+
+  const renderBarraProgreso = () => (
+    <View style={styles.progressWrap}>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${pasoActual === 1 ? 50 : 100}%` }]} />
+      </View>
+      <Text style={styles.progressText}>{pasoActual === 1 ? 'Paso 1 de 2' : 'Paso 2 de 2'}</Text>
+    </View>
+  );
+
+  const renderPaso1 = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>¡Conozcámonos!</Text>
+      <Text style={styles.subtitle}>Ingresa tus datos básicos para empezar.</Text>
+
+      <Text style={styles.label}>Nombres *</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej: Juan Carlos"
+        value={form.nombre}
+        onChangeText={(valor) => actualizar('nombre', valor)}
+        placeholderTextColor="#98a2b3"
+      />
+
+      <Text style={styles.label}>Apellidos *</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej: Mamani Quispe"
+        value={form.apellido}
+        onChangeText={(valor) => actualizar('apellido', valor)}
+        placeholderTextColor="#98a2b3"
+      />
+
+      <Text style={styles.label}>Teléfono *</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ej: 71234567"
+        value={form.telefono}
+        onChangeText={(valor) => actualizar('telefono', valor.replace(/\D+/g, ''))}
+        keyboardType="number-pad"
+        maxLength={10}
+        placeholderTextColor="#98a2b3"
+      />
+
+      <TouchableOpacity style={styles.primaryButton} onPress={irSiguiente} disabled={guardando} activeOpacity={0.9}>
+        <Text style={styles.primaryButtonText}>Siguiente</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderPaso2 = () => (
+    <View style={styles.card}>
+      <Text style={styles.title}>¿De dónde eres?</Text>
+      <Text style={styles.subtitle}>Ayúdanos a ubicar tu zona productiva.</Text>
+
+      <SelectorCampo
+        label="Departamento *"
+        value={form.departamento}
+        placeholder="Selecciona tu departamento"
+        options={departamentos}
+        onSelect={cambiarDepartamento}
+      />
+
+      <SelectorCampo
+        label="Municipio *"
+        value={form.municipio}
+        placeholder="Selecciona tu municipio"
+        options={municipios}
+        onSelect={cambiarMunicipio}
+        disabled={!claveDepartamento}
+      />
+
+      <SelectorCampo
+        label="Comunidad *"
+        value={form.comunidad}
+        placeholder="Selecciona tu comunidad"
+        options={comunidades}
+        onSelect={(valor) => actualizar('comunidad', valor)}
+        disabled={!claveDepartamento || !claveMunicipio}
+      />
+
+      <View style={styles.footerRow}>
+        <TouchableOpacity style={[styles.secondaryButton, styles.buttonFlex]} onPress={irAtras} disabled={guardando} activeOpacity={0.85}>
+          <Text style={styles.secondaryButtonText}>Atrás</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.primaryButton, styles.buttonFlex, guardando ? styles.primaryButtonDisabled : null]}
+          onPress={() => void completarRegistro()}
+          disabled={guardando}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.primaryButtonText}>{guardando ? 'Guardando...' : 'Completar Registro'}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderPaso3 = () => (
+    <View style={styles.successWrap}>
+      <View style={styles.successIconOuter}>
+        <View style={styles.successIconInner}>
+          <Ionicons name="checkmark" size={54} color="#ffffff" />
+        </View>
+      </View>
+
+      <Text style={styles.successTitle}>¡Cuenta Creada Exitosamente!</Text>
+      <Text style={styles.successSubtitle}>
+        Tu perfil está listo. Ya puedes empezar a registrar tus lotes y calcular tus costos.
+      </Text>
+
+      <View style={styles.benefitsCard}>
+        <View style={styles.benefitRow}>
+          <View style={styles.benefitIcon}>
+            <Ionicons name="leaf-outline" size={18} color="#2BA14A" />
+          </View>
+          <View style={styles.benefitTextWrap}>
+            <Text style={styles.benefitTitle}>Gestiona tus Lotes</Text>
+            <Text style={styles.benefitText}>Registra y organiza tus parcelas productivas.</Text>
+          </View>
+        </View>
+
+        <View style={styles.benefitRow}>
+          <View style={styles.benefitIcon}>
+            <Ionicons name="calculator-outline" size={18} color="#2BA14A" />
+          </View>
+          <View style={styles.benefitTextWrap}>
+            <Text style={styles.benefitTitle}>Calcula tus Costos</Text>
+            <Text style={styles.benefitText}>Controla cada gasto de producción.</Text>
+          </View>
+        </View>
+
+        <View style={styles.benefitRow}>
+          <View style={styles.benefitIcon}>
+            <Ionicons name="bar-chart-outline" size={18} color="#2BA14A" />
+          </View>
+          <View style={styles.benefitTextWrap}>
+            <Text style={styles.benefitTitle}>Genera Reportes</Text>
+            <Text style={styles.benefitText}>Crea PDFs profesionales para el banco.</Text>
+          </View>
+        </View>
+      </View>
+
+      <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/(tabs)' as any)} activeOpacity={0.9}>
+        <Text style={styles.primaryButtonText}>Ir a mi panel</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <>
@@ -341,88 +524,15 @@ export function RegistroScreen() {
 
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/' as any)}>
-            <Ionicons name="arrow-back" size={18} color="#38a933" />
-            <Text style={styles.backText}>Volver</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={irAtras} activeOpacity={0.85}>
+            <Ionicons name="arrow-back" size={18} color="#2BA14A" />
+            <Text style={styles.backText}>{pasoActual === 1 ? 'Volver' : 'Atrás'}</Text>
           </TouchableOpacity>
 
-          <Text style={styles.brand}>Yapu Aroma</Text>
-          <Text style={styles.title}>Crea tu perfil de Productor</Text>
-
-          <View style={styles.card}>
-            <Text style={styles.label}>Nombres *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: Juan Carlos"
-              value={form.nombre}
-              onChangeText={(valor) => actualizar('nombre', valor)}
-              placeholderTextColor="#98a2b3"
-            />
-
-            <Text style={styles.label}>Apellidos *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: Mamani Quispe"
-              value={form.apellido}
-              onChangeText={(valor) => actualizar('apellido', valor)}
-              placeholderTextColor="#98a2b3"
-            />
-
-            <Text style={styles.label}>Telefono *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: 71234567"
-              value={form.telefono}
-              onChangeText={(valor) => actualizar('telefono', valor.replace(/\D+/g, ''))}
-              keyboardType="number-pad"
-              maxLength={10}
-              placeholderTextColor="#98a2b3"
-            />
-          </View>
-
-          <View style={styles.card}>
-            <SelectorCampo
-              label="Departamento *"
-              value={form.departamento}
-              placeholder="Selecciona tu departamento"
-              options={departamentos}
-              onSelect={cambiarDepartamento}
-            />
-
-            <SelectorCampo
-              label="Municipio *"
-              value={form.municipio}
-              placeholder="Selecciona tu municipio"
-              options={municipios}
-              onSelect={cambiarMunicipio}
-              disabled={!claveDepartamento}
-            />
-
-            <View style={styles.campoContainer}>
-              <Text style={styles.label}>Comunidad *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={comunidades.length ? 'Selecciona o escribe tu comunidad' : 'Primero selecciona departamento y municipio'}
-                value={form.comunidad}
-                onChangeText={(valor) => actualizar('comunidad', valor)}
-                placeholderTextColor="#98a2b3"
-              />
-
-              {comunidades.length ? (
-                <View style={styles.tagsContainer}>
-                  {comunidades.map((item) => (
-                    <TouchableOpacity key={item} style={styles.tag} onPress={() => actualizar('comunidad', item)}>
-                      <Text style={styles.tagText}>{item}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          </View>
-
-          <TouchableOpacity style={[styles.submitBtn, guardando ? styles.submitBtnDisabled : null]} onPress={() => void irCreacionPin()} disabled={guardando}>
-            <Text style={styles.submitBtnText}>Continuar con PIN</Text>
-          </TouchableOpacity>
+          {pasoActual < 3 ? renderBarraProgreso() : null}
+          {pasoActual === 1 ? renderPaso1() : null}
+          {pasoActual === 2 ? renderPaso2() : null}
+          {pasoActual === 3 ? renderPaso3() : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </>
@@ -432,167 +542,287 @@ export function RegistroScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#eef2f7',
+    backgroundColor: '#F8F9FA',
   },
   content: {
-    padding: 18,
-    paddingBottom: 40,
+    flexGrow: 1,
+    padding: 20,
+    paddingBottom: 28,
   },
   backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 14,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    marginBottom: 12,
   },
   backText: {
     marginLeft: 6,
-    color: '#38a933',
+    color: '#29425E',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  brand: {
-    color: '#39a935',
-    fontSize: 40,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  title: {
-    color: '#0f2342',
-    fontSize: 28,
-    fontWeight: '700',
+  progressWrap: {
     marginBottom: 18,
   },
+  progressTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: '#E4E7EC',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#2BA14A',
+  },
+  progressText: {
+    marginTop: 8,
+    alignSelf: 'flex-end',
+    color: '#29425E',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     padding: 20,
-    marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#dfe4ec',
+    borderColor: '#E5E7EB',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  title: {
+    color: '#0F2342',
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  subtitle: {
+    color: '#4B5563',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#122644',
+    marginBottom: 8,
+  },
+  input: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#CFD8E3',
+    backgroundColor: '#FBFCFD',
+    paddingHorizontal: 14,
+    color: '#122644',
+    fontSize: 15,
+    marginBottom: 12,
   },
   campoContainer: {
     marginBottom: 12,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#122644',
-    marginBottom: 6,
-  },
-  input: {
-    minHeight: 44,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#c3ccd8',
-    backgroundColor: '#f9fbfd',
-    paddingHorizontal: 12,
-    color: '#122644',
-    fontSize: 14,
-    marginBottom: 12,
-  },
   selectorInput: {
-    minHeight: 44,
-    borderRadius: 10,
+    minHeight: 48,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#c3ccd8',
-    backgroundColor: '#f9fbfd',
-    paddingHorizontal: 12,
+    borderColor: '#CFD8E3',
+    backgroundColor: '#FBFCFD',
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
   selectorInputDisabled: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
   selectorPlaceholder: {
-    fontSize: 14,
-    color: '#98a2b3',
+    color: '#9AA4B2',
+    fontSize: 15,
   },
   selectorValor: {
-    fontSize: 14,
     color: '#122644',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    rowGap: 8,
-    columnGap: 8,
-  },
-  tag: {
-    backgroundColor: '#eaf6ea',
-    borderRadius: 999,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#cae8ca',
-  },
-  tagText: {
-    color: '#277a24',
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '500',
-  },
-  submitBtn: {
-    minHeight: 48,
-    borderRadius: 10,
-    backgroundColor: '#39a935',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
-  },
-  submitBtnDisabled: {
-    opacity: 0.6,
-  },
-  submitBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     justifyContent: 'center',
     padding: 20,
   },
   modalCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
     maxHeight: '70%',
   },
   modalTitulo: {
-    color: '#122644',
+    color: '#0F2342',
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 12,
   },
   modalLista: {
-    maxHeight: 280,
+    marginBottom: 12,
   },
   modalOpcion: {
-    minHeight: 40,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eef2f7',
+    minHeight: 46,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   modalOpcionTexto: {
     color: '#122644',
-    fontSize: 14,
+    fontSize: 15,
+    flex: 1,
+    paddingRight: 12,
   },
   modalCerrarBtn: {
-    marginTop: 14,
-    minHeight: 40,
-    borderRadius: 8,
+    minHeight: 46,
+    borderRadius: 12,
+    backgroundColor: '#2BA14A',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#39a935',
   },
   modalCerrarTexto: {
-    color: '#39a935',
-    fontSize: 14,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  buttonFlex: {
+    flex: 1,
+  },
+  secondaryButton: {
+    minHeight: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(43, 161, 74, 0.08)',
+    marginRight: 12,
+  },
+  secondaryButtonText: {
+    color: '#2BA14A',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  primaryButton: {
+    minHeight: 52,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2BA14A',
+    shadowColor: '#2BA14A',
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.65,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  successWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 20,
+  },
+  successIconOuter: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: 'rgba(43, 161, 74, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  successIconInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#2BA14A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successTitle: {
+    color: '#0F2342',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  successSubtitle: {
+    color: '#4B5563',
+    fontSize: 15,
+    lineHeight: 23,
+    textAlign: 'center',
+    marginBottom: 22,
+  },
+  benefitsCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+    marginBottom: 24,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  benefitIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(43, 161, 74, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  benefitTextWrap: {
+    flex: 1,
+  },
+  benefitTitle: {
+    color: '#0F2342',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  benefitText: {
+    color: '#4B5563',
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

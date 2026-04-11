@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuthLocal } from '@/src/features/auth';
+import { useAuthLocal } from '@/src/features/auth/hooks/useAuthLocal';
 
 export default function Inicio() {
   const router = useRouter();
@@ -123,12 +123,15 @@ export default function Inicio() {
         <View style={styles.settingsCard}>
           <Text style={styles.settingsTitle}>Ajustes</Text>
 
-          <TouchableOpacity style={styles.settingsItem} onPress={() => router.push('/auth/cambiar-pin' as any)}>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => Alert.alert('Funcion deshabilitada', 'La configuracion de seguridad personalizada fue desactivada.')}
+          >
             <View style={styles.settingsLeft}>
               <View style={[styles.settingsIcon, { backgroundColor: '#e8f6e8' }]}>
                 <Ionicons name="key-outline" size={18} color="#2eaa51" />
               </View>
-              <Text style={styles.settingsText}>Cambiar PIN de seguridad</Text>
+                  <Text style={styles.settingsText}>Seguridad de la cuenta</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
           </TouchableOpacity>

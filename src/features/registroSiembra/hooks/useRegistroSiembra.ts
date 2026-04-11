@@ -225,8 +225,8 @@ export function useRegistroSiembra({
 
         const mensaje =
           resultado.estado === 'COMPLETADO'
-            ? `Lote #${resultado.idLocal} guardado y sincronizado con backend.`
-            : `Lote #${resultado.idLocal} guardado en estado PENDIENTE. Se subira automaticamente cuando haya conexion con backend.`;
+            ? `Registraste tu parcela de quinua. FELICIDADES por tu siembra!`
+            : `Registraste tu parcela de quinua en estado local. FELICIDADES por tu siembra! `;
 
         Alert.alert('Listo', mensaje);
       } else {
@@ -245,8 +245,8 @@ export function useRegistroSiembra({
 
         const mensaje =
           resultado.estado === 'COMPLETADO'
-            ? 'Lote guardado y sincronizado.'
-            : 'Lote guardado en estado local. Se sincronizará automáticamente cuando haya conexión.';
+            ? 'Registraste tu parcela de hortaliza. FELICIDADES por tu siembra!'
+            : 'Registraste tu parcela de hortaliza en estado local. FELICIDADES por tu siembra! ';
 
         Alert.alert('Listo', mensaje);
       }

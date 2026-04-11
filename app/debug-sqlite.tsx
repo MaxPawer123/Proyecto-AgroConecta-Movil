@@ -14,7 +14,6 @@ type TableDebug = {
 const TABLES = [
   'usuario',
   'productor',
-  'producto',
   'lote',
   'gasto_lote',
   'produccion_lote',

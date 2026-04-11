@@ -1,100 +1,71 @@
-import React, { useCallback, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  Alert,
-  ImageBackground, 
+import React, { useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
   StatusBar,
-  Image
+  Image,
+  ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
-import { useAuthLocal } from '@/src/features/auth';
+import { getDb } from '@/src/services/sqlite';
 
 export default function Inicio() {
   const router = useRouter();
-  const { verificarCuentaExistente } = useAuthLocal();
-  const [verificandoCuenta, setVerificandoCuenta] = useState(false);
 
-  const onCrearCuenta = useCallback(async () => {
-    if (verificandoCuenta) return;
+  useEffect(() => {
+    let activo = true;
 
-    try {
-      setVerificandoCuenta(true);
-      const existe = await verificarCuentaExistente();
+    const verificarEstadoProductor = async () => {
+      let existeCuenta = false;
 
-      if (existe) {
-        Alert.alert(
-          'Cuenta Existente',
-          'Ya tienes una cuenta registrada en este dispositivo. Por favor, presiona Iniciar Sesión.'
+      try {
+        const db = await getDb();
+        const resultado = await db.getFirstAsync<{ total: number }>(
+          'SELECT COUNT(1) as total FROM productor'
         );
-        return;
+
+        existeCuenta = (resultado?.total ?? 0) > 0;
+      } catch {
+        existeCuenta = false;
       }
 
-      router.push('/auth/registro' as any);
-    } catch {
-      Alert.alert('Error', 'No se pudo validar la cuenta local. Intenta nuevamente.');
-    } finally {
-      setVerificandoCuenta(false);
-    }
-  }, [router, verificarCuentaExistente, verificandoCuenta]);
+      setTimeout(() => {
+        if (!activo) return;
+
+        if (existeCuenta) {
+          router.replace('/(tabs)' as any);
+          return;
+        }
+
+        router.replace('/auth/registro' as any);
+      }, 2000);
+    };
+
+    void verificarEstadoProductor();
+
+    return () => {
+      activo = false;
+    };
+  }, [router]);
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <StatusBar barStyle="light-content" />
-      
-      {/* 1. Imagen de fondo (sustituye la URL por tu imagen local si prefieres) */}
-      <ImageBackground 
-        source={{ uri: 'https://images.unsplash.com/photo-1500382017468-9049fed747eaf?q=80&w=1000&auto=format&fit=crop' }} 
-        style={styles.backgroundImage}
-      >
-        {/* 2. Overlay Verde (Capa de color) */}
-        <View style={styles.overlay}>
-          
-          {/* Logo e Icono */}
-          <View style={styles.headerContainer}>
-             <Image source={require('../assets/images/yapu_aroma.png')} style={styles.logo} />
-             <Text style={styles.title}>Yapu Aroma</Text>
-          </View>
 
-          {/* Lista de beneficios (Checkmarks) */}
-          <View style={styles.featuresList}>
-            <View style={styles.featureItem}>
-              <View style={styles.checkCircle}>
-                <Ionicons name="checkmark" size={18} color="white" />
-              </View>
-              <Text style={styles.featureText}>Registra tus lotes fácilmente</Text>
-            </View>
-
-            <View style={styles.featureItem}>
-              <View style={styles.checkCircle}>
-                <Ionicons name="checkmark" size={18} color="white" />
-              </View>
-              <Text style={styles.featureText}>Calcular costos y beneficios</Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => router.push('/auth/desbloqueo' as any)}
-          >
-            <Text style={styles.buttonText}>Iniciar Sesion</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => void onCrearCuenta()}
-            disabled={verificandoCuenta}
-          >
-            <Text style={styles.secondaryButtonText}>Crear Cuenta</Text>
-          </TouchableOpacity>
-
+        <View style={styles.logoContainer}>
+          <Image source={require('../assets/images/yapu_aroma.png')} style={styles.logo} />
+          <Text style={styles.title}>Yapu Aroma</Text>
+          <Text style={styles.educativo}>
+            Yapu Aroma: Gestiona tus cultivos de quinua y calcula tus costos, ¡offline!
+          </Text>
         </View>
-      </ImageBackground>
+
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        </View>
       </View>
     </>
   );
@@ -103,97 +74,42 @@ export default function Inicio() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#2BA14A',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 80,
+    paddingBottom: 48,
   },
-  backgroundImage: {
+  logoContainer: {
     flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(46, 125, 50, 0.8)', // Verde con 80% de opacidad
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 30,
-  },
-  headerContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
   },
   logo: {
-    width: 200,
-    height: 200,
+    width: 220,
+    height: 220,
     resizeMode: 'contain',
-    marginBottom: 10,
+    marginBottom: 18,
   },
   title: {
-    fontSize: 38,
+    fontSize: 50,
     fontWeight: 'bold',
-    color: 'white',
-    marginTop: 10,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: '#FFFFFF',
     textAlign: 'center',
-    marginTop: 5,
   },
-  featuresList: {
-    width: '100%',
-    marginBottom: 60,
+  educativo: {
+    marginTop: 18,
+    fontSize: 23,
+    lineHeight: 30,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    maxWidth: 360,
   },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 25,
-  },
-  checkCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  loaderContainer: {
+    minHeight: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
-  },
-  featureText: {
-    fontSize: 17,
-    color: 'white',
-    fontWeight: '500',
-  },
-  button: {
-    backgroundColor: 'white',
-    paddingVertical: 16,
-    paddingHorizontal: 60,
-    borderRadius: 30,
-    width: '100%',
-    alignItems: 'center',
-    // Sombra para que resalte
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
-  },
-  buttonText: {
-    color: '#2E7D32',
-    fontSize: 18,
-    fontWeight: 'bold',
-    letterSpacing: 1.2,
-  },
-  secondaryButton: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.7)',
-    paddingVertical: 14,
-    borderRadius: 30,
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  secondaryButtonText: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '700',
   },
 });

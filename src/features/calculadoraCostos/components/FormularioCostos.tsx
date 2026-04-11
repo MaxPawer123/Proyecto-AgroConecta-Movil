@@ -74,7 +74,7 @@ export function FormularioCostos({
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Ionicons name="arrow-back" size={20} color="#4b5563" />
-            <Text style={styles.backText}>Volver a Lotes</Text>
+            <Text style={styles.backText}>Volver a Parcelas</Text>
           </TouchableOpacity>
           <View style={styles.headerTitleRow}>
             <View style={{ flex: 1 }}>

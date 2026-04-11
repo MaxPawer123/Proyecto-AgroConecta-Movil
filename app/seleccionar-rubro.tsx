@@ -33,7 +33,7 @@ export default function SeleccionarRubro() {
 
       <View style={styles.content}>
         <Text style={styles.title}>¿Qué cultivo deseas calcular hoy?</Text>
-        <Text style={styles.subtitle}>Selecciona el rubro para ver tus lotes o parcelas específicos.</Text>
+        <Text style={styles.subtitle}>Selecciona el rubro para ver tus parcelas o parcelas específicos.</Text>
 
         <View style={styles.cardsContainer}>
           
@@ -46,7 +46,7 @@ export default function SeleccionarRubro() {
               <MaterialCommunityIcons name="barley" size={40} color="#2eaa51" />
             </View>
             <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>Lotes de Quinua</Text>
+              <Text style={styles.cardTitle}>Parcelas de Quinua</Text>
               <Text style={styles.cardDesc}>Calcula la siembra de Quinua Real, Roja y Negra.</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#2eaa51" />
@@ -61,7 +61,7 @@ export default function SeleccionarRubro() {
               <MaterialCommunityIcons name="carrot" size={40} color="#f97316" />
             </View>
             <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>Lotes de Hortalizas</Text>
+              <Text style={styles.cardTitle}>Parcelas de Hortalizas</Text>
               <Text style={styles.cardDesc}>Calcula la siembra de hortalizas como papa, cebolla, zanahoria, etc.</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#f97316" />

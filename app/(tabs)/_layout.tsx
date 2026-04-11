@@ -1,63 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet } from 'react-native';
-import { Tabs, useRouter } from 'expo-router';
+import React from 'react';
+import { StyleSheet } from 'react-native';
+import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { useAuthLocal } from '@/src/features/auth';
-
-type RouteDestino = '/auth/registro' | '/auth/desbloqueo' | '/(tabs)' | null;
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
-  const router = useRouter();
-  const { resolverRutaInicial } = useAuthLocal();
-  const [destino, setDestino] = useState<RouteDestino>(null);
-  const [verificando, setVerificando] = useState(true);
-
-  useEffect(() => {
-    let activo = true;
-
-    const validarAcceso = async () => {
-      try {
-        const rutaInicial = await resolverRutaInicial();
-        if (!activo) return;
-
-        setDestino(rutaInicial === '/(tabs)' ? null : rutaInicial);
-      } catch {
-        if (!activo) return;
-
-        setDestino('/auth/desbloqueo');
-      } finally {
-        if (activo) {
-          setVerificando(false);
-        }
-      }
-    };
-
-    void validarAcceso();
-
-    return () => {
-      activo = false;
-    };
-  }, [resolverRutaInicial]);
-
-  useEffect(() => {
-    if (destino) {
-      router.replace(destino as any);
-    }
-  }, [destino, router]);
-
-  if (verificando) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2BA14A" />
-      </SafeAreaView>
-    );
-  }
-
-  if (destino) {
-    return null;
-  }
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -65,7 +13,13 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: '#2BA14A',
         tabBarInactiveTintColor: '#64748B',
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: 56 + insets.bottom,
+            paddingBottom: Math.max(insets.bottom, 8),
+          },
+        ],
         tabBarLabelStyle: styles.tabLabel,
         tabBarItemStyle: styles.tabItem,
         tabBarIcon: ({ focused, color, size }) => {
@@ -75,7 +29,7 @@ export default function TabLayout() {
             iconName = focused ? 'leaf' : 'leaf-outline';
           } else if (route.name === 'reportes') {
             iconName = focused ? 'bar-chart' : 'bar-chart-outline';
-          } else if (route.name === 'creditos') {
+          } else if (route.name === 'perfil') {
             iconName = focused ? 'person' : 'person-outline';
           } else {
             iconName = focused ? 'home' : 'home-outline';
@@ -104,7 +58,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="creditos"
+        name="perfil"
         options={{
           title: 'Perfil',
         }}
@@ -114,19 +68,11 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   tabBar: {
     backgroundColor: '#FFFFFF',
     borderTopColor: '#E2E8F0',
     borderTopWidth: 1,
-    height: 70,
-    paddingTop: 2,
-    paddingBottom: 18,
+    paddingTop: 6,
   },
   tabLabel: {
     fontSize: 10,

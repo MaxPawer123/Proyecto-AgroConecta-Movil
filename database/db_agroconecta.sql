@@ -151,23 +151,17 @@ INSERT INTO usuario (nombre_completo, email, password_hash, rol) VALUES
 INSERT INTO productor (id_usuario, comunidad, municipio, telefono) VALUES 
 (1, 'Milla Milla', 'Sica Sica', '77712345');
 
--- 3. Catálogo de Productos
-INSERT INTO producto (nombre, categoria) VALUES 
-('Quinua Real', 'Grano'),
-('Papa Imilla', 'Tuberculo'),
-('Haba', 'Hortaliza');
-
--- 4. Lote ACTIVO (Ejemplo de uno que apenas está empezando)
+-- 3. Lote ACTIVO (Ejemplo de uno que apenas está empezando)
 INSERT INTO lote (id_productor, id_producto, nombre_lote, superficie, fecha_siembra, fecha_cosecha_est, rendimiento_estimado, precio_venta_est, estado, foto_siembra_url)
 VALUES 
 (1, 1, 'Lote Norte - Quinua 2026', 2.0, '2025-10-15', '2026-04-01', 800.00, 15.00, 'ACTIVO', 'https://via.placeholder.com/300?text=Foto+Terreno');
 
--- 5. Lote COSECHADO (Ejemplo de uno ya cerrado listo para vender)
+-- 4. Lote COSECHADO (Ejemplo de uno ya cerrado listo para vender)
 INSERT INTO lote (id_productor, id_producto, nombre_lote, superficie, fecha_siembra, fecha_cosecha_est, fecha_cierre_real, rendimiento_estimado, precio_venta_est, rendimiento_real, estado, foto_cosecha_url)
 VALUES 
 (1, 2, 'Lote Sur - Papa 2025', 1.5, '2025-08-01', '2026-01-15', '2026-01-20', 1500.00, 40.00, 1450.00, 'COSECHADO', 'https://via.placeholder.com/300?text=Papa+Cosechada');
 
--- 6. Gastos de prueba
+-- 5. Gastos de prueba
 INSERT INTO gasto_lote (id_lote, categoria, descripcion, cantidad, costo_unitario, monto_total, tipo_costo) VALUES 
 (1, 'Semillas', 'Semilla Certificada', 2, 200, 400, 'VARIABLE'),
 (1, 'Mano de Obra', 'Jornal Siembra', 3, 100, 300, 'VARIABLE'),

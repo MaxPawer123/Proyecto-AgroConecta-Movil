@@ -90,7 +90,7 @@ function construirHtmlPdf(lote: ReporteLote) {
             ${filas}
           </tbody>
         </table>
-        <div class="footer">Generado desde AgroConecta Mejor.</div>
+        <div class="footer">Generado desde Yapu Aroma.</div>
       </body>
     </html>
   `;

@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useDashboard } from '../hooks/useDashboard';
-import { sincronizarProductosPendientes } from '@/src/services/offlineProductsSync';
 import { sincronizarSiembrasPendientes } from '@/src/services/siembraStorageSync';
 import { RubroCalculadora } from '@/src/features/calculadoraCostos/types';
 
@@ -42,12 +41,9 @@ export function DashboardScreen() {
 
     try {
       setSincronizando(true);
-      const [siembras, productos] = await Promise.all([
-        sincronizarSiembrasPendientes(),
-        sincronizarProductosPendientes(),
-      ]);
+      const siembras = await sincronizarSiembrasPendientes();
 
-      const totalSincronizado = siembras.sincronizados + productos.sincronizados;
+      const totalSincronizado = siembras.sincronizados;
       Alert.alert(
         'Sincronización completa',
         totalSincronizado > 0

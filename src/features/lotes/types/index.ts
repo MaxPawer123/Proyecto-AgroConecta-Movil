@@ -10,7 +10,6 @@ export interface LoteViewModel {
 	idProducto: number | null;
 	codigo: string;
 	nombre: string;
-	producto: string;
 	tipoProducto: string;
 	imagen: string;
 	imagenRemota: string | null;

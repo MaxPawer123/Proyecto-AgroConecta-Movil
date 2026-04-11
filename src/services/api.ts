@@ -120,7 +120,6 @@ export type AuthRegisterPayload = {
   nombre: string;
   apellido: string;
   telefono: string;
-  pin: string;
   departamento: string;
   municipio: string;
   comunidad: string;
@@ -372,20 +371,6 @@ export async function registrarProductorApi(payload: AuthRegisterPayload): Promi
   }
 
   return response.data;
-}
-
-export async function recuperarPinApi(payload: {
-  telefono: string;
-  nuevo_pin: string;
-}): Promise<void> {
-  const response = await requestJson<ApiResponse<null>>('/api/auth/recover-pin', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-
-  if (!response?.success) {
-    throw new Error(response?.message || 'No se pudo actualizar el PIN en el servidor');
-  }
 }
 
 export async function fetchGetBackendConFallback<T>(
@@ -650,55 +635,4 @@ export async function eliminarGastoApi(idGasto: number): Promise<void> {
   if (!response?.success) {
     throw new Error(response?.message || 'No se pudo eliminar el gasto del servidor');
   }
-}
-
-export async function obtenerProductosPorCategoriaApi(categoria: string): Promise<ProductoApi[]> {
-  const categoriaSegura = encodeURIComponent(categoria);
-  const response = await fetchGetBackendConFallback<ListResponse<ProductoApi>>(
-    `/api/productos/categoria/${categoriaSegura}`,
-    () => ({ success: true, data: [], count: 0 })
-  );
-
-  if (!response?.success || !Array.isArray(response.data)) {
-    throw new Error(response?.message || 'No se pudieron obtener productos por categoría');
-  }
-
-  return response.data;
-}
-
-export async function crearProductoApi(payload: {
-  nombre: string;
-  categoria: string;
-  id_lote?: number;
-  id_productor?: number;
-}): Promise<ProductoApi> {
-  const response = await requestJson<ApiResponse<ProductoApi>>('/api/productos', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-
-  if (!response?.success || !response.data) {
-    throw new Error(response?.message || 'No se pudo crear el producto en el servidor');
-  }
-
-  return response.data;
-}
-
-export async function obtenerOCrearProductoApi(payload: {
-  nombre: string;
-  categoria: string;
-  id_lote?: number;
-  id_productor?: number;
-}): Promise<ProductoApi> {
-  const productosCategoria = await obtenerProductosPorCategoriaApi(payload.categoria);
-  const nombreNormalizado = payload.nombre.trim().toLowerCase();
-  const encontrado = productosCategoria.find(
-    (producto) => producto.nombre.trim().toLowerCase() === nombreNormalizado
-  );
-
-  if (encontrado) {
-    return encontrado;
-  }
-
-  return crearProductoApi(payload);
 }
