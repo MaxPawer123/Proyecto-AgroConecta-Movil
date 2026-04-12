@@ -39,7 +39,7 @@ export default function Inicio() {
         }
 
         router.replace('/auth/registro' as any);
-      }, 2000);
+      }, 5000);
     };
 
     void verificarEstadoProductor();
@@ -54,12 +54,16 @@ export default function Inicio() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
         <StatusBar barStyle="light-content" />
-
+    
+        <View style={styles.badgesContainer}>
+          <Image source={require('../assets/images/umsamejor.png')} style={styles.badgePrincipal} />
+          <Image source={require('../assets/images/logoquinueros.png')} style={styles.badgeSecundario} />
+        </View>
         <View style={styles.logoContainer}>
           <Image source={require('../assets/images/yapu_aroma.png')} style={styles.logo} />
           <Text style={styles.title}>Yapu Aroma</Text>
           <Text style={styles.educativo}>
-            Yapu Aroma: Gestiona tus cultivos de quinua y calcula tus costos, ¡offline!
+            Gestiona tus cultivos de quinua y calcula tus costos.
           </Text>
         </View>
 
@@ -77,8 +81,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#2BA14A',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 80,
+    paddingHorizontal: 0,
+    paddingTop: 5,
     paddingBottom: 48,
   },
   logoContainer: {
@@ -86,14 +90,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logo: {
-    width: 220,
-    height: 220,
+  badgesContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  badgePrincipal: {
+    width: 140,
+    height: 140,
     resizeMode: 'contain',
-    marginBottom: 18,
+  },
+  badgeSecundario: {
+    width: 160,
+    height: 95,
+    resizeMode: 'contain',
+  },
+  logo: {
+    width: 200,
+    height: 200,
+    resizeMode: 'contain',
+    marginBottom: 16,
   },
   title: {
-    fontSize: 50,
+    fontSize: 40,
     fontWeight: 'bold',
     color: '#FFFFFF',
     textAlign: 'center',

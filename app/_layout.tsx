@@ -1,55 +1,21 @@
-import { useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const router = useRouter();
-  const [isLogged, setIsLogged] = useState<boolean | null>(null);
-
   useEffect(() => {
-    let mounted = true;
-
-    const validarSesion = async () => {
+    const inicializarSplash = async () => {
       try {
-        const session = await AsyncStorage.getItem('sesion_activa');
-
-        if (!mounted) {
-          return;
-        }
-
-        setIsLogged(session === 'true');
+        await SplashScreen.hideAsync();
       } catch {
-        if (mounted) {
-          setIsLogged(false);
-        }
-      } finally {
-        if (mounted) {
-          await SplashScreen.hideAsync();
-        }
+        // Ignora errores de ocultado de splash para no bloquear el arranque.
       }
     };
 
-    void validarSesion();
-
-    return () => {
-      mounted = false;
-    };
+    void inicializarSplash();
   }, []);
-
-  useEffect(() => {
-    if (isLogged === null) {
-      return;
-    }
-
-    router.replace(isLogged ? '/(tabs)' : '/');
-  }, [isLogged, router]);
-
-  if (isLogged === null) {
-    return null;
-  }
 
   return <Stack screenOptions={{ headerShown: false }} initialRouteName="index" />;
 }

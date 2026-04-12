@@ -1,19 +1,11 @@
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, type ViewStyle, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { useDashboard } from '../hooks/useDashboard';
-import { sincronizarSiembrasPendientes } from '@/src/services/siembraStorageSync';
 import { RubroCalculadora } from '@/src/features/calculadoraCostos/types';
-
-type StatCardProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-  accentColor: string;
-  iconBackground: string;
-};
+import { ResumenCard, LoteCard } from '../components';
 
 type QuickActionProps = {
   label: string;
@@ -27,7 +19,7 @@ function normalizarRubro(tipoCultivo?: string): RubroCalculadora {
   const lower = tipoCultivo.toLowerCase();
   if (lower.includes('hortaliza')) return 'hortalizas';
   if (lower.includes('quinua')) return 'quinua';
-  if (lower.includes('haba')) return 'quinua'; // mapear haba a quinua por defecto
+  if (lower.includes('haba')) return 'hortalizas'; // mapear haba a hortalizas por defecto
   return 'quinua'; // defecto
 }
 
@@ -41,34 +33,13 @@ export function DashboardScreen() {
 
     try {
       setSincronizando(true);
-      const siembras = await sincronizarSiembrasPendientes();
-
-      const totalSincronizado = siembras.sincronizados;
-      Alert.alert(
-        'Sincronización completa',
-        totalSincronizado > 0
-          ? `Se sincronizaron ${totalSincronizado} registros.`
-          : 'No hubo registros pendientes para sincronizar.'
-      );
-      await actualizar();
+       await actualizar();
     } catch {
       Alert.alert('Sin conexión', 'No se pudo sincronizar. Revisa tu conexión e intenta nuevamente.');
     } finally {
       setSincronizando(false);
     }
   };
-
-  const renderStatCard = ({ icon, label, value, accentColor, iconBackground }: StatCardProps) => (
-    <View style={styles.statCard}>
-      <View style={[styles.statIconWrap, { backgroundColor: iconBackground }]}>
-        <Ionicons name={icon} size={20} color={accentColor} />
-      </View>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color: accentColor }]} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
 
   const renderQuickAction = ({ label, icon, variant, onPress }: QuickActionProps) => {
     const isPrimary = variant === 'primary';
@@ -95,93 +66,80 @@ export function DashboardScreen() {
   const renderHeader = () => (
     <View style={styles.headerCard}>
       <View style={styles.headerTextArea}>
-        <Text style={styles.greeting}>Hola, {nombreUsuario}</Text>
-        <View style={styles.statusBadge}>
-          <Ionicons name="cloud-offline-outline" size={13} color="#B7791F" />
-          <Text style={styles.statusBadgeText}>Modo Offline</Text>
-        </View>
+        <Text style={styles.greeting}>¡Bienvenido Productor, {nombreUsuario}!</Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.avatarButton}
-        activeOpacity={0.88}
-        onPress={() => router.push('/perfil' as any)}
-      >
-        <View style={styles.avatarCircle}>
-          <Ionicons name="person-outline" size={28} color="#2BA14A" />
-        </View>
-      </TouchableOpacity>
+      <View style={styles.headerIconsContainer}>
+         <TouchableOpacity
+          style={styles.avatarButton}
+          activeOpacity={0.88}
+          onPress={() => router.push('/perfil' as any)}
+        >
+          <View style={styles.avatarCircle}>
+            <Ionicons name="person-outline" size={28} color="#2BA14A" />
+          </View>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
-  const renderStats = () => (
-    <View style={styles.statsGrid}>
-      {renderStatCard({
-        icon: 'leaf-outline',
-        label: 'Lotes activos',
-        value: String(estadisticas.lotesActivos),
-        accentColor: '#2BA14A',
-        iconBackground: '#EAF8EE',
-      })}
-      {renderStatCard({
-        icon: 'map-outline',
-        label: 'Área total',
-        value: `${estadisticas.areaTotal.toFixed(1)} ha`,
-        accentColor: '#0F172A',
-        iconBackground: '#FFF3E4',
-      })}
-      {renderStatCard({
-        icon: 'cash-outline',
-        label: 'Inversión',
-        value: `Bs. ${estadisticas.inversion.toLocaleString('es-BO')}`,
-        accentColor: '#0F172A',
-        iconBackground: '#EEF4FF',
-      })}
-      {renderStatCard({
-        icon: 'sync-outline',
-        label: 'Pendiente sync',
-        value: String(estadisticas.pendientesSync),
-        accentColor: '#B7791F',
-        iconBackground: '#FFF7DB',
-      })}
-    </View>
+  const renderResumenFinanciero = () => (
+    <ResumenCard
+      costoTotal={estadisticas.inversion}
+      cantidadLotes={estadisticas.lotesActivos}
+      onPress={() => router.push('/calculadora-costos' as any)}
+    />
   );
 
-  const renderRecentLots = () => (
+  const renderTusLotes = () => (
     <View style={styles.sectionBlock}>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Lotes Recientes</Text>
+        <Text style={styles.sectionTitle}>Tus Lotes</Text>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/seleccionar-rubro' as any)}>
-          <Text style={styles.sectionAction}>Ver todos</Text>
+          <Text style={styles.sectionAction}>Ver todos  {'>'}</Text>
         </TouchableOpacity>
-      </View>   
+      </View>
 
-      <View style={styles.recentList}>
-        {lotesRecientes.map((lote) => (
-          <TouchableOpacity
-            key={lote.id}
-            style={styles.lotCard}
-            activeOpacity={0.85}
-            onPress={() => {
-              router.push({
-                pathname: '/calculadora-costos' as any,
-                params: {
-                  idLoteServidor: String(lote.id),
-                  rubro: normalizarRubro(lote.tipoCultivo),
-                },
-              });
-            }}
-          >
-            <View style={styles.lotInfo}>
-              <Text style={styles.lotName}>{lote.nombre}</Text>
-              <Text style={styles.lotVariety}>{lote.variedad}</Text>
-              <View style={styles.lotStatusChip}>
-                <Text style={styles.lotStatusText}>{lote.estado}</Text>
-              </View>
+      {lotesRecientes.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.lotesScrollContent}
+        >
+          {lotesRecientes.map((lote) => (
+            <View key={lote.id} style={styles.loteCardWrapper}>
+              <LoteCard
+                nombre={lote.nombre}
+                variedad={lote.variedad}
+                estado={lote.estado}
+                area={lote.area ?? 0}
+                onPress={() => {
+                  router.push({
+                    pathname: '/calculadora-costos' as any,
+                    params: {
+                      idLoteServidor: String(lote.id),
+                      rubro: normalizarRubro(lote.tipoCultivo),
+                    },
+                  });
+                }}
+              />
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
-          </TouchableOpacity>
-        ))}
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={styles.emptyLotesContainer}>
+          <Text style={styles.emptyLotesText}>No hay lotes registrados</Text>
+        </View>
+      )}
+
+      <View style={styles.actionsRow}>
+        {renderQuickAction({
+          label: 'Registrar Lote Nuevo',
+          icon: 'add',
+          variant: 'primary',
+          onPress: () => router.push('/seleccionar-rubro' as any),
+        })}
       </View>
     </View>
   );
@@ -203,27 +161,17 @@ export function DashboardScreen() {
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             {loading && lotesRecientes.length === 0 ? (
-              <Text style={styles.loadingText}>Cargando datos locales y del backend...</Text>
-            ) : null}
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#2BA14A" />
+                <Text style={styles.loadingText}>Cargando datos locales...</Text>
+              </View>
+            ) : (
+              <>
+                {renderResumenFinanciero()}
 
-            {renderStats()}
-
-            <View style={styles.actionsRow}>
-              {renderQuickAction({
-                label: '+ Nuevo Lote',
-                icon: 'add',
-                variant: 'primary',
-                onPress: () => router.push('/seleccionar-rubro' as any),
-              })}
-              {renderQuickAction({
-                label: sincronizando ? 'Sincronizando...' : 'Sincronizar',
-                icon: sincronizando ? 'sync-outline' : 'cloud-upload-outline',
-                variant: 'secondary',
-                onPress: () => void onSincronizar(),
-              })}
-            </View>
-
-            {renderRecentLots()}
+                {renderTusLotes()}
+              </>
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -275,18 +223,34 @@ const styles = StyleSheet.create({
     marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF4CC',
+    backgroundColor: '#ECFDF5',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginLeft: 4,
+  },
   statusBadgeText: {
-    color: '#8A5A00',
+    color: '#059669',
     fontSize: 12,
     fontWeight: '700',
-    marginLeft: 6,
+    marginLeft: 5,
+  },
+  headerIconsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconButton: {
+    padding: 8,
   },
   avatarButton: {
+    marginLeft: 4,
     borderRadius: 26,
   },
   avatarCircle: {
@@ -321,40 +285,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontSize: 13,
     fontWeight: '600',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  statCard: {
-    width: '48%',
-    minHeight: 128,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    justifyContent: 'space-between',
-    ...shadowCard,
-  },
-  statIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statLabel: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 8,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    lineHeight: 30,
-    marginTop: 6,
   },
   actionsRow: {
     flexDirection: 'row',
@@ -414,6 +344,30 @@ const styles = StyleSheet.create({
   },
   recentList: {
     gap: 12,
+  },
+  lotesScrollContent: {
+    paddingRight: 16,
+    gap: 12,
+  },
+  loteCardWrapper: {
+    marginRight: 0,
+  },
+  emptyLotesContainer: {
+    paddingVertical: 20,
+    paddingHorizontal: 14,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  emptyLotesText: {
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lotCard: {
     backgroundColor: '#FFFFFF',

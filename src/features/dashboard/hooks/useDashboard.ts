@@ -15,6 +15,7 @@ export type LoteRecienteDashboard = {
   nombre: string;
   variedad: string;
   estado: string;
+  area?: number;
   tipoCultivo?: string;
 };
 
@@ -223,6 +224,7 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
       nombre: item.nombre,
       variedad: item.variedad,
       estado: item.estado,
+      area: item.area,
       tipoCultivo: item.tipoCultivo,
     })),
     origenDatos: [`SQLite: ${lotesCombinados.length}`],
@@ -280,6 +282,7 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
           nombre: item.nombre,
           variedad: item.variedad,
           estado: item.estado,
+          area: item.area,
           tipoCultivo: item.tipoCultivo,
         })),
         origenDatos: [`SQLite: ${lotesLocales.length}`, `Backend: ${lotesBackend.length}`],
