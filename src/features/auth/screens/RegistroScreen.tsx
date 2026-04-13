@@ -29,159 +29,268 @@ type UbicacionData = {
   municipios: Record<string, { label: string; comunidades: string[] }>;
 };
 
+const normalizarClave = (texto: string) =>
+  texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '');
+
+const crearMunicipios = (
+  labels: string[],
+  comunidadesPorMunicipio: Record<string, string[]> = {}
+) => {
+  const data: Record<string, { label: string; comunidades: string[] }> = {};
+
+  labels.forEach((label) => {
+    data[normalizarClave(label)] = {
+      label,
+      comunidades: comunidadesPorMunicipio[label] ?? [],
+    };
+  });
+
+  return data;
+};
+
 const UBICACIONES: Record<string, UbicacionData> = {
   LaPaz: {
     label: 'La Paz',
-    municipios: {
-      SicaSica: {
-        label: 'Sica Sica',
-        comunidades: ['Tarija', 'Ayo Ayo', 'Malla', 'Calacoto'],
-      },
-      Viacha: {
-        label: 'Viacha',
-        comunidades: ['Chonchocoro', 'Jalsuri', 'Contorno'],
-      },
-      Coroico: {
-        label: 'Coroico',
-        comunidades: ['Cruz Loma', 'Yolosa', 'Mururata', 'Suapi'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'La Paz',
+        'El Alto',
+        'Achocalla',
+        'Viacha',
+        'Laja',
+        'Pucarani',
+        'Sica Sica',
+        'Patacamaya',
+        'Coroico',
+        'Coro Coro',
+        'Achacachi',
+        'Copacabana',
+        'Sorata',
+        'Palca',
+        'Mecapaca',
+        'Chulumani',
+        'Irupana',
+        'Calamarca',
+        'Colquencha',
+        'Umala',
+        'Ayo Ayo',
+        'Collana',
+      ],
+      {
+        'Sica Sica': ['Milla Milla', 'Lahuachaca', 'Taruca', 'Imilla Imilla'],
+        'Patacamaya': ['Calacoto', 'Umala', 'Ayo Ayo', 'Viscachani'],
+        'Viacha': ['Jalsuri', 'Contorno'],
+        'Coroico': ['Cruz Loma', 'Yolosa', 'Mururata', 'Suapi'],
+        'Achacachi': ['Santiago de Huata', 'Huarina', 'Ancoraimes'],
+      }
+    ),
   },
   Oruro: {
     label: 'Oruro',
-    municipios: {
-      Challapata: {
-        label: 'Challapata',
-        comunidades: ['Tolapalca', 'Aguas Calientes', 'Ancacato'],
-      },
-      Huanuni: {
-        label: 'Huanuni',
-        comunidades: ['Bombo', 'Morococala', 'Venta y Media'],
-      },
-      SalinasDeGarciMendoza: {
-        label: 'Salinas de Garci Mendoza',
-        comunidades: ['Jirira', 'Tahua', 'Alcaya'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Oruro',
+        'Caracollo',
+        'Paria',
+        'Huanuni',
+        'Poopo',
+        'Machacamarca',
+        'Challapata',
+        'Pampa Aullagas',
+        'Salinas de Garci Mendoza',
+        'Huari',
+        'Curahuara de Carangas',
+        'Turco',
+        'Sabaya',
+        'Toledo',
+      ],
+      {
+        'Challapata': ['Tolapalca', 'Aguas Calientes', 'Ancacato'],
+        'Huanuni': ['Bombo', 'Morococala', 'Venta y Media'],
+        'Salinas de Garci Mendoza': ['Jirira', 'Tahua', 'Alcaya'],
+      }
+    ),
   },
   Cochabamba: {
     label: 'Cochabamba',
-    municipios: {
-      Cliza: {
-        label: 'Cliza',
-        comunidades: ['Ucureña', 'Chullpas', 'Queraya'],
-      },
-      Punata: {
-        label: 'Punata',
-        comunidades: ['San Benito', 'Villa Rivero', 'Arani'],
-      },
-      Tiquipaya: {
-        label: 'Tiquipaya',
-        comunidades: ['Apote', 'Linde', 'Cuatro Esquinas'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Cochabamba',
+        'Sacaba',
+        'Quillacollo',
+        'Tiquipaya',
+        'Colcapirhua',
+        'Vinto',
+        'Sipe Sipe',
+        'Cliza',
+        'Punata',
+        'San Benito',
+        'Arani',
+        'Tarata',
+        'Tolata',
+        'Arbieto',
+        'Capinota',
+        'Santivañez',
+        'Mizque',
+        'Aiquile',
+        'Totora',
+      ],
+      {
+        'Cliza': ['Ucureña', 'Chullpas', 'Queraya'],
+        'Punata': ['San Benito', 'Villa Rivero', 'Arani'],
+        'Tiquipaya': ['Apote', 'Linde', 'Cuatro Esquinas'],
+      }
+    ),
   },
   Potosi: {
     label: 'Potosí',
-    municipios: {
-      Uyuni: {
-        label: 'Uyuni',
-        comunidades: ['Colchani', 'Pulacayo', 'Coroma', 'Chita'],
-      },
-      Tupiza: {
-        label: 'Tupiza',
-        comunidades: ['Palquiza', 'Suipacha', 'Peña Blanca'],
-      },
-      Villazon: {
-        label: 'Villazón',
-        comunidades: ['Mojo', 'Moraya', 'Casira', 'Yura'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Potosí',
+        'Uyuni',
+        'Tupiza',
+        'Villazón',
+        'Cotagaita',
+        'Colcha K',
+        'Tomave',
+        'Porco',
+        'Yocalla',
+        'Betanzos',
+        'Llallagua',
+        'Uncía',
+      ],
+      {
+        'Uyuni': ['Colchani', 'Pulacayo', 'Coroma', 'Chita'],
+        'Tupiza': ['Palquiza', 'Suipacha', 'Peña Blanca'],
+        'Villazón': ['Mojo', 'Moraya', 'Casira', 'Yura'],
+      }
+    ),
   },
   Chuquisaca: {
     label: 'Chuquisaca',
-    municipios: {
-      Sucre: {
-        label: 'Sucre',
-        comunidades: ['Potolo', 'Maragua', 'Quila Quila', 'Chaunaca'],
-      },
-      Tarabuco: {
-        label: 'Tarabuco',
-        comunidades: ['Candelaria', 'Pisili', 'Morado K\'asa'],
-      },
-      Camargo: {
-        label: 'Camargo',
-        comunidades: ['Villa Abecia', 'Las Carreras', 'Tacaquira'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Sucre',
+        'Yotala',
+        'Poroma',
+        'Tarabuco',
+        'Yamparáez',
+        'Zudáñez',
+        'Monteagudo',
+        'Padilla',
+        'Camargo',
+        'Culpina',
+        'Villa Abecia',
+        'Incahuasi',
+      ],
+      {
+        'Sucre': ['Potolo', 'Maragua', 'Quila Quila', 'Chaunaca'],
+        'Tarabuco': ['Candelaria', 'Pisili', "Morado K'asa"],
+        'Camargo': ['Villa Abecia', 'Las Carreras', 'Tacaquira'],
+      }
+    ),
   },
   Tarija: {
     label: 'Tarija',
-    municipios: {
-      Uriondo: {
-        label: 'Uriondo',
-        comunidades: ['Calamuchita', 'Valle de Concepción', 'Muturayo', 'Juntas'],
-      },
-      SanLorenzo: {
-        label: 'San Lorenzo',
-        comunidades: ['Tomatitas', 'Sella', 'Canasmoro', 'Coimata'],
-      },
-      Padcaya: {
-        label: 'Padcaya',
-        comunidades: ['Chaguaya', 'Rosillas', 'Mecoya'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Tarija',
+        'San Lorenzo',
+        'Uriondo',
+        'Padcaya',
+        'Bermejo',
+        'Yacuiba',
+        'Caraparí',
+        'Villamontes',
+        'Entre Ríos',
+        'El Puente',
+      ],
+      {
+        'Uriondo': ['Calamuchita', 'Valle de Concepción', 'Muturayo', 'Juntas'],
+        'San Lorenzo': ['Tomatitas', 'Sella', 'Canasmoro', 'Coimata'],
+        'Padcaya': ['Chaguaya', 'Rosillas', 'Mecoya'],
+      }
+    ),
   },
   SantaCruz: {
     label: 'Santa Cruz',
-    municipios: {
-      Samaipata: {
-        label: 'Samaipata',
-        comunidades: ['Achira', 'Cuevas', 'Bermejo', 'Mairana'],
-      },
-      Montero: {
-        label: 'Montero',
-        comunidades: ['Guabirá', 'Muyurina', 'Naicó'],
-      },
-      ElTorno: {
-        label: 'El Torno',
-        comunidades: ['Limoncito', 'Jorochito', 'Tarumá'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Santa Cruz de la Sierra',
+        'Cotoca',
+        'Warnes',
+        'Montero',
+        'Portachuelo',
+        'Mineros',
+        'La Guardia',
+        'El Torno',
+        'Samaipata',
+        'Mairana',
+        'Vallegrande',
+        'Camiri',
+        'Charagua',
+        'Puerto Suárez',
+        'Roboré',
+        'San José de Chiquitos',
+        'Yapacaní',
+        'San Julián',
+      ],
+      {
+        'Samaipata': ['Achira', 'Cuevas', 'Bermejo', 'Mairana'],
+        'Montero': ['Guabirá', 'Muyurina', 'Naicó'],
+        'El Torno': ['Limoncito', 'Jorochito', 'Tarumá'],
+      }
+    ),
   },
   Beni: {
     label: 'Beni',
-    municipios: {
-      Trinidad: {
-        label: 'Trinidad',
-        comunidades: ['Casarabe', 'Loma Suárez', 'Puerto Almacén', 'Puerto Ballivián'],
-      },
-      SanBorja: {
-        label: 'San Borja',
-        comunidades: ['Yucumo', 'Galilea', 'San Antonio'],
-      },
-      Rurrenabaque: {
-        label: 'Rurrenabaque',
-        comunidades: ['Villa Alcira', 'Carmen del Emero', 'El Real'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Trinidad',
+        'San Javier',
+        'Loreto',
+        'San Andrés',
+        'Riberalta',
+        'Guayaramerín',
+        'Rurrenabaque',
+        'San Borja',
+        'Reyes',
+        'Santa Ana del Yacuma',
+        'Exaltación',
+        'Magdalena',
+      ],
+      {
+        'Trinidad': ['Casarabe', 'Loma Suárez', 'Puerto Almacén', 'Puerto Ballivián'],
+        'San Borja': ['Yucumo', 'Galilea', 'San Antonio'],
+        'Rurrenabaque': ['Villa Alcira', 'Carmen del Emero', 'El Real'],
+      }
+    ),
   },
   Pando: {
     label: 'Pando',
-    municipios: {
-      Cobija: {
-        label: 'Cobija',
-        comunidades: ['Villa Busch', 'Bajo Virtudes', 'Bella Vista'],
-      },
-      Porvenir: {
-        label: 'Porvenir',
-        comunidades: ['Cachuelita', 'San Luis', 'Mukden'],
-      },
-      PuertoRico: {
-        label: 'Puerto Rico',
-        comunidades: ['Conquista', 'El Carmen', 'Santa Victoria'],
-      },
-    },
+    municipios: crearMunicipios(
+      [
+        'Cobija',
+        'Porvenir',
+        'Bella Flor',
+        'Bolpebra',
+        'Puerto Rico',
+        'Filadelfia',
+        'Santos Mercado',
+        'San Pedro',
+        'Nueva Esperanza',
+        'El Sena',
+        'Ingavi',
+      ],
+      {
+        'Cobija': ['Villa Busch', 'Bajo Virtudes', 'Bella Vista'],
+        'Porvenir': ['Cachuelita', 'San Luis', 'Mukden'],
+        'Puerto Rico': ['Conquista', 'El Carmen', 'Santa Victoria'],
+      }
+    ),
   },
 };
 
@@ -287,6 +396,31 @@ export function RegistroScreen() {
     return UBICACIONES[claveDepartamento].municipios[claveMunicipio].comunidades;
   }, [claveDepartamento, claveMunicipio]);
 
+  const comunidadesDepartamento = useMemo<string[]>(() => {
+    if (!claveDepartamento) return [];
+
+    const unicas = new Set<string>();
+    Object.values(UBICACIONES[claveDepartamento].municipios).forEach((municipioData) => {
+      municipioData.comunidades.forEach((comunidad) => {
+        unicas.add(comunidad);
+      });
+    });
+
+    return Array.from(unicas);
+  }, [claveDepartamento]);
+
+  const sugerenciasComunidad = useMemo<string[]>(() => {
+    const base = comunidades.length > 0 ? comunidades : comunidadesDepartamento;
+    if (base.length === 0) return [];
+
+    const filtro = form.comunidad.trim().toLowerCase();
+    if (!filtro) return base.slice(0, 8);
+
+    return base
+      .filter((item) => item.toLowerCase().includes(filtro))
+      .slice(0, 8);
+  }, [comunidades, comunidadesDepartamento, form.comunidad]);
+
   const actualizar = (campo: keyof FormRegistro, valor: string) => {
     setForm((prev) => ({ ...prev, [campo]: valor }));
   };
@@ -318,7 +452,7 @@ export function RegistroScreen() {
   const validarPaso2 = (datos: FormRegistro): string | null => {
     if (!datos.departamento) return 'Selecciona un departamento.';
     if (!datos.municipio) return 'Selecciona un municipio.';
-    if (!datos.comunidad.trim()) return 'Selecciona una comunidad.';
+    if (!datos.comunidad.trim()) return 'Ingresa tu comunidad.';
     return null;
   };
 
@@ -441,14 +575,33 @@ export function RegistroScreen() {
         disabled={!claveDepartamento}
       />
 
-      <SelectorCampo
-        label="Comunidad *"
-        value={form.comunidad}
-        placeholder="Selecciona tu comunidad"
-        options={comunidades}
-        onSelect={(valor) => actualizar('comunidad', valor)}
-        disabled={!claveDepartamento || !claveMunicipio}
-      />
+      <View style={styles.campoContainer}>
+        <Text style={styles.label}>Comunidad *</Text>
+        <TextInput
+          style={[styles.input, !claveDepartamento || !claveMunicipio ? styles.selectorInputDisabled : null]}
+          placeholder="Escribe tu comunidad"
+          value={form.comunidad}
+          onChangeText={(valor) => actualizar('comunidad', valor)}
+          placeholderTextColor="#98a2b3"
+          editable={!!claveDepartamento && !!claveMunicipio}
+        />
+
+        {!!claveDepartamento && !!claveMunicipio && sugerenciasComunidad.length > 0 ? (
+          <View style={styles.sugerenciasWrap}>
+            <Text style={styles.sugerenciasTitulo}>Comunidades sugeridas</Text>
+            {sugerenciasComunidad.map((sugerida) => (
+              <TouchableOpacity
+                key={sugerida}
+                style={styles.sugerenciaItem}
+                onPress={() => actualizar('comunidad', sugerida)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.sugerenciaTexto}>{sugerida}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+      </View>
 
       <View style={styles.footerRow}>
         <TouchableOpacity style={[styles.secondaryButton, styles.buttonFlex]} onPress={irAtras} disabled={guardando} activeOpacity={0.85}>
@@ -650,6 +803,32 @@ const styles = StyleSheet.create({
     color: '#122644',
     fontSize: 15,
     fontWeight: '500',
+  },
+  sugerenciasWrap: {
+    marginTop: -2,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+  },
+  sugerenciasTitulo: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  sugerenciaItem: {
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  sugerenciaTexto: {
+    color: '#122644',
+    fontSize: 14,
   },
   modalOverlay: {
     flex: 1,

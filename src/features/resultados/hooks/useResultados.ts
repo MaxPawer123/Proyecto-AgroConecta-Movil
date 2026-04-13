@@ -18,6 +18,40 @@ type UseResultadosOptions = {
   idLoteLocal?: number;
 };
 
+function normalizarTexto(valor: unknown): string {
+  return String(valor ?? '').trim().toLowerCase();
+}
+
+function firmaGasto(gasto: Pick<Gasto, 'categoria' | 'descripcion' | 'cantidad' | 'monto'>): string {
+  return [
+    normalizarTexto(gasto.categoria),
+    normalizarTexto(gasto.descripcion),
+    normalizarTexto(gasto.cantidad),
+    normalizarTexto(gasto.monto),
+  ].join('|');
+}
+
+function unirGastosSinDuplicar(gastosApi: Gasto[], gastosLocales: Gasto[]): Gasto[] {
+  const vistos = new Set<string>();
+  const resultado: Gasto[] = [];
+
+  for (const gasto of gastosApi) {
+    const firma = firmaGasto(gasto);
+    if (vistos.has(firma)) continue;
+    vistos.add(firma);
+    resultado.push(gasto);
+  }
+
+  for (const gasto of gastosLocales) {
+    const firma = firmaGasto(gasto);
+    if (vistos.has(firma)) continue;
+    vistos.add(firma);
+    resultado.push(gasto);
+  }
+
+  return resultado;
+}
+
 export function useResultados(
   idLote: number | undefined,
   rubro: RubroResultado,
@@ -74,14 +108,13 @@ export function useResultados(
         }),
         []
       );
-      const gastosLocalesPendientes = gastosLocalesRaw.filter((gasto) => !gasto.sincronizado);
-      const gastosLocalesMapeados: Gasto[] = gastosLocalesPendientes.map((gasto, idx) => ({
+      const gastosLocalesMapeados: Gasto[] = gastosLocalesRaw.map((gasto, idx) => ({
         id: `local-${idx}`,
         fase: gasto.tipo_costo || 'Desconocida',
         categoria: gasto.categoria || 'Sin categoría',
         descripcion: gasto.descripcion || '',
         cantidad: String(gasto.cantidad),
-        monto: String(gasto.costo_unitario * gasto.cantidad),
+        monto: String(gasto.monto_total ?? (gasto.costo_unitario * gasto.cantidad)),
         origen: 'LOCAL',
       }));
 
@@ -126,11 +159,11 @@ export function useResultados(
               categoria: g.categoria || 'Sin categoría',
               descripcion: g.descripcion || '',
               cantidad: String(g.cantidad || 0),
-              monto: String((g.cantidad * g.costo_unitario) || 0),
+              monto: String(g.monto_total ?? ((g.cantidad * g.costo_unitario) || 0)),
               origen: 'API',
             }));
 
-            setGastos([...gastosApi, ...gastosLocalesMapeados]);
+            setGastos(unirGastosSinDuplicar(gastosApi, gastosLocalesMapeados));
 
             if (produccionApi) {
               const cantidadKg = parseFloat(produccionApi.cantidad_obtenida) || 0;

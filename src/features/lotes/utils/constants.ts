@@ -1,4 +1,13 @@
+import { Image } from 'react-native';
 import { RubroConfig, RubroType } from '../types';
+
+const QUINUA_DEFAULT_IMAGE = Image.resolveAssetSource(
+  require('../../../../assets/images/quinua_parcela.jpg')
+).uri ?? '';
+
+const HORTALIZAS_DEFAULT_IMAGE = Image.resolveAssetSource(
+  require('../../../../assets/images/hortalizas_parcela.jpg')
+).uri ?? '';
 
 const DEFAULT_CONFIG: RubroConfig = {
   rubro: 'quinua',
@@ -9,7 +18,7 @@ const DEFAULT_CONFIG: RubroConfig = {
   productLabel: 'Variedad',
   defaultProductName: 'Quinua',
   defaultVariedad: 'Sin variedad',
-  defaultImage: 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800',
+  defaultImage: QUINUA_DEFAULT_IMAGE,
   fallbackProductoId: 1,
   quickSyncedLabel: 'SINCRONIZADO',
   quickPendingLabel: 'P',
@@ -30,7 +39,7 @@ export const RUBRO_CONFIG: Record<RubroType, RubroConfig> = {
     productLabel: 'Tipo',
     defaultProductName: 'Hortalizas',
     defaultVariedad: 'Hortaliza',
-    defaultImage: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800',
+    defaultImage: HORTALIZAS_DEFAULT_IMAGE,
     fallbackProductoId: 2,
     quickSyncedLabel: 'SINCRONIZADO',
     quickPendingLabel: 'P',

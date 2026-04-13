@@ -144,18 +144,6 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
               </View>
             </View>
 
-            <View style={[styles.kpiCard, { backgroundColor: '#f5f3ff', borderColor: '#ede9fe' }]}>
-              <View style={styles.kpiHeader}>
-                <Text style={styles.kpiLabel}>Proyectado</Text>
-                <View style={[styles.kpiIcon, { backgroundColor: '#ede9fe' }]}>
-                  <Ionicons name="cash-outline" size={18} color="#8b5cf6" />
-                </View>
-              </View>
-              <Text style={[styles.kpiValue, { color: '#8b5cf6', fontSize: 18 }]}>Bs {stats.ingresosProyectados.toLocaleString('es-BO')}</Text>
-              <View style={styles.kpiFooter}>
-                <Text style={[styles.kpiFooterText, { color: '#8b5cf6' }]}>Estimacion total</Text>
-              </View>
-            </View>
           </View>
 
           {lotes.map((lote) => (

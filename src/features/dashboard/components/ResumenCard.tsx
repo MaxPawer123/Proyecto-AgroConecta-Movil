@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface ResumenCardProps {
   costoTotal: number;
+  costosLocales?: number;
+  costosSubidos?: number;
   cantidadLotes: number;
   onPress?: () => void;
 }
@@ -16,7 +18,9 @@ const shadowCard: ViewStyle = {
   elevation: 5,
 };
 
-export function ResumenCard({ costoTotal, cantidadLotes, onPress }: ResumenCardProps) {
+export function ResumenCard({ costoTotal, costosLocales, costosSubidos, cantidadLotes, onPress }: ResumenCardProps) {
+  const mostrarDesglose = costosLocales !== undefined && costosSubidos !== undefined;
+
   return (
     <TouchableOpacity
       style={[styles.card, shadowCard]}
@@ -29,7 +33,15 @@ export function ResumenCard({ costoTotal, cantidadLotes, onPress }: ResumenCardP
           <View style={styles.costContainer}>
             <Text style={styles.costValue}>Bs. {costoTotal.toLocaleString('es-BO')}</Text>
           </View>
-          <Text style={styles.subtitle}>{cantidadLotes} {cantidadLotes === 1 ? 'lote' : 'lotes'} registrados</Text>
+          
+          {mostrarDesglose && (
+            <View style={styles.desglose}>
+              <Text style={styles.desgloseText}>📱 Locales: Bs. {costosLocales!.toLocaleString('es-BO')}</Text>
+              <Text style={styles.desgloseText}>☁️ Subidos: Bs. {costosSubidos!.toLocaleString('es-BO')}</Text>
+            </View>
+          )}
+          
+          <Text style={styles.subtitle}>{cantidadLotes} {cantidadLotes === 1 ? 'parcela' : 'parcelas'} registrados</Text>
         </View>
 
         <View style={styles.arrowButton}>
@@ -79,6 +91,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     opacity: 0.9,
     marginTop: 4,
+  },
+  desglose: {
+    marginVertical: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.3)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  desgloseText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+    marginVertical: 2,
+    opacity: 0.85,
   },
   arrowButton: {
     justifyContent: 'center',

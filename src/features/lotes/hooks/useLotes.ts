@@ -20,6 +20,7 @@ import {
   sincronizarSiembrasPendientes,
   suscribirEventosSincronizacionSiembras,
 } from '@/src/services/siembraStorageSync';
+import { obtenerTotalGastosLotesQuinuaYHortalizas } from '@/src/services/costosResumen';
 import { RUBRO_CONFIG } from '../utils/constants';
 import { FormEdicionLote, LoteViewModel, RubroType, UseLotesResult } from '../types';
 
@@ -168,6 +169,7 @@ export function useLotes(rubro: RubroType): UseLotesResult {
   const [mensajeSync, setMensajeSync] = useState('');
   const [modalFotoVisible, setModalFotoVisible] = useState(false);
   const [fotoSeleccionada, setFotoSeleccionada] = useState('');
+  const [inversionTotalConectada, setInversionTotalConectada] = useState(0);
 
 
   ///ORDENAR DE MANERA QUE LOS LOCALES RECIENTES APAREZCAN PRIMERO, 
@@ -207,6 +209,15 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
   const cerrarVistaFoto = useCallback(() => {
     setModalFotoVisible(false);
     setFotoSeleccionada('');
+  }, []);
+
+  const actualizarInversionTotalConectada = useCallback(async () => {
+    try {
+      const total = await obtenerTotalGastosLotesQuinuaYHortalizas();
+      setInversionTotalConectada(total);
+    } catch {
+      setInversionTotalConectada(0);
+    }
   }, []);
 
   const cargarLotesLocalesInmediato = useCallback(async () => {
@@ -359,7 +370,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           codigo: item.id_servidor ? `H-BD-${item.id_servidor}` : `H-LOCAL-${item.id_local}`,
           nombre: item.nombre_lote || `Lote ${item.id_local}`,
           tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
-          imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800'),
+          imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
           imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
           area: superficie,
           comunidad: 'Comunidad registrada',
@@ -398,7 +409,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           codigo: `H-BD-${item.id_lote}`,
           nombre: item.nombre_lote || `Lote ${item.id_lote}`,
           tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
-          imagen: resolverUriImagen(item.foto_siembra_url, 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?w=800'),
+          imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
           imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
           area: superficie,
           comunidad: item.ubicacion || 'Comunidad registrada',
@@ -513,7 +524,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         codigo: item.id_servidor ? `Q-BD-${item.id_servidor}` : `Q-LOCAL-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
-        imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'),
+        imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
         comunidad: item.ubicacion || 'No especificada',
@@ -551,7 +562,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         codigo: `Q-BD-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
         tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
-        imagen: resolverUriImagen(item.foto_siembra_url, 'https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=800'),
+        imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
         area: superficie,
         comunidad: item.ubicacion || 'Comunidad registrada',
@@ -671,6 +682,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     iniciarSincronizacionAutomaticaSiembras();
     void cargarLotesLocalesInmediato();
     void cargarLotesLocales();
+    void actualizarInversionTotalConectada();
 
     if (rubroConfig.stopAutoSyncOnUnmount) {
       return () => {
@@ -679,14 +691,15 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     }
 
     return;
-  }, [cargarLotesLocales, cargarLotesLocalesInmediato, rubroConfig.stopAutoSyncOnUnmount]);
+  }, [actualizarInversionTotalConectada, cargarLotesLocales, cargarLotesLocalesInmediato, rubroConfig.stopAutoSyncOnUnmount]);
 
   useEffect(() => {
     if (!modalOpen) {
       void cargarLotesLocalesInmediato();
       void cargarLotesLocales();
+      void actualizarInversionTotalConectada();
     }
-  }, [modalOpen, cargarLotesLocales, cargarLotesLocalesInmediato]);
+  }, [actualizarInversionTotalConectada, modalOpen, cargarLotesLocales, cargarLotesLocalesInmediato]);
 
   useEffect(() => {
     const unsubscribe = suscribirEventosSincronizacionSiembras((evento: any) => {
@@ -697,22 +710,24 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       if (evento.tipo === 'SINCRONIZACION_COMPLETADA' && evento.sincronizados > 0) {
         setMensajeSync(`Sincronizacion completada: ${evento.sincronizados}/${evento.procesados} lote(s).`);
         void cargarLotesLocales();
+        void actualizarInversionTotalConectada();
       }
     });
 
     return unsubscribe;
-  }, [cargarLotesLocales]);
+  }, [actualizarInversionTotalConectada, cargarLotesLocales]);
 
   const manejarCreacionLote = useCallback(async () => {
     setMensajeSync('Siembra creada en PENDIENTE. Se subira cuando haya conexion con backend.');
     await cargarLotesLocalesInmediato();
+    await actualizarInversionTotalConectada();
 
     void sincronizarSiembrasPendientes().catch(() => {
       // Si falla backend/red, queda pendiente para reintento automatico.
     });
 
     void cargarLotesLocales();
-  }, [cargarLotesLocales, cargarLotesLocalesInmediato]);
+  }, [actualizarInversionTotalConectada, cargarLotesLocales, cargarLotesLocalesInmediato]);
 
   const abrirModalEdicion = useCallback((lote: LoteViewModel) => {
     setLoteEditando(lote);
@@ -846,6 +861,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
               void eliminarLoteApi(lote.idServidor)
                 .then(() => {
                   void cargarLotesLocales();
+                  void actualizarInversionTotalConectada();
                 })
                 .catch((error) => {
                   const mensaje = error instanceof Error ? error.message : 'No se pudo sincronizar la eliminación en backend';
@@ -860,13 +876,12 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         },
       },
     ]);
-  }, [cargarLotesLocales]);
+  }, [actualizarInversionTotalConectada, cargarLotesLocales]);
 
   const stats = {
     lotesActivos: lotes.length,
     areaTotal: lotes.reduce((acc, lote) => acc + Number(lote.area || 0), 0),
-    inversionTotal: lotes.reduce((acc, lote) => acc + Number(lote.inversion || 0), 0),
-    ingresosProyectados: lotes.reduce((acc, lote) => acc + Number(lote.proyeccion || 0), 0),
+    inversionTotal: inversionTotalConectada,
   };
 
   return {

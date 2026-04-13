@@ -13,7 +13,15 @@ function formatearMoneda(valor: number) {
 const renderItem: ListRenderItem<ReporteLote> = ({ item }) => <ReporteCard lote={item} />;
 
 export function ReportesScreen() {
-  const { inversionTotalAcumulada, cantidadLotes, lotes, loading, error, estaEnLinea, origenDatos, recargar } = useReportes();
+  const {
+    inversionTotalAcumulada,
+    cantidadLotes,
+    lotes,
+    loading,
+    error,
+    estaEnLinea,
+    recargar,
+  } = useReportes();
 
   useFocusEffect(
     useCallback(() => {
@@ -65,14 +73,10 @@ export function ReportesScreen() {
 
                 <View style={styles.globalDivider} />
 
-                <Text style={styles.globalFooter}>{cantidadLotes} lotes registrados</Text>
+                <Text style={styles.globalFooter}>{cantidadLotes} parcelas registrados</Text>
               </View>
 
-              <Text style={styles.sectionTitle}>Reportes por Lote</Text>
-              <Text style={styles.dataSourceText}>
-                {estaEnLinea ? 'En linea' : 'Modo local'}
-                {origenDatos.length > 0 ? ` • ${origenDatos.join(' | ')}` : ''}
-              </Text>
+              <Text style={styles.sectionTitle}>Reportes por Parcela</Text>
             </View>
           )}
         />

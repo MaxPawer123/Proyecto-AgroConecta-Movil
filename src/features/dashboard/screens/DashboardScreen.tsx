@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, type ViewStyle, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useDashboard } from '../hooks/useDashboard';
 import { RubroCalculadora } from '@/src/features/calculadoraCostos/types';
 import { ResumenCard, LoteCard } from '../components';
@@ -25,8 +25,14 @@ function normalizarRubro(tipoCultivo?: string): RubroCalculadora {
 
 export function DashboardScreen() {
   const router = useRouter();
-  const { nombreUsuario, estadisticas, lotesRecientes, loading, error, origenDatos, actualizar } = useDashboard();
+  const { nombreUsuario, estadisticas, lotesRecientes, loading, error, actualizar } = useDashboard();
   const [sincronizando, setSincronizando] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      void actualizar();
+    }, [actualizar])
+  );
 
   const onSincronizar = async () => {
     if (sincronizando) return;
@@ -85,14 +91,22 @@ export function DashboardScreen() {
 
   const renderResumenFinanciero = () => (
     <ResumenCard
-      costoTotal={estadisticas.inversion}
+      costoTotal={estadisticas.lotesActivos > 0 ? estadisticas.inversion : 0}
       cantidadLotes={estadisticas.lotesActivos}
-      onPress={() => router.push('/calculadora-costos' as any)}
+      onPress={() => router.push('/(tabs)/reportes' as any)}
     />
   );
 
   const renderTusLotes = () => (
     <View style={styles.sectionBlock}>
+          <View style={styles.actionsRow}>
+        {renderQuickAction({
+          label: 'Registrar una nueva parcela',
+          icon: 'add',
+          variant: 'primary',
+          onPress: () => router.push('/seleccionar-rubro' as any),
+        })}
+      </View>
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionTitle}>Tus Lotes</Text>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/seleccionar-rubro' as any)}>
@@ -129,18 +143,11 @@ export function DashboardScreen() {
         </ScrollView>
       ) : (
         <View style={styles.emptyLotesContainer}>
-          <Text style={styles.emptyLotesText}>No hay lotes registrados</Text>
+          <Text style={styles.emptyLotesText}>No hay parcelas registrados</Text>
         </View>
       )}
 
-      <View style={styles.actionsRow}>
-        {renderQuickAction({
-          label: 'Registrar Lote Nuevo',
-          icon: 'add',
-          variant: 'primary',
-          onPress: () => router.push('/seleccionar-rubro' as any),
-        })}
-      </View>
+  
     </View>
   );
 
@@ -156,8 +163,6 @@ export function DashboardScreen() {
           {renderHeader()}
 
           <View style={styles.contentShell}>
-            <Text style={styles.metaText}>{origenDatos.join(' · ')}</Text>
-
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             {loading && lotesRecientes.length === 0 ? (
@@ -264,12 +269,6 @@ const styles = StyleSheet.create({
   contentShell: {
     paddingHorizontal: 16,
     paddingTop: 16,
-  },
-  metaText: {
-    color: '#64748B',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 10,
   },
   loadingText: {
     color: '#64748B',

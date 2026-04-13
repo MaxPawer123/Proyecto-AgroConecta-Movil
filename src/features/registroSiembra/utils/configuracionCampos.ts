@@ -45,9 +45,9 @@ const camposBase = {
   superficie: {
     key: 'superficie',
     tipo: 'number',
-    label: 'Superficie',
+    label: 'Superficie del lote',
     placeholder: '2.5',
-    sufijo: 'Ha',
+    hint: 'Elige la unidad y escribe el valor del area del lote.',
   } satisfies CampoFormularioConfig,
   fechaSiembra: {
     key: 'fechaSiembra',
@@ -92,19 +92,19 @@ const construirSecciones = (campos: {
     columnas: [camposBase.fotoTerreno],
   },
   {
-    id: 'superficie-fecha-siembra',
-    columnas: [camposBase.superficie, camposBase.fechaSiembra],
+    id: 'superficie',
+    columnas: [camposBase.superficie],
   },
   {
-    id: 'fecha-cosecha',
-    columnas: [camposBase.fechaCosecha],
+    id: 'fechas',
+    columnas: [camposBase.fechaSiembra, camposBase.fechaCosecha],
   },
 ];
 
 export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubroSiembra> = {
   quinua: {
     tituloTipoCultivo: 'Tipo de Quinua',
-    mensajeBotonGuardar: 'Crear Lote y Comenzar',
+    mensajeBotonGuardar: 'Crear parcela y Comenzar',
     secciones: construirSecciones({
       nombrePlaceholder: 'Ej: Lote 1 - Quinua Real',
       tipoCultivo: {
@@ -120,7 +120,7 @@ export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubr
   },
   hortalizas: {
     tituloTipoCultivo: 'Tipo de Hortaliza',
-    mensajeBotonGuardar: 'Crear Lote y Comenzar',
+    mensajeBotonGuardar: 'Crear parcela y Comenzar',
     secciones: construirSecciones({
       nombrePlaceholder: 'Lote 1 - Zanahoria',
       tipoCultivo: {

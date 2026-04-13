@@ -269,12 +269,16 @@ export async function actualizarLoteLocalPorServidor(
 
 export async function eliminarLoteLocal(idLocal: number): Promise<void> {
   const db = await getDb();
+  await db.runAsync('DELETE FROM gasto_lote WHERE id_lote_local = ? OR id_lote = ?', idLocal, idLocal);
+  await db.runAsync('DELETE FROM produccion_lote WHERE id_lote_local = ? OR id_lote = ?', idLocal, idLocal);
   await db.runAsync('DELETE FROM lote WHERE id_local = ?', idLocal);
 }
 
 export async function eliminarLoteLocalPorServidor(idServidor: number): Promise<void> {
   const db = await getDb();
   const serverColumn = await getLoteServerColumn();
+  await db.runAsync('DELETE FROM gasto_lote WHERE id_lote_servidor = ? OR id_lote = ?', idServidor, idServidor);
+  await db.runAsync('DELETE FROM produccion_lote WHERE id_lote = ?', idServidor);
   await db.runAsync(`DELETE FROM lote WHERE ${serverColumn} = ?`, idServidor);
 }
 

@@ -59,7 +59,9 @@ export interface UseRegistroSiembraParams {
 
 export interface UseRegistroSiembraResult {
 	form: FormRegistroSiembra;
+	superficieUnidad: 'ha' | 'm2';
 	fotoTerreno: string | null;
+	fotoPendienteCamara: string | null;
 	guardando: boolean;
 	cargandoUbicacionGps: boolean;
 	errorUbicacionGps: string | null;
@@ -68,6 +70,7 @@ export interface UseRegistroSiembraResult {
 	campoFechaActivo: 'fechaSiembra' | 'fechaCosecha' | null;
 	campoOpcionesActivo: 'tipoCultivo' | 'ubicacion' | null;
 	actualizarCampo: (campo: keyof FormRegistroSiembra, valor: string) => void;
+	actualizarSuperficieUnidad: (unidad: 'ha' | 'm2') => void;
 	capturarUbicacionGps: () => Promise<void>;
 	abrirSelectorOpciones: (campo: 'tipoCultivo' | 'ubicacion') => void;
 	cerrarSelectorOpciones: () => void;
@@ -75,6 +78,8 @@ export interface UseRegistroSiembraResult {
 	cerrarSelectorFecha: () => void;
 	seleccionarFecha: (dateString: string) => void;
 	seleccionarImagen: (origen: 'camera' | 'gallery') => Promise<void>;
+	guardarFotoPendiente: () => void;
+	descartarFotoPendiente: () => void;
 	fechaSeleccionadaISO: string;
 	crearLote: () => Promise<void>;
 }

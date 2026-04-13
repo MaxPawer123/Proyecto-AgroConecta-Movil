@@ -1,7 +1,6 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { styles } from '../screens/PerfilScreen.styles';
 
 type PerfilInfoRowProps = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -20,3 +19,25 @@ export function PerfilInfoRow({ icon, label, value }: PerfilInfoRowProps) {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
+    columnGap: 10,
+  },
+  infoTextWrap: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 17,
+    color: '#64748b',
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 20,
+    color: '#0f172a',
+    lineHeight: 28,
+  },
+});

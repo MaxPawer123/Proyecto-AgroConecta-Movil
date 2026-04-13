@@ -46,7 +46,6 @@ export interface LotesStats {
 	lotesActivos: number;
 	areaTotal: number;
 	inversionTotal: number;
-	ingresosProyectados: number;
 }
 
 export interface RubroConfig {

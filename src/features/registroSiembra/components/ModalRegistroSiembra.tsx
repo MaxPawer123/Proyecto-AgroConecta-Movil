@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -40,17 +40,38 @@ LocaleConfig.locales.es = {
 };
 LocaleConfig.defaultLocale = 'es';
 
+const METROS_CUADRADOS_POR_HECTAREA = 10000;
+
+const formatearSuperficieEquivalente = (valor: string, unidad: 'ha' | 'm2'): string | null => {
+  const numero = Number(valor.trim().replace(',', '.'));
+
+  if (!Number.isFinite(numero) || numero <= 0) {
+    return null;
+  }
+
+  const equivalente = unidad === 'ha' ? numero * METROS_CUADRADOS_POR_HECTAREA : numero / METROS_CUADRADOS_POR_HECTAREA;
+
+  if (unidad === 'ha') {
+    return `${equivalente.toLocaleString('es-BO', { maximumFractionDigits: 2 })} m2`;
+  }
+
+  return `${equivalente.toLocaleString('es-BO', { maximumFractionDigits: 4 })} ha`;
+};
+
 export function ModalRegistroSiembra({
   visible,
   onClose,
   onGuardarExitoso,
   rubro,
 }: ModalRegistroSiembraProps) {
+  const [modalUnidadSuperficieOpen, setModalUnidadSuperficieOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const configuracion = configuracionCamposPorRubro[rubro];
   const {
     form,
+    superficieUnidad,
     fotoTerreno,
+    fotoPendienteCamara,
     guardando,
     cargandoUbicacionGps,
     errorUbicacionGps,
@@ -59,6 +80,7 @@ export function ModalRegistroSiembra({
     campoFechaActivo,
     campoOpcionesActivo,
     actualizarCampo,
+    actualizarSuperficieUnidad,
     capturarUbicacionGps,
     abrirSelectorOpciones,
     cerrarSelectorOpciones,
@@ -66,6 +88,8 @@ export function ModalRegistroSiembra({
     cerrarSelectorFecha,
     seleccionarFecha,
     seleccionarImagen,
+    guardarFotoPendiente,
+    descartarFotoPendiente,
     fechaSeleccionadaISO,
     crearLote,
   } = useRegistroSiembra({
@@ -189,19 +213,43 @@ export function ModalRegistroSiembra({
 
     if (campo.tipo === 'number') {
       const valorActual = form[campo.key as keyof typeof form] as string;
+      const superficieEquivalente = formatearSuperficieEquivalente(valorActual, superficieUnidad);
       return (
         <View key={campo.key} style={wrapperStyle}>
           <Text style={styles.label}>{campo.label}</Text>
-          <View style={styles.inputWithSuffix}>
-            <TextInput
-              style={[styles.input, styles.inputNoBorder]}
-              placeholder={campo.placeholder}
-              keyboardType="numeric"
-              value={valorActual}
-              onChangeText={(texto) => actualizarCampo(campo.key as keyof typeof form, texto)}
-            />
-            <Text style={styles.suffixText}>{campo.sufijo}</Text>
-          </View>
+          {campo.key === 'superficie' ? (
+            <>
+              <View style={styles.inputWithUnitRow}>
+                <TextInput
+                  style={[styles.input, styles.inputCompact]}
+                  placeholder={superficieUnidad === 'ha' ? '2.5' : '2500'}
+                  keyboardType="numeric"
+                  value={valorActual}
+                  onChangeText={(texto) => actualizarCampo(campo.key as keyof typeof form, texto)}
+                />
+                <TouchableOpacity style={styles.unitPickerBtn} onPress={() => setModalUnidadSuperficieOpen(true)}>
+                  <Text style={styles.unitPickerText}>{superficieUnidad}</Text>
+                  <Ionicons name="chevron-down" size={10} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
+
+              {superficieEquivalente ? (
+                <Text style={styles.equivalentText}>= {superficieEquivalente}</Text>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.inputWithSuffix}>
+              <TextInput
+                style={[styles.input, styles.inputNoBorder]}
+                placeholder={campo.placeholder}
+                keyboardType="numeric"
+                value={valorActual}
+                onChangeText={(texto) => actualizarCampo(campo.key as keyof typeof form, texto)}
+              />
+              <Text style={styles.suffixText}>{campo.sufijo}</Text>
+            </View>
+          )}
+          {campo.hint ? <Text style={styles.hint}>{campo.hint}</Text> : null}
         </View>
       );
     }
@@ -252,7 +300,6 @@ export function ModalRegistroSiembra({
 
             <View style={styles.bottomSpacer} />
           </ScrollView>
-
           <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Cancelar</Text>
@@ -268,6 +315,42 @@ export function ModalRegistroSiembra({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={modalUnidadSuperficieOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalUnidadSuperficieOpen(false)}
+      >
+        <View style={styles.selectorOverlay}>
+          <View style={styles.selectorModal}>
+            <Text style={styles.selectorTitle}>Unidad de superficie</Text>
+            <TouchableOpacity
+              style={styles.selectorOption}
+              onPress={() => {
+                actualizarSuperficieUnidad('ha');
+                setModalUnidadSuperficieOpen(false);
+              }}
+            >
+              <Text style={styles.selectorOptionText}>ha</Text>
+              {superficieUnidad === 'ha' ? <Ionicons name="checkmark" size={18} color="#2eaa51" /> : null}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.selectorOption}
+              onPress={() => {
+                actualizarSuperficieUnidad('m2');
+                setModalUnidadSuperficieOpen(false);
+              }}
+            >
+              <Text style={styles.selectorOptionText}>m2</Text>
+              {superficieUnidad === 'm2' ? <Ionicons name="checkmark" size={18} color="#2eaa51" /> : null}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.selectorCancel} onPress={() => setModalUnidadSuperficieOpen(false)}>
+              <Text style={styles.selectorCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={modalOpcionesOpen} transparent animationType="fade" onRequestClose={cerrarSelectorOpciones}>
         <View style={styles.selectorOverlay}>
@@ -323,6 +406,40 @@ export function ModalRegistroSiembra({
 
             <TouchableOpacity style={styles.selectorCancel} onPress={cerrarSelectorFecha}>
               <Text style={styles.selectorCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(fotoPendienteCamara)}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={descartarFotoPendiente}
+      >
+        <View style={styles.previewContainer}>
+          <View style={styles.previewHeader}>
+            <Text style={styles.previewTitle}>Previsualizacion de foto</Text>
+            <Text style={styles.previewSubtitle}>Confirma si deseas guardar esta imagen del parcela.</Text>
+          </View>
+
+          {fotoPendienteCamara ? (
+            <Image source={{ uri: fotoPendienteCamara }} style={styles.previewImage} resizeMode="cover" />
+          ) : null}
+
+          <View style={[styles.previewFooter, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            <TouchableOpacity
+              style={styles.previewRetryBtn}
+              onPress={() => {
+                descartarFotoPendiente();
+                void seleccionarImagen('camera');
+              }}
+            >
+              <Text style={styles.previewRetryText}>Repetir</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.previewSaveBtn} onPress={guardarFotoPendiente}>
+              <Text style={styles.previewSaveText}>Guardar Foto</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -475,6 +592,65 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  inputWithUnitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inputCompact: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  unitPickerBtn: {
+    minWidth: 90,
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  unitPickerText: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  unitSelectorRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  unitSelectorButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  unitSelectorButtonActive: {
+    borderColor: '#2eaa51',
+    backgroundColor: '#ecfdf3',
+  },
+  unitSelectorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4b5563',
+  },
+  unitSelectorTextActive: {
+    color: '#1f7a3a',
+  },
+  equivalentText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
   photoUploadArea: {
     borderWidth: 1.5,
     borderColor: '#d1d5db',
@@ -613,5 +789,64 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 14,
     fontWeight: '600',
+  },
+  previewContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  previewHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    backgroundColor: '#111827',
+  },
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#f9fafb',
+  },
+  previewSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#cbd5e1',
+  },
+  previewImage: {
+    flex: 1,
+    width: '100%',
+  },
+  previewFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: '#111827',
+  },
+  previewRetryBtn: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    backgroundColor: '#1f2937',
+  },
+  previewRetryText: {
+    color: '#e5e7eb',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  previewSaveBtn: {
+    flex: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    backgroundColor: '#16a34a',
+  },
+  previewSaveText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

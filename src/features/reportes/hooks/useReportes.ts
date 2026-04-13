@@ -40,6 +40,8 @@ export type ReporteLote = ReporteLoteBase & {
 
 type EstadoReportes = {
   inversionTotalAcumulada: number;
+  costosLocales: number;
+  costosSubidos: number;
   cantidadLotes: number;
   lotes: ReporteLote[];
   loading: boolean;
@@ -50,6 +52,8 @@ type EstadoReportes = {
 
 const estadoInicial: EstadoReportes = {
   inversionTotalAcumulada: 0,
+  costosLocales: 0,
+  costosSubidos: 0,
   cantidadLotes: 0,
   lotes: [],
   loading: true,
@@ -75,19 +79,6 @@ const BACKEND_TIMEOUT_MS = 3500;
 
 function normalizarTexto(valor: unknown): string {
   return String(valor ?? '').trim().toLowerCase();
-}
-
-function firmaLote(
-  lote: Pick<ReporteLoteBase, 'nombre' | 'variedad' | 'fechaSiembra' | 'fechaCosechaEst' | 'superficie'>
-): string {
-  const superficie = Number.isFinite(Number(lote.superficie)) ? Number(lote.superficie).toFixed(4) : '0.0000';
-  return [
-    normalizarTexto(lote.nombre),
-    normalizarTexto(lote.variedad),
-    normalizarTexto(lote.fechaSiembra),
-    normalizarTexto(lote.fechaCosechaEst),
-    superficie,
-  ].join('|');
 }
 
 function obtenerTimestamp(iso: string): number {
@@ -217,27 +208,6 @@ function mapearLoteBackend(item: LoteApi): ReporteLoteBase {
   };
 }
 
-function sumarGastosLocales(gastos: CostosLocalesLote, soloPendientes: boolean): number {
-  return gastos.reduce((total: number, gasto) => {
-    if (soloPendientes && gasto.sincronizado) {
-      return total;
-    }
-
-    const montoBase = gasto.monto_total ?? (gasto.cantidad * gasto.costo_unitario);
-    return total + Number(montoBase ?? 0);
-  }, 0);
-}
-
-function sumarGastosBackend(gastos: GastoApi[]): number {
-  return gastos.reduce(
-    (total: number, gasto) => {
-      const montoBase = gasto.monto_total ?? (Number(gasto.cantidad) * Number(gasto.costo_unitario));
-      return total + Number(montoBase ?? 0);
-    },
-    0
-  );
-}
-
 async function conTimeout<T>(promesa: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -254,23 +224,22 @@ function unirLotes(
   localesMapeados: ReporteLoteBase[],
   backendMapeados: ReporteLoteBase[]
 ): ReporteLoteBase[] {
-  const porServidor = new Map<number, ReporteLoteBase>();
-  const porFirma = new Map<string, ReporteLoteBase>();
+  const indicesPorServidor = new Map<number, number>();
   const combinados: ReporteLoteBase[] = [];
 
   for (const lote of localesMapeados) {
-    if (lote.idServidor) {
-      porServidor.set(lote.idServidor, lote);
+    const indice = combinados.push(lote) - 1;
+    if (lote.idServidor !== null) {
+      indicesPorServidor.set(lote.idServidor, indice);
     }
-    porFirma.set(firmaLote(lote), lote);
-    combinados.push(lote);
   }
 
   for (const loteBackend of backendMapeados) {
-    const coincidenciaServidor = loteBackend.idServidor ? porServidor.get(loteBackend.idServidor) : undefined;
-    const coincidencia = coincidenciaServidor ?? porFirma.get(firmaLote(loteBackend));
+    const indiceCoincidencia =
+      loteBackend.idServidor !== null ? indicesPorServidor.get(loteBackend.idServidor) : undefined;
 
-    if (coincidencia) {
+    if (indiceCoincidencia !== undefined) {
+      const coincidencia = combinados[indiceCoincidencia];
       const actualizado: ReporteLoteBase = {
         ...coincidencia,
         id: loteBackend.idServidor ? `server-${loteBackend.idServidor}` : coincidencia.id,
@@ -286,21 +255,15 @@ function unirLotes(
         gastos: coincidencia.gastos.length > 0 ? coincidencia.gastos : loteBackend.gastos,
       };
 
-      const indice = combinados.findIndex((item) => item.id === coincidencia.id);
-      if (indice >= 0) {
-        combinados[indice] = actualizado;
+      combinados[indiceCoincidencia] = actualizado;
+      if (actualizado.idServidor !== null) {
+        indicesPorServidor.set(actualizado.idServidor, indiceCoincidencia);
       }
-
-      if (actualizado.idServidor) {
-        porServidor.set(actualizado.idServidor, actualizado);
-      }
-      porFirma.set(firmaLote(actualizado), actualizado);
     } else {
-      combinados.push(loteBackend);
-      if (loteBackend.idServidor) {
-        porServidor.set(loteBackend.idServidor, loteBackend);
+      const nuevoIndice = combinados.push(loteBackend) - 1;
+      if (loteBackend.idServidor !== null) {
+        indicesPorServidor.set(loteBackend.idServidor, nuevoIndice);
       }
-      porFirma.set(firmaLote(loteBackend), loteBackend);
     }
   }
 
@@ -335,15 +298,11 @@ async function calcularInversionPorLotes(
       const gastosUnificados = remotoDisponible
         ? unirGastos(gastosLocalesMapeados, gastosBackendMapeados)
         : gastosLocalesMapeados;
-
-      const totalLocal = lote.idServidor && remotoDisponible
-        ? sumarGastosLocales(gastosLocales, true)
-        : sumarGastosLocales(gastosLocales, false);
-      const totalBackend = remotoDisponible ? sumarGastosBackend(gastosBackend) : 0;
+      const totalInvertido = gastosUnificados.reduce((acc, gasto) => acc + Number(gasto.total || 0), 0);
 
       return {
         ...lote,
-        totalInvertido: totalLocal + totalBackend,
+        totalInvertido,
         gastos: gastosUnificados,
       };
     })
@@ -382,12 +341,17 @@ export function useReportes() {
         const lotesLocalesRaw = await obtenerLotesLocales().catch(() => [] as Awaited<ReturnType<typeof obtenerLotesLocales>>);
         const localesMapeados = lotesLocalesRaw.map(mapearLoteLocal);
         const lotesLocalesConInversion = await calcularInversionPorLotes(localesMapeados, false);
-        const inversionLocal = lotesLocalesConInversion.reduce((total: number, lote) => total + lote.totalInvertido, 0);
+        const inversionLocal = lotesLocalesConInversion.reduce(
+          (total, lote) => total + Number(lote.totalInvertido || 0),
+          0
+        );
 
         if (!activo) return;
 
         setEstado({
           inversionTotalAcumulada: inversionLocal,
+          costosLocales: inversionLocal,
+          costosSubidos: 0,
           cantidadLotes: lotesLocalesConInversion.length,
           lotes: lotesLocalesConInversion,
           loading: false,
@@ -421,12 +385,25 @@ export function useReportes() {
         const backendMapeados = lotesBackend.map(mapearLoteBackend);
         const lotesCombinados = unirLotes(localesMapeados, backendMapeados);
         const lotesMixtosConInversion = await calcularInversionPorLotes(lotesCombinados, true);
-        const inversionMixta = lotesMixtosConInversion.reduce((total: number, lote) => total + lote.totalInvertido, 0);
+        const inversionTotalAcumulada = lotesMixtosConInversion.reduce(
+          (total, lote) => total + Number(lote.totalInvertido || 0),
+          0
+        );
+        const costosLocales = lotesMixtosConInversion.reduce(
+          (total, lote) => total + lote.gastos.reduce((acc, gasto) => acc + (gasto.origen === 'LOCAL' ? Number(gasto.total || 0) : 0), 0),
+          0
+        );
+        const costosSubidos = lotesMixtosConInversion.reduce(
+          (total, lote) => total + lote.gastos.reduce((acc, gasto) => acc + (gasto.origen === 'BACKEND' ? Number(gasto.total || 0) : 0), 0),
+          0
+        );
 
         if (!activo) return;
 
         setEstado({
-          inversionTotalAcumulada: inversionMixta,
+          inversionTotalAcumulada,
+          costosLocales,
+          costosSubidos,
           cantidadLotes: lotesMixtosConInversion.length,
           lotes: lotesMixtosConInversion,
           loading: false,
@@ -439,6 +416,8 @@ export function useReportes() {
 
         setEstado({
           inversionTotalAcumulada: 0,
+          costosLocales: 0,
+          costosSubidos: 0,
           cantidadLotes: 0,
           lotes: [],
           loading: false,

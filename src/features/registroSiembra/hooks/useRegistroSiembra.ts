@@ -17,6 +17,9 @@ const formInicial: FormRegistroSiembra = {
   fechaCosecha: '',
 };
 
+const superficieUnidadInicial: 'ha' | 'm2' = 'ha';
+const METROS_CUADRADOS_POR_HECTAREA = 10000;
+
 const formatearFecha = (fechaIso: string): string => {
   if (!fechaIso) return '';
   const [anio, mes, dia] = fechaIso.split('-');
@@ -38,6 +41,17 @@ const parsearFecha = (valor: string): string => {
 };
 
 const formatearNumeroGps = (valor: number): string => valor.toFixed(6);
+
+const normalizarSuperficie = (valor: string, unidad: 'ha' | 'm2'): number => {
+  const texto = valor.trim().replace(',', '.');
+  const superficieIngresada = Number(texto);
+
+  if (!Number.isFinite(superficieIngresada)) {
+    return Number.NaN;
+  }
+
+  return unidad === 'm2' ? superficieIngresada / METROS_CUADRADOS_POR_HECTAREA : superficieIngresada;
+};
 
 const construirTextoUbicacionGps = async (latitude: number, longitude: number): Promise<string> => {
   const base = `GPS: ${formatearNumeroGps(latitude)}, ${formatearNumeroGps(longitude)}`;
@@ -65,6 +79,8 @@ export function useRegistroSiembra({
 }: UseRegistroSiembraParams): UseRegistroSiembraResult {
   const [form, setForm] = useState<FormRegistroSiembra>(formInicial);
   const [fotoTerreno, setFotoTerreno] = useState<string | null>(null);
+  const [fotoPendienteCamara, setFotoPendienteCamara] = useState<string | null>(null);
+  const [superficieUnidad, setSuperficieUnidad] = useState<'ha' | 'm2'>(superficieUnidadInicial);
   const [modalOpcionesOpen, setModalOpcionesOpen] = useState(false);
   const [modalCalendarioOpen, setModalCalendarioOpen] = useState(false);
   const [campoOpcionesActivo, setCampoOpcionesActivo] = useState<'tipoCultivo' | 'ubicacion' | null>(null);
@@ -79,6 +95,10 @@ export function useRegistroSiembra({
 
   const actualizarCampo = useCallback((campo: keyof FormRegistroSiembra, valor: string) => {
     setForm((anterior) => ({ ...anterior, [campo]: valor }));
+  }, []);
+
+  const actualizarSuperficieUnidad = useCallback((unidad: 'ha' | 'm2') => {
+    setSuperficieUnidad(unidad);
   }, []);
 
   const capturarUbicacionGps = useCallback(async () => {
@@ -126,6 +146,12 @@ export function useRegistroSiembra({
     void capturarUbicacionGps();
   }, [capturarUbicacionGps, visible]);
 
+  useEffect(() => {
+    if (!visible) {
+      setFotoPendienteCamara(null);
+    }
+  }, [visible]);
+
   const seleccionarImagen = async (origen: 'camera' | 'gallery') => {
     const permiso =
       origen === 'camera'
@@ -146,7 +172,7 @@ export function useRegistroSiembra({
       origen === 'camera'
         ? await ImagePicker.launchCameraAsync({
             mediaTypes: ['images'],
-            allowsEditing: true,
+            allowsEditing: false,
             aspect: [4, 3],
             quality: 0.7,
           })
@@ -158,8 +184,23 @@ export function useRegistroSiembra({
           });
 
     if (!resultado.canceled && resultado.assets && resultado.assets.length > 0) {
+      if (origen === 'camera') {
+        setFotoPendienteCamara(resultado.assets[0].uri);
+        return;
+      }
+
       setFotoTerreno(resultado.assets[0].uri);
     }
+  };
+
+  const guardarFotoPendiente = () => {
+    if (!fotoPendienteCamara) return;
+    setFotoTerreno(fotoPendienteCamara);
+    setFotoPendienteCamara(null);
+  };
+
+  const descartarFotoPendiente = () => {
+    setFotoPendienteCamara(null);
   };
 
   const abrirSelectorOpciones = (campo: 'tipoCultivo' | 'ubicacion') => {
@@ -190,6 +231,8 @@ export function useRegistroSiembra({
   const limpiarFormulario = () => {
     setForm(formInicial);
     setFotoTerreno(null);
+    setFotoPendienteCamara(null);
+    setSuperficieUnidad(superficieUnidadInicial);
     setCampoFechaActivo(null);
     setCampoOpcionesActivo(null);
     setErrorUbicacionGps(null);
@@ -197,12 +240,17 @@ export function useRegistroSiembra({
 
   const crearLote = async () => {
     const nombre = form.nombre.trim();
-    const superficie = Number(form.superficie);
+    const superficie = normalizarSuperficie(form.superficie, superficieUnidad);
     const fechaSiembraIso = parsearFecha(form.fechaSiembra);
     const fechaCosechaIso = parsearFecha(form.fechaCosecha);
 
-    if (!nombre || !form.tipoCultivo || !form.ubicacion || !superficie || !fechaSiembraIso || !fechaCosechaIso) {
+    if (!nombre || !form.tipoCultivo || !form.ubicacion || !form.superficie.trim() || !fechaSiembraIso || !fechaCosechaIso) {
       Alert.alert('Datos incompletos', 'Completa nombre, tipo, ubicacion GPS, superficie y fechas.');
+      return;
+    }
+
+    if (!Number.isFinite(superficie) || superficie <= 0) {
+      Alert.alert('Superficie invalida', 'La superficie debe ser un numero mayor a 0.');
       return;
     }
 
@@ -271,7 +319,9 @@ export function useRegistroSiembra({
 
   return {
     form,
+    superficieUnidad,
     fotoTerreno,
+    fotoPendienteCamara,
     guardando,
     cargandoUbicacionGps,
     errorUbicacionGps,
@@ -280,6 +330,7 @@ export function useRegistroSiembra({
     campoFechaActivo,
     campoOpcionesActivo,
     actualizarCampo,
+    actualizarSuperficieUnidad,
     capturarUbicacionGps,
     abrirSelectorOpciones,
     cerrarSelectorOpciones,
@@ -287,6 +338,8 @@ export function useRegistroSiembra({
     cerrarSelectorFecha,
     seleccionarFecha,
     seleccionarImagen,
+    guardarFotoPendiente,
+    descartarFotoPendiente,
     fechaSeleccionadaISO,
     crearLote,
   };

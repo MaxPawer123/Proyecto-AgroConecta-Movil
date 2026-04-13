@@ -2,11 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { getDb } from '@/src/services/sqlite';
 import { obtenerLotesLocales } from '@/src/services/database';
 import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '@/src/services/api';
+import { obtenerTotalGastosLocales, obtenerTotalGastosSubidosDesdeLotes } from '@/src/services/costosResumen';
 
 export type EstadisticasDashboard = {
   lotesActivos: number;
   areaTotal: number;
   inversion: number;
+  costosLocales: number;
+  costosSubidos: number;
   pendientesSync: number;
 };
 
@@ -50,6 +53,8 @@ const estadoInicial: Omit<DashboardData, 'actualizar'> = {
     lotesActivos: 0,
     areaTotal: 0,
     inversion: 0,
+    costosLocales: 0,
+    costosSubidos: 0,
     pendientesSync: 0,
   },
   lotesRecientes: [],
@@ -194,10 +199,7 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
   const [usuario, lotesLocales, inversionTotal] = await Promise.all([
     obtenerUsuarioLocal().catch(() => ({ nombreUsuario: 'Productor' })),
     obtenerLotesLocales().catch(() => []),
-    getDb()
-      .then((db) => db.getFirstAsync<{ total: number }>('SELECT COALESCE(SUM(monto_total), 0) as total FROM gasto_lote'))
-      .then((row) => Number(row?.total ?? 0))
-      .catch(() => 0),
+    obtenerTotalGastosLocales().catch(() => 0),
   ]);
 
   const lotesCombinados = deduplicarLotes(lotesLocales.map(mapearLoteLocal));
@@ -210,13 +212,17 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
     (acc, lote) => acc + (Number.isFinite(lote.area) ? lote.area : 0),
     0
   );
+  const tieneLotes = lotesCombinados.length > 0;
+  const inversionMostrada = tieneLotes ? inversionTotal : 0;
 
   return {
     nombreUsuario: usuario.nombreUsuario,
     estadisticas: {
       lotesActivos: lotesCombinados.length,
       areaTotal,
-      inversion: inversionTotal,
+      inversion: inversionMostrada,
+      costosLocales: inversionMostrada,
+      costosSubidos: 0,
       pendientesSync,
     },
     lotesRecientes: lotesCombinados.slice(0, 5).map((item) => ({
@@ -242,9 +248,10 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
         obtenerLotesLocales().catch(() => []),
       ]);
 
-      const lotesBackend = lotesBackendResultados.flatMap((resultado) =>
-        resultado.status === 'fulfilled' ? resultado.value.map(mapearLoteBackend) : []
+      const lotesBackendApi = lotesBackendResultados.flatMap((resultado) =>
+        resultado.status === 'fulfilled' ? resultado.value : []
       );
+      const lotesBackend = lotesBackendApi.map(mapearLoteBackend);
 
       if (lotesBackend.length === 0) return null;
 
@@ -255,10 +262,8 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
 
       const usuario = await obtenerUsuarioLocal().catch(() => ({ nombreUsuario: 'Productor' }));
 
-      const inversionTotal = await getDb()
-        .then((db) => db.getFirstAsync<{ total: number }>('SELECT COALESCE(SUM(monto_total), 0) as total FROM gasto_lote'))
-        .then((row) => Number(row?.total ?? 0))
-        .catch(() => 0);
+      const inversionLocal = await obtenerTotalGastosLocales().catch(() => 0);
+      const costosSubidos = await obtenerTotalGastosSubidosDesdeLotes(lotesBackendApi).catch(() => 0);
 
       const pendientesSync = lotesLocales.filter(
         (item) => String(item.estado_sincronizacion ?? '').toUpperCase() !== 'SINCRONIZADO'
@@ -268,13 +273,18 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
         (acc, lote) => acc + (Number.isFinite(lote.area) ? lote.area : 0),
         0
       );
+      const tieneLotes = lotesCombinados.length > 0;
+      const costosLocalesMostrados = tieneLotes ? inversionLocal : 0;
+      const costosSubidosMostrados = tieneLotes ? costosSubidos : 0;
 
       return {
         nombreUsuario: usuario.nombreUsuario,
         estadisticas: {
           lotesActivos: lotesCombinados.length,
           areaTotal,
-          inversion: inversionTotal,
+          inversion: costosLocalesMostrados + costosSubidosMostrados,
+          costosLocales: costosLocalesMostrados,
+          costosSubidos: costosSubidosMostrados,
           pendientesSync,
         },
         lotesRecientes: lotesCombinados.slice(0, 5).map((item) => ({

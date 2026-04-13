@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -12,9 +13,32 @@ import { getDb } from '@/src/services/sqlite';
 
 export default function Inicio() {
   const router = useRouter();
+  const logosArribaOpacity = useRef(new Animated.Value(0)).current;
+  const contenidoOpacity = useRef(new Animated.Value(0)).current;
+  const contenidoTranslate = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
     let activo = true;
+
+    Animated.sequence([
+      Animated.timing(logosArribaOpacity, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.parallel([
+        Animated.timing(contenidoOpacity, {
+          toValue: 1,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+        Animated.timing(contenidoTranslate, {
+          toValue: 0,
+          duration: 650,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
 
     const verificarEstadoProductor = async () => {
       let existeCuenta = false;
@@ -34,11 +58,11 @@ export default function Inicio() {
         if (!activo) return;
 
         if (existeCuenta) {
-          router.replace('/(tabs)' as any);
+          router.replace('/(tabs)' as any); //'/(tabs)'
           return;
         }
 
-        router.replace('/auth/registro' as any);
+        router.replace('/auth/walkthrough' as any);
       }, 5000);
     };
 
@@ -53,22 +77,30 @@ export default function Inicio() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="dark-content" />
     
-        <View style={styles.badgesContainer}>
+        <Animated.View style={[styles.badgesContainer, { opacity: logosArribaOpacity }]}> 
           <Image source={require('../assets/images/umsamejor.png')} style={styles.badgePrincipal} />
           <Image source={require('../assets/images/logoquinueros.png')} style={styles.badgeSecundario} />
-        </View>
-        <View style={styles.logoContainer}>
+        </Animated.View>
+        <Animated.View
+          style={[
+            styles.logoContainer,
+            {
+              opacity: contenidoOpacity,
+              transform: [{ translateY: contenidoTranslate }],
+            },
+          ]}
+        >
           <Image source={require('../assets/images/yapu_aroma.png')} style={styles.logo} />
           <Text style={styles.title}>Yapu Aroma</Text>
           <Text style={styles.educativo}>
             Gestiona tus cultivos de quinua y calcula tus costos.
           </Text>
-        </View>
+        </Animated.View>
 
         <View style={styles.loaderContainer}>
-          <ActivityIndicator size="small" color="#FFFFFF" />
+          <ActivityIndicator size="small" color="#2BA14A" />
         </View>
       </View>
     </>
@@ -78,7 +110,7 @@ export default function Inicio() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#2BA14A',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 0,
@@ -118,7 +150,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#1D7F39',
     textAlign: 'center',
   },
   educativo: {
@@ -126,7 +158,7 @@ const styles = StyleSheet.create({
     fontSize: 23,
     lineHeight: 30,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1D7F39',
     textAlign: 'center',
     maxWidth: 360,
   },

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LoteViewModel } from '../types';
@@ -13,6 +13,8 @@ type LoteItemProps = {
 };
 
 export function LoteItem({ lote, productLabel, onOpenPhoto, onCalcular, onEditar, onEliminar }: LoteItemProps) {
+  const [expandido, setExpandido] = useState(false);
+
   return (
     <View style={styles.loteCard}>
       <TouchableOpacity style={styles.loteImageContainer} activeOpacity={0.9} onPress={() => onOpenPhoto(lote.imagen)}>
@@ -33,63 +35,77 @@ export function LoteItem({ lote, productLabel, onOpenPhoto, onCalcular, onEditar
       </TouchableOpacity>
 
       <View style={styles.loteContent}>
-        <Text style={styles.loteNombre}>{lote.nombre}</Text>
-        <Text style={styles.loteCultivo}>{productLabel}: {lote.tipoProducto}</Text>
+        <TouchableOpacity 
+          style={styles.headerToggle}
+          onPress={() => setExpandido(!expandido)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.loteNombre}>{lote.nombre}</Text>
+            <Text style={styles.loteCultivo}>{productLabel}: {lote.tipoProducto}</Text>
+          </View>
+          <Ionicons 
+            name={expandido ? "chevron-up" : "chevron-down"} 
+            size={24} 
+            color="#6b7280" 
+          />
+        </TouchableOpacity>
 
-        <View style={styles.detallesGrid}>
-          <View style={styles.detalleRow}>
-            <Ionicons name="share-social-outline" size={14} color="#3b82f6" />
-            <Text style={styles.detalleText}>Area: {lote.area} Ha</Text>
-          </View>
-          <View style={styles.detalleRow}>
-            <Ionicons name="location-outline" size={14} color="#2eaa51" />
-            <Text style={styles.detalleText}>{lote.comunidad}</Text>
-          </View>
-          <View style={styles.detalleRow}>
-            <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
-            <Text style={styles.detalleText}>Siembra: {lote.fechaSiembra}</Text>
-          </View>
-          <View style={styles.detalleRow}>
-            <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
-            <Text style={styles.detalleText}>Cosecha est: {lote.cosechaEstimada}</Text>
-          </View>
-        </View>
+        {expandido && (
+          <>
+            <View style={styles.detallesGrid}>
+              <View style={styles.detalleRow}>
+                <Ionicons name="share-social-outline" size={14} color="#3b82f6" />
+                <Text style={styles.detalleText}>Area: {lote.area} Ha</Text>
+              </View>
+              <View style={styles.detalleRow}>
+                <Ionicons name="location-outline" size={14} color="#2eaa51" />
+                <Text style={styles.detalleText}>{lote.comunidad}</Text>
+              </View>
+              <View style={styles.detalleRow}>
+                <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
+                <Text style={styles.detalleText}>Siembra: {lote.fechaSiembra}</Text>
+              </View>
+              <View style={styles.detalleRow}>
+                <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
+                <Text style={styles.detalleText}>Cosecha est: {lote.cosechaEstimada}</Text>
+              </View>
+            </View>
 
-        <View style={styles.divider} />
+            <View style={styles.divider} />
 
-        <View style={styles.finanzasRow}>
-          <View>
-            <Text style={styles.finanzasLabel}>Inversion</Text>
-            <Text style={styles.finanzasInversion}>Bs {lote.inversion.toLocaleString('es-BO')}</Text>
-          </View>
-          <View style={styles.finanzasRight}>
-            <Text style={styles.finanzasLabel}>Proyeccion</Text>
-            <Text style={styles.finanzasProyeccion}>Bs {lote.proyeccion.toLocaleString('es-BO')}</Text>
-          </View>
-        </View>
+            <View style={styles.finanzasRow}>
+              <View>
+                <Text style={styles.finanzasLabel}>Inversion</Text>
+                <Text style={styles.finanzasInversion}>Bs {lote.inversion.toLocaleString('es-BO')}</Text>
+              </View>
+            </View>
 
-        <View style={styles.accionesContainer}>
-          <TouchableOpacity style={styles.btnGestionar} onPress={() => onCalcular(lote)}>
-            <Ionicons name="share-social-outline" size={16} color="#fff" />
-            <Text style={styles.btnGestionarText}>Calcular</Text>
-          </TouchableOpacity>
+            <View style={styles.accionesContainer}>
+              <TouchableOpacity style={styles.btnGestionar} onPress={() => onCalcular(lote)}>
+                <Ionicons name="share-social-outline" size={16} color="#fff" />
+                <Text style={styles.btnGestionarText}>Calcular</Text>
+              </TouchableOpacity>
 
-          <View style={styles.accionesSecundariasRow}>
-            <TouchableOpacity style={styles.btnEditar} onPress={() => onEditar(lote)}>
-              <Ionicons name="create-outline" size={16} color="#2563eb" />
-              <Text style={styles.btnEditarText}>Editar</Text>
-            </TouchableOpacity>
+              <View style={styles.accionesSecundariasRow}>
+                <TouchableOpacity style={styles.btnEditar} onPress={() => onEditar(lote)}>
+                  <Ionicons name="create-outline" size={16} color="#2563eb" />
+                  <Text style={styles.btnEditarText}>Editar</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btnEliminar} onPress={() => onEliminar(lote)}>
-              <Ionicons name="trash-outline" size={16} color="#dc2626" />
-              <Text style={styles.btnEliminarText}>Eliminar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+                <TouchableOpacity style={styles.btnEliminar} onPress={() => onEliminar(lote)}>
+                  <Ionicons name="trash-outline" size={16} color="#dc2626" />
+                  <Text style={styles.btnEliminarText}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   loteCard: { backgroundColor: '#fff', borderRadius: 16, marginBottom: 20, borderWidth: 1, borderColor: '#f3f4f6', overflow: 'hidden', elevation: 2 },
@@ -121,8 +137,17 @@ const styles = StyleSheet.create({
     textShadowRadius: 10,
   },
   loteContent: { padding: 16 },
+  headerToggle: { 
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  headerTitleWrap: {
+    flex: 1,
+  },
   loteNombre: { fontSize: 18, fontWeight: 'bold', color: '#1f2937', marginBottom: 2 },
-  loteCultivo: { fontSize: 13, color: '#6b7280', marginBottom: 16 },
+  loteCultivo: { fontSize: 13, color: '#6b7280' },
   detallesGrid: { marginBottom: 16 },
   detalleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   detalleText: { fontSize: 12, color: '#4b5563', marginLeft: 8 },
