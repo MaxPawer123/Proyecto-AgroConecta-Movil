@@ -26,7 +26,7 @@ const PASOS: WalkthroughStep[] = [
     titulo: 'CONTROLA TUS COSTOS EN CAMPO',
     mensaje:
       'Calcula tus costos al instante en el campo, ¡offline! Mantén tus finanzas al día.',
-    imageSource: require('../../assets/images/quinua2.jpeg'),
+    imageSource: require('../../assets/images/quinua2.png'),
     cta: 'Siguiente',
   },
   {

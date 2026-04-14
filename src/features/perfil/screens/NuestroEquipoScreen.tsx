@@ -84,7 +84,7 @@ const COORDINADORES: TeamMember[] = [
     cargo: 'Responsable técnico, administrativo del proyecto y tutor',
     phone: '+591 77766857',   
     email: 'mapatino1@umsa.bo',
-    image: require('../../../../assets/images/ing_pati.png'),
+    image: require('../../../../assets/images/ingpati.png'),
   },
   {
     id: 'c4',
