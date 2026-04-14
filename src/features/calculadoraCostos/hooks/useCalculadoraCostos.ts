@@ -34,6 +34,7 @@ import {
   sanitizarCantidadPorCategoria,
   validarCantidadPorCategoria,
 } from '../utils/estrategiasCalculo';
+import { emitirEventoGastoActualizado } from '@/src/services/gastosStorageEvents';
 
 const KG_POR_QUINTAL = 46;
 
@@ -322,7 +323,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
             cantidad_obtenida: cantidad,
             precio_venta: precio,
           });
-          Alert.alert('Listo', 'Datos de producción guardados en la base de datos.');
+          Alert.alert('Listo', 'Datos de producción subidos.');
         } catch (apiError) {
           console.warn('API error al guardar producción, guardando localmente...', apiError);
           if (idLoteLocal || idLoteServidor) {
@@ -334,7 +335,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
         }
       } else if (idLoteLocal || idLoteServidor) {
         await exportarProduccionALoteLocal(cantidad, precio);
-        Alert.alert('Listo', 'Datos de producción guardados localmente.');
+        Alert.alert('Listo', 'Datos de producción guardados.');
       }
     } catch (error) {
       const mensaje = error instanceof Error ? error.message : 'No se pudo guardar la producción';
@@ -434,6 +435,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
                 : item
             )
           );
+          emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
           return;
         }
 
@@ -467,6 +469,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
                   : item
               )
             );
+            emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
           } catch (apiError) {
             console.warn('Fallo API al agregar gasto, guardando localmente:', apiError);
             const idLocalCreado = await guardarCostoLocal({
@@ -488,6 +491,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
                   : item
               )
             );
+            emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
           }
         }
       })().catch((error) => {
@@ -525,6 +529,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
                   await eliminarGastoApi(idGastoNum);
                 }
               }
+              emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
             } catch (error) {
               console.warn('Error al eliminar gasto:', error);
               setGastos(snapshot);
@@ -619,6 +624,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
       }
 
       void cargarGastosDelLote();
+      emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
     } catch (error) {
       console.warn('Error al actualizar gasto:', error);
       setGastos(snapshot);

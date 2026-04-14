@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
+import { Asset } from 'expo-asset';
 
 type WalkthroughStep = {
   id: number;
@@ -11,41 +12,43 @@ type WalkthroughStep = {
   cta: string;
 };
 
+const PASOS: WalkthroughStep[] = [
+  {
+    id: 1,
+    titulo: 'SIEMBRA CON CONFIANZA',
+    mensaje:
+      '¡Yapu Aroma te guía desde la siembra! Registra tus lotes y sigue el crecimiento de tu quinua.',
+    imageSource: require('../../assets/images/quinua 1.png'),
+    cta: 'Siguiente',
+  },
+  {
+    id: 2,
+    titulo: 'CONTROLA TUS COSTOS EN CAMPO',
+    mensaje:
+      'Calcula tus costos al instante en el campo, ¡offline! Mantén tus finanzas al día.',
+    imageSource: require('../../assets/images/quinua 2.jpeg'),
+    cta: 'Siguiente',
+  },
+  {
+    id: 3,
+    titulo: 'GENERA REPORTES PARA FINANCIARTE',
+    mensaje:
+      'Genera reportes PDF profesionales para bancos y cooperativas. ¡Asegura tu financiamiento!',
+    imageSource: require('../../assets/images/quinua 3.png'),
+    cta: 'Empezar Registro',
+  },
+];
+
 export default function WalkthroughScreen() {
   const router = useRouter();
   const [paso, setPaso] = useState(1);
 
-  const pasos = useMemo<WalkthroughStep[]>(
-    () => [
-      {
-        id: 1,
-        titulo: 'SIEMBRA CON CONFIANZA',
-        mensaje:
-          '¡Yapu Aroma te guía desde la siembra! Registra tus lotes y sigue el crecimiento de tu quinua.',
-        imageSource: require('../../assets/images/quinua 1.png'),
-        cta: 'Siguiente',
-      },
-      {
-        id: 2,
-        titulo: 'CONTROLA TUS COSTOS EN CAMPO',
-        mensaje:
-          'Calcula tus costos al instante en el campo, ¡offline! Mantén tus finanzas al día.',
-        imageSource: require('../../assets/images/quinua 2.jpeg'),
-        cta: 'Siguiente',
-      },
-      {
-        id: 3,
-        titulo: 'GENERA REPORTES PARA FINANCIARTE',
-        mensaje:
-          'Genera reportes PDF profesionales para bancos y cooperativas. ¡Asegura tu financiamiento!',
-        imageSource: require('../../assets/images/quinua 3.png'),
-        cta: 'Empezar Registro',
-      },
-    ],
-    []
-  );
+  useEffect(() => {
+    // Precarga de assets del walkthrough para que el cambio entre pasos sea inmediato.
+    void Asset.loadAsync(PASOS.map((item) => item.imageSource));
+  }, []);
 
-  const pasoActual = pasos[paso - 1];
+  const pasoActual = PASOS[paso - 1];
 
   const avanzar = () => {
     if (paso < 3) {
@@ -63,7 +66,7 @@ export default function WalkthroughScreen() {
         <StatusBar barStyle="dark-content" backgroundColor="#EFEFEF" />
 
         <View style={styles.progresoWrap} accessibilityLabel={`Paso ${paso} de 3`}>
-          {pasos.map((item) => (
+          {PASOS.map((item) => (
             <View
               key={item.id}
               style={[
@@ -79,7 +82,7 @@ export default function WalkthroughScreen() {
             source={pasoActual.imageSource}
             style={styles.imagen}
             contentFit="cover"
-            transition={180}
+            transition={80}
             cachePolicy="memory-disk"
             accessibilityLabel={`Imagen de quinua para el paso ${paso}`}
           />

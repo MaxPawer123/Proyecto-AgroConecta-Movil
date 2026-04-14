@@ -131,19 +131,6 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
               </View>
             </View>
 
-            <View style={[styles.kpiCard, { backgroundColor: '#fff7ed', borderColor: '#ffedd5' }]}>
-              <View style={styles.kpiHeader}>
-                <Text style={styles.kpiLabel}>Inversion Total</Text>
-                <View style={[styles.kpiIcon, { backgroundColor: '#ffedd5' }]}>
-                  <Ionicons name="wallet-outline" size={18} color="#f97316" />
-                </View>
-              </View>
-              <Text style={[styles.kpiValue, { color: '#f97316', fontSize: 18 }]}>Bs {stats.inversionTotal.toLocaleString('es-BO')}</Text>
-              <View style={styles.kpiFooter}>
-                <Text style={[styles.kpiFooterText, { color: '#f97316' }]}>Gastos acumulados</Text>
-              </View>
-            </View>
-
           </View>
 
           {lotes.map((lote) => (
@@ -213,14 +200,6 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
                   placeholder="Ej: Quinua Jacha Grano / Haba"
                 />
 
-                <Text style={styles.modalLabel}>Ubicacion GPS</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={formEdicion.ubicacion}
-                  onChangeText={(t) => setFormEdicion({ ...formEdicion, ubicacion: t })}
-                  placeholder="GPS: lat, lon | referencia local"
-                />
-
                 <Text style={styles.modalLabel}>Superficie (ha)</Text>
                 <TextInput
                   style={styles.modalInput}
@@ -228,30 +207,6 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
                   onChangeText={(t) => setFormEdicion({ ...formEdicion, superficie: t })}
                   keyboardType="numeric"
                   placeholder="0"
-                />
-
-                <Text style={styles.modalLabel}>Fecha siembra (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={formEdicion.fechaSiembraIso}
-                  onChangeText={(t) => setFormEdicion({ ...formEdicion, fechaSiembraIso: t })}
-                  placeholder="2026-03-27"
-                />
-
-                <Text style={styles.modalLabel}>Fecha cosecha estimada (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={formEdicion.fechaCosechaIso}
-                  onChangeText={(t) => setFormEdicion({ ...formEdicion, fechaCosechaIso: t })}
-                  placeholder="2026-04-02"
-                />
-
-                <Text style={styles.modalLabel}>Foto siembra (URI o URL)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={formEdicion.fotoSiembra}
-                  onChangeText={(t) => setFormEdicion({ ...formEdicion, fotoSiembra: t })}
-                  placeholder="https://... o file:///..."
                 />
 
                 <View style={styles.modalActions}>

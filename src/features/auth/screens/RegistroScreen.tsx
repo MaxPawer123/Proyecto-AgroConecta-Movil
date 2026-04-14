@@ -666,7 +666,7 @@ export function RegistroScreen() {
       </View>
 
       <TouchableOpacity style={styles.primaryButton} onPress={() => router.replace('/(tabs)' as any)} activeOpacity={0.9}>
-        <Text style={styles.primaryButtonText}>Ir a mi panel</Text>
+        <Text style={styles.primaryButtonText}>Ingresar</Text>
       </TouchableOpacity>
     </View>
   );

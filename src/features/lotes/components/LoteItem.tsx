@@ -74,13 +74,6 @@ export function LoteItem({ lote, productLabel, onOpenPhoto, onCalcular, onEditar
 
             <View style={styles.divider} />
 
-            <View style={styles.finanzasRow}>
-              <View>
-                <Text style={styles.finanzasLabel}>Inversion</Text>
-                <Text style={styles.finanzasInversion}>Bs {lote.inversion.toLocaleString('es-BO')}</Text>
-              </View>
-            </View>
-
             <View style={styles.accionesContainer}>
               <TouchableOpacity style={styles.btnGestionar} onPress={() => onCalcular(lote)}>
                 <Ionicons name="share-social-outline" size={16} color="#fff" />
@@ -152,11 +145,6 @@ const styles = StyleSheet.create({
   detalleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   detalleText: { fontSize: 12, color: '#4b5563', marginLeft: 8 },
   divider: { height: 1, backgroundColor: '#f3f4f6', marginBottom: 16 },
-  finanzasRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  finanzasRight: { alignItems: 'flex-end' },
-  finanzasLabel: { fontSize: 11, color: '#9ca3af', marginBottom: 2 },
-  finanzasInversion: { fontSize: 15, fontWeight: 'bold', color: '#ef4444' },
-  finanzasProyeccion: { fontSize: 15, fontWeight: 'bold', color: '#2eaa51' },
   accionesContainer: { gap: 8 },
   accionesSecundariasRow: { flexDirection: 'row', gap: 8 },
   btnGestionar: { backgroundColor: '#2eaa51', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 8 },

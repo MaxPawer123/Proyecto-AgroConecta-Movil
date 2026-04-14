@@ -3,6 +3,7 @@ import { getDb } from '@/src/services/sqlite';
 import { obtenerLotesLocales } from '@/src/services/database';
 import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '@/src/services/api';
 import { obtenerTotalGastosLocales, obtenerTotalGastosSubidosDesdeLotes } from '@/src/services/costosResumen';
+import { suscribirEventosGastos } from '@/src/services/gastosStorageEvents';
 
 export type EstadisticasDashboard = {
   lotesActivos: number;
@@ -156,7 +157,7 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
     idServidor: item.id_servidor ?? null,
     nombre,
     variedad,
-    estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'Sincronizado' : 'Pendiente de sync',
+    estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'S' : 'P',
     area: Number(item.superficie ?? 0),
     orderKey: item.id_local,
     tipoCultivo,
@@ -340,6 +341,14 @@ export function useDashboard(): DashboardData {
 
   useEffect(() => {
     void actualizar();
+  }, [actualizar]);
+
+  useEffect(() => {
+    const unsubscribe = suscribirEventosGastos(() => {
+      void actualizar();
+    });
+
+    return unsubscribe;
   }, [actualizar]);
 
   return {

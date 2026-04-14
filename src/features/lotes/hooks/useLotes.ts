@@ -248,8 +248,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idServidor: item.id_servidor,
         idProducto: item.id_producto,
         codigo: item.id_servidor
-          ? `${rubroConfig.codePrefix}-BD-${item.id_servidor}`
-          : `${rubroConfig.codePrefix}-LOCAL-${item.id_local}`,
+          ? `${rubroConfig.codePrefix}-B-${item.id_servidor}`
+          : `${rubroConfig.codePrefix}-L-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         tipoProducto,
         imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
@@ -367,7 +367,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           idLocal: item.id_local,
           idServidor: item.id_servidor,
           idProducto: item.id_producto,
-          codigo: item.id_servidor ? `H-BD-${item.id_servidor}` : `H-LOCAL-${item.id_local}`,
+          codigo: item.id_servidor ? `H-B-${item.id_servidor}` : `H-L-${item.id_local}`,
           nombre: item.nombre_lote || `Lote ${item.id_local}`,
           tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
           imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
@@ -406,7 +406,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           idLocal: null,
           idServidor: item.id_lote,
           idProducto: item.id_producto,
-          codigo: `H-BD-${item.id_lote}`,
+          codigo: `H-B-${item.id_lote}`,
           nombre: item.nombre_lote || `Lote ${item.id_lote}`,
           tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
           imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
@@ -521,7 +521,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idLocal: item.id_local,
         idServidor: item.id_servidor,
         idProducto: item.id_producto,
-        codigo: item.id_servidor ? `Q-BD-${item.id_servidor}` : `Q-LOCAL-${item.id_local}`,
+        codigo: item.id_servidor ? `Q-B${item.id_servidor}` : `Q-L-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
         tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
         imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
@@ -559,7 +559,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idLocal: null,
         idServidor: item.id_lote,
         idProducto: item.id_producto,
-        codigo: `Q-BD-${item.id_lote}`,
+        codigo: `Q-B-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
         tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
         imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
@@ -748,14 +748,14 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
     const nombre = formEdicion.nombre.trim();
     const tipoCultivo = formEdicion.tipoCultivo.trim();
-    const ubicacion = formEdicion.ubicacion.trim();
     const superficie = Number(formEdicion.superficie);
-    const fechaSiembraIso = formEdicion.fechaSiembraIso.trim();
-    const fechaCosechaIso = formEdicion.fechaCosechaIso.trim();
+    const ubicacion = formEdicion.ubicacion.trim() || (loteEditando.comunidad === 'Comunidad registrada' ? '' : (loteEditando.comunidad || ''));
+    const fechaSiembraIso = formEdicion.fechaSiembraIso.trim() || loteEditando.fechaSiembraIso;
+    const fechaCosechaIso = formEdicion.fechaCosechaIso.trim() || loteEditando.fechaCosechaIso;
     const fotoSiembra = formEdicion.fotoSiembra.trim();
 
-    if (!nombre || !tipoCultivo || !ubicacion || !superficie || superficie <= 0 || !fechaSiembraIso || !fechaCosechaIso) {
-      Alert.alert('Datos invalidos', 'Completa nombre, tipo, ubicacion, superficie y fechas validas.');
+    if (!nombre || !tipoCultivo || !Number.isFinite(superficie) || superficie <= 0) {
+      setMensajeSync('Completa nombre, tipo y una superficie valida para guardar.');
       return;
     }
 

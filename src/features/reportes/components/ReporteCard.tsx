@@ -9,6 +9,12 @@ type ReporteCardProps = {
   lote: ReporteLote;
 };
 
+const ORDEN_FASE: Record<string, number> = {
+  siembra: 0,
+  crecimiento: 1,
+  cosecha: 2,
+};
+
 function formatearMoneda(valor: number) {
   return `Bs. ${Number(valor || 0).toLocaleString('es-BO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
@@ -18,6 +24,35 @@ function formatearFecha(valor: string) {
   const fecha = new Date(valor);
   if (Number.isNaN(fecha.getTime())) return valor;
   return fecha.toLocaleString('es-BO');
+}
+
+function obtenerTimestamp(valor: string) {
+  const fecha = Date.parse(String(valor || '').trim());
+  return Number.isFinite(fecha) ? fecha : 0;
+}
+
+function normalizarTexto(valor: string) {
+  return String(valor || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function prioridadFase(fase: string): number {
+  const faseNormalizada = normalizarTexto(fase);
+  if (faseNormalizada.includes('siembr')) return ORDEN_FASE.siembra;
+  if (faseNormalizada.includes('crecim')) return ORDEN_FASE.crecimiento;
+  if (faseNormalizada.includes('cosech')) return ORDEN_FASE.cosecha;
+  return 99;
+}
+
+function ordenarGastosPorFase(gastos: ReporteGasto[]) {
+  return [...gastos].sort((a, b) => {
+    const ordenFase = prioridadFase(a.fase) - prioridadFase(b.fase);
+    if (ordenFase !== 0) return ordenFase;
+    return obtenerTimestamp(b.fechaGasto) - obtenerTimestamp(a.fechaGasto);
+  });
 }
 
 function escaparHtml(valor: string) {
@@ -30,8 +65,10 @@ function escaparHtml(valor: string) {
 }
 
 function construirHtmlPdf(lote: ReporteLote) {
-  const filas = lote.gastos.length > 0
-    ? lote.gastos.map((gasto: ReporteGasto) => `
+  const gastosOrdenados = ordenarGastosPorFase(lote.gastos);
+
+  const filas = gastosOrdenados.length > 0
+    ? gastosOrdenados.map((gasto: ReporteGasto) => `
         <tr>
           <td>${escaparHtml(gasto.nombre)}</td>
           <td>${escaparHtml(gasto.descripcion || '-')}</td>
@@ -113,7 +150,11 @@ async function exportarPdf(lote: ReporteLote) {
 
 export function ReporteCard({ lote }: ReporteCardProps) {
   const [desplegado, setDesplegado] = useState(false);
-  const totalGastos = useMemo(() => lote.gastos.reduce((acc, gasto) => acc + Number(gasto.total || 0), 0), [lote.gastos]);
+  const gastosOrdenados = useMemo(() => ordenarGastosPorFase(lote.gastos), [lote.gastos]);
+  const totalGastos = useMemo(
+    () => gastosOrdenados.reduce((acc, gasto) => acc + Number(gasto.total || 0), 0),
+    [gastosOrdenados]
+  );
 
   return (
     <View style={styles.card}>
@@ -147,7 +188,7 @@ export function ReporteCard({ lote }: ReporteCardProps) {
             <Text style={styles.resumenDesgloseTotal}>{formatearMoneda(totalGastos)}</Text>
           </View>
 
-          {lote.gastos.map((gasto) => (
+          {gastosOrdenados.map((gasto) => (
             <View key={gasto.id} style={styles.gastoRow}>
               <View style={styles.gastoTopRow}>
                 <Text style={styles.gastoNombre}>{gasto.nombre}</Text>

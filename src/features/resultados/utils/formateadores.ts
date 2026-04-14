@@ -3,12 +3,12 @@ import { RubroConfig, RubroResultado } from '../types';
 const RUBRO_CONFIG: Record<RubroResultado, RubroConfig> = {
   quinua: {
     title: 'Resultados Quinua',
-    subtitle: 'Analisis financiero de tu lote',
+    subtitle: 'Analisis financiero de tu parcela',
     accentColor: '#2eaa51',
   },
   hortalizas: {
     title: 'Resultados Hortalizas',
-    subtitle: 'Analisis financiero de tu lote',
+    subtitle: 'Analisis financiero de tu parcela',
     accentColor: '#2eaa51',
   },
 };

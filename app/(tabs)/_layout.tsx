@@ -48,7 +48,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="rubros"
         options={{
-          title: 'Rubros',
+          title: 'Parcelas',
         }}
       />
       <Tabs.Screen

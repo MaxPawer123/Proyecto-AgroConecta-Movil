@@ -6,6 +6,7 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useDashboard } from '../hooks/useDashboard';
 import { RubroCalculadora } from '@/src/features/calculadoraCostos/types';
 import { ResumenCard, LoteCard } from '../components';
+import { useReportes } from '@/src/features/reportes/hooks';
 
 type QuickActionProps = {
   label: string;
@@ -25,8 +26,10 @@ function normalizarRubro(tipoCultivo?: string): RubroCalculadora {
 
 export function DashboardScreen() {
   const router = useRouter();
-  const { nombreUsuario, estadisticas, lotesRecientes, loading, error, actualizar } = useDashboard();
+  const { nombreUsuario, lotesRecientes, loading, error, actualizar } = useDashboard();
+  const { inversionTotalAcumulada, cantidadLotes } = useReportes();
   const [sincronizando, setSincronizando] = useState(false);
+  const lotesMostrados = lotesRecientes.slice(0, 3);
 
   useFocusEffect(
     useCallback(() => {
@@ -91,8 +94,8 @@ export function DashboardScreen() {
 
   const renderResumenFinanciero = () => (
     <ResumenCard
-      costoTotal={estadisticas.lotesActivos > 0 ? estadisticas.inversion : 0}
-      cantidadLotes={estadisticas.lotesActivos}
+      costoTotal={cantidadLotes > 0 ? inversionTotalAcumulada : 0}
+      cantidadLotes={cantidadLotes}
       onPress={() => router.push('/(tabs)/reportes' as any)}
     />
   );
@@ -101,27 +104,22 @@ export function DashboardScreen() {
     <View style={styles.sectionBlock}>
           <View style={styles.actionsRow}>
         {renderQuickAction({
-          label: 'Registrar una nueva parcela',
+          label: 'Registrar siembra',
           icon: 'add',
           variant: 'primary',
           onPress: () => router.push('/seleccionar-rubro' as any),
         })}
       </View>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionTitle}>Tus Lotes</Text>
+        <Text style={styles.sectionTitle}>Tus Parcelas</Text>
         <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/seleccionar-rubro' as any)}>
           <Text style={styles.sectionAction}>Ver todos  {'>'}</Text>
         </TouchableOpacity>
       </View>
 
-      {lotesRecientes.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={16}
-          contentContainerStyle={styles.lotesScrollContent}
-        >
-          {lotesRecientes.map((lote) => (
+      {lotesMostrados.length > 0 ? (
+        <View style={styles.recentList}>
+          {lotesMostrados.map((lote) => (
             <View key={lote.id} style={styles.loteCardWrapper}>
               <LoteCard
                 nombre={lote.nombre}
@@ -140,7 +138,7 @@ export function DashboardScreen() {
               />
             </View>
           ))}
-        </ScrollView>
+        </View>
       ) : (
         <View style={styles.emptyLotesContainer}>
           <Text style={styles.emptyLotesText}>No hay parcelas registrados</Text>
@@ -289,15 +287,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginTop: 18,
+    marginBottom: 2,
   },
   quickActionButton: {
     flex: 1,
-    minHeight: 56,
-    borderRadius: 16,
+    minHeight: 64,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 20,
   },
   quickActionPrimary: {
     backgroundColor: '#2BA14A',
@@ -310,11 +309,12 @@ const styles = StyleSheet.create({
     ...shadowCard,
   },
   quickActionIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   quickActionText: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
   quickActionTextPrimary: {
     color: '#FFFFFF',
@@ -342,10 +342,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   recentList: {
-    gap: 12,
-  },
-  lotesScrollContent: {
-    paddingRight: 16,
     gap: 12,
   },
   loteCardWrapper: {

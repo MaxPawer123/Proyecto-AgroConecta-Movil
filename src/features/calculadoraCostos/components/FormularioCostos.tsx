@@ -180,7 +180,7 @@ export function FormularioCostos({
                   <Text style={styles.itemTitle}>{gasto.categoria}</Text>
                   {gasto.descripcion ? <Text style={styles.itemSub}>{gasto.descripcion}</Text> : null}
                   {estrategia.mostrarPendienteOffline && gasto.origen === 'LOCAL' && !gasto.sincronizado && (
-                    <Text style={styles.pendienteLabel}>Pendiente</Text>
+                    <Text style={styles.pendienteLabel}>P</Text>
                   )}
                 </View>
                 <Text style={styles.itemPrice}>Bs {parseFloat(gasto.monto).toFixed(2)}</Text>

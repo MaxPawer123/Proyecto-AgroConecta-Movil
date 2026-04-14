@@ -197,7 +197,7 @@ export function ModalRegistroSiembra({
       const valorActual = form[campo.key as keyof typeof form] as string;
       return (
         <View key={campo.key} style={wrapperStyle}>
-          <Text style={styles.label}>{campo.label}</Text>
+          <Text style={[styles.label, styles.dateLabel]}>{campo.label}</Text>
           <TouchableOpacity
             style={styles.selectInput}
             onPress={() => abrirSelectorFecha(campo.key as 'fechaSiembra' | 'fechaCosecha')}
@@ -507,6 +507,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#374151',
     marginBottom: 8,
+  },
+  dateLabel: {
+    minHeight: 52,
+    lineHeight: 26,
   },
   hint: {
     fontSize: 11,

@@ -3,6 +3,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { obtenerCostosLocalesPorLote, obtenerLotesLocales } from '@/src/services/database';
 import { obtenerGastosPorLoteApi, obtenerLotesPorTipoCultivoApi, type GastoApi, type LoteApi } from '@/src/services/api';
 import { inferirFaseDesdeCategoria, obtenerEstrategiaCalculo, obtenerUnidadCategoria } from '../../calculadoraCostos/utils/estrategiasCalculo';
+import { suscribirEventosGastos } from '@/src/services/gastosStorageEvents';
 
 type CostosLocalesLote = Awaited<ReturnType<typeof obtenerCostosLocalesPorLote>>;
 
@@ -434,6 +435,14 @@ export function useReportes() {
       activo = false;
     };
   }, [refreshToken]);
+
+  useEffect(() => {
+    const unsubscribe = suscribirEventosGastos(() => {
+      setRefreshToken((valor) => valor + 1);
+    });
+
+    return unsubscribe;
+  }, []);
 
   return {
     ...estado,

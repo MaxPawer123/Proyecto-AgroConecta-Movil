@@ -30,7 +30,7 @@ const TEAM_MEMBERS: TeamMember[] = [
     role: 'Ingeniería Agronómica',
     phone: '+591 76231248',
     email: 'ireneuruchicallisaya@gmail.com',
-    image: require('../../../../assets/images/perfil.png'),
+    image: require('../../../../assets/images/irene.png'),
   },
   {
     id: '4',
@@ -49,12 +49,12 @@ const TEAM_MEMBERS: TeamMember[] = [
     image: require('../../../../assets/images/fati.png'),
   },
   {
-    id: '6',
+    id: '6', 
     name: 'Enrique Javier Mamani Nina',
     role: 'Comunicación Social',
     phone: '+591 79149684',
-    email: '...',
-    image: require('../../../../assets/images/perfil.png'),
+    email: 'enriquejaviermnina@gmail.com',
+    image: require('../../../../assets/images/enrique.png'),
   },
 ];
 
@@ -63,7 +63,7 @@ const COORDINADORES: TeamMember[] = [
     id: 'c1',
     name: 'Ing. MSc. Isidro Callizaya Mamani',
     role: 'IIAREN',
-    cargo: 'Coordinadora del proyecto',
+    cargo: 'Coordinador del proyecto',
     phone: '+591 71507416',
     email: '',
     image: require('../../../../assets/images/perfil.png'),

@@ -20,7 +20,7 @@ const camposBase = {
   nombre: {
     key: 'nombre',
     tipo: 'text',
-    label: 'Nombre/Codigo del Lote',
+    label: 'Nombre/Codigo de la Parcela',
     hint: 'Identificador unico para tu lote',
   } satisfies CampoFormularioConfig,
   ubicacionQuinua: {
@@ -45,9 +45,9 @@ const camposBase = {
   superficie: {
     key: 'superficie',
     tipo: 'number',
-    label: 'Superficie del lote',
+    label: 'Superficie de la parcela',
     placeholder: '2.5',
-    hint: 'Elige la unidad y escribe el valor del area del lote.',
+    hint: 'Elige la unidad y escribe el valor del area dela parcela.',
   } satisfies CampoFormularioConfig,
   fechaSiembra: {
     key: 'fechaSiembra',
@@ -106,7 +106,7 @@ export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubr
     tituloTipoCultivo: 'Tipo de Quinua',
     mensajeBotonGuardar: 'Crear parcela y Comenzar',
     secciones: construirSecciones({
-      nombrePlaceholder: 'Ej: Lote 1 - Quinua Real',
+      nombrePlaceholder: 'Ej: Parcela 1 - Quinua Real',
       tipoCultivo: {
         key: 'tipoCultivo',
         tipo: 'select',
@@ -122,7 +122,7 @@ export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubr
     tituloTipoCultivo: 'Tipo de Hortaliza',
     mensajeBotonGuardar: 'Crear parcela y Comenzar',
     secciones: construirSecciones({
-      nombrePlaceholder: 'Lote 1 - Zanahoria',
+      nombrePlaceholder: 'Parcela 1 - Zanahoria',
       tipoCultivo: {
         key: 'tipoCultivo',
         tipo: 'select',
