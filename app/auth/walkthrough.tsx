@@ -18,7 +18,7 @@ const PASOS: WalkthroughStep[] = [
     titulo: 'SIEMBRA CON CONFIANZA',
     mensaje:
       '¡Yapu Aroma te guía desde la siembra! Registra tus lotes y sigue el crecimiento de tu quinua.',
-    imageSource: require('../../assets/images/quinua 1.png'),
+    imageSource: require('../../assets/images/quinua1.png'),
     cta: 'Siguiente',
   },
   {
@@ -26,7 +26,7 @@ const PASOS: WalkthroughStep[] = [
     titulo: 'CONTROLA TUS COSTOS EN CAMPO',
     mensaje:
       'Calcula tus costos al instante en el campo, ¡offline! Mantén tus finanzas al día.',
-    imageSource: require('../../assets/images/quinua 2.jpeg'),
+    imageSource: require('../../assets/images/quinua2.jpeg'),
     cta: 'Siguiente',
   },
   {
@@ -34,7 +34,7 @@ const PASOS: WalkthroughStep[] = [
     titulo: 'GENERA REPORTES PARA FINANCIARTE',
     mensaje:
       'Genera reportes PDF profesionales para bancos y cooperativas. ¡Asegura tu financiamiento!',
-    imageSource: require('../../assets/images/quinua 3.png'),
+    imageSource: require('../../assets/images/quinua3.png'),
     cta: 'Empezar Registro',
   },
 ];
