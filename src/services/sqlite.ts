@@ -13,6 +13,107 @@ async function runSafe(db: SQLite.SQLiteDatabase, sql: string, ...params: (strin
   }
 }
 
+async function normalizarTablaLoteSinIdProducto(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
+  if (!Array.isArray(columns) || columns.length === 0) return;
+
+  const names = new Set(columns.map((c) => c.name));
+  if (!names.has('id_producto')) return;
+
+  const pick = (candidates: string[], fallbackSql: string): string => {
+    const found = candidates.find((name) => names.has(name));
+    return found ?? fallbackSql;
+  };
+
+  await db.execAsync('BEGIN');
+  try {
+    await db.runAsync('DROP TABLE IF EXISTS lote_tmp');
+    await db.runAsync(
+      `
+        CREATE TABLE lote_tmp (
+          id_local INTEGER PRIMARY KEY AUTOINCREMENT,
+          id_lote INTEGER,
+          id_productor INTEGER NOT NULL DEFAULT 1,
+          tipo_cultivo TEXT NOT NULL,
+          nombre_lote TEXT NOT NULL,
+          ubicacion TEXT,
+          superficie REAL,
+          fecha_siembra TEXT NOT NULL,
+          fecha_cosecha_est TEXT NOT NULL,
+          fecha_cierre_real TEXT,
+          rendimiento_estimado REAL,
+          precio_venta_est REAL,
+          rendimiento_real REAL,
+          foto_siembra_url TEXT,
+          foto_cosecha_url TEXT,
+          estado TEXT NOT NULL DEFAULT 'ACTIVO',
+          estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `
+    );
+
+    await db.runAsync(
+      `
+        INSERT INTO lote_tmp (
+          id_local,
+          id_lote,
+          id_productor,
+          tipo_cultivo,
+          nombre_lote,
+          ubicacion,
+          superficie,
+          fecha_siembra,
+          fecha_cosecha_est,
+          fecha_cierre_real,
+          rendimiento_estimado,
+          precio_venta_est,
+          rendimiento_real,
+          foto_siembra_url,
+          foto_cosecha_url,
+          estado,
+          estado_sincronizacion,
+          created_at,
+          updated_at
+        )
+        SELECT
+          ${pick(['id_local'], 'NULL')},
+          ${pick(['id_lote', 'id_servidor'], 'NULL')},
+          COALESCE(${pick(['id_productor'], '1')}, 1),
+          COALESCE(NULLIF(TRIM(${pick(['tipo_cultivo', 'variedad'], "''")}), ''), 'Sin especificar'),
+          COALESCE(NULLIF(TRIM(${pick(['nombre_lote'], "''")}), ''), 'Lote sin nombre'),
+          ${pick(['ubicacion'], 'NULL')},
+          ${pick(['superficie'], 'NULL')},
+          COALESCE(${pick(['fecha_siembra'], "''")}, ''),
+          COALESCE(${pick(['fecha_cosecha_est'], "''")}, ''),
+          ${pick(['fecha_cierre_real'], 'NULL')},
+          ${pick(['rendimiento_estimado'], 'NULL')},
+          ${pick(['precio_venta_est'], 'NULL')},
+          ${pick(['rendimiento_real'], 'NULL')},
+          ${pick(['foto_siembra_url', 'foto_siembra_uri_local'], 'NULL')},
+          ${pick(['foto_cosecha_url'], 'NULL')},
+          COALESCE(NULLIF(TRIM(${pick(['estado'], "''")}), ''), 'ACTIVO'),
+          COALESCE(NULLIF(TRIM(${pick(['estado_sincronizacion'], "''")}), ''), 'PENDIENTE'),
+          COALESCE(${pick(['created_at'], "datetime('now')")}, datetime('now')),
+          COALESCE(${pick(['updated_at'], "datetime('now')")}, datetime('now'))
+        FROM lote
+      `
+    );
+
+    await db.runAsync('DROP TABLE lote');
+    await db.runAsync('ALTER TABLE lote_tmp RENAME TO lote');
+    await db.runAsync('CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_id_lote ON lote(id_lote)');
+    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_lote_tipo_cultivo ON lote(tipo_cultivo)');
+    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_lote_servidor ON lote(id_lote)');
+    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_lote_sync ON lote(estado_sincronizacion)');
+    await db.execAsync('COMMIT');
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+}
+
 async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   const statements = [
     'PRAGMA journal_mode = WAL',
@@ -112,6 +213,8 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
+  await normalizarTablaLoteSinIdProducto(db);
+
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN id_lote INTEGER');
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN id_productor INTEGER NOT NULL DEFAULT 1');
   await runSafe(db, 'ALTER TABLE lote ADD COLUMN tipo_cultivo TEXT');

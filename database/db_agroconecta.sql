@@ -6,7 +6,6 @@
 -- CUIDADO: Esto borrará los datos anteriores para crear la estructura limpia.
 DROP TABLE IF EXISTS gasto_lote CASCADE;
 DROP TABLE IF EXISTS lote CASCADE;
-DROP TABLE IF EXISTS producto CASCADE;
 DROP TABLE IF EXISTS productor CASCADE;
 DROP TABLE IF EXISTS usuario CASCADE;
 
@@ -56,16 +55,6 @@ CREATE TABLE IF NOT EXISTS productor (
 );
 
 
--- Tabla de Productos (Catálogo General)
-CREATE TABLE producto (
-    id_producto SERIAL PRIMARY KEY,
-    id_lote INT NOT NULL REFERENCES lote(id_lote),
-     id_productor INT NOT NULL REFERENCES productor(id_productor),
-    nombre VARCHAR(100) NOT NULL, -- Ej: Quinua Real
-    categoria VARCHAR(50) CHECK (categoria IN ('Hortalizas', 'Quinua')),
-    unidad_medida_base VARCHAR(20) DEFAULT 'Kg'
-);
-
 -- =========================================================
 -- 3. CREACIÓN DE TABLAS DEL NÚCLEO (CORE)
 -- =========================================================
@@ -73,9 +62,7 @@ CREATE TABLE producto (
 -- Tabla de Lotes (Gestión de la Producción)
 CREATE TABLE lote (
     id_lote SERIAL PRIMARY KEY,
-    id_productor INT NOT NULL REFERENCES productor(id_productor),
-    id_producto INT NOT NULL REFERENCES producto(id_producto),
-    
+    id_productor INT NOT NULL REFERENCES productor(id_productor),    
     -- Identificación
     nombre_lote VARCHAR(100) NOT NULL, -- Ej: "Campaña Quinua 2026"
     superficie NUMERIC(10,2) NOT NULL, -- En Hectáreas

@@ -19,7 +19,6 @@ export type LoteLocal = {
   id_servidor: number | null;
   tipo_cultivo: string;
   variedad?: string;
-  id_producto?: number;
   nombre_lote: string;
   ubicacion: string | null;
   superficie: number | null;
@@ -88,7 +87,6 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     id_servidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
     tipo_cultivo: tipoCultivo,
     variedad: tipoCultivo,
-    id_producto: idProductoLegacy,
     nombre_lote: String(row.nombre_lote ?? ''),
     ubicacion: row.ubicacion === null || row.ubicacion === undefined ? null : String(row.ubicacion),
     superficie: row.superficie === null || row.superficie === undefined ? null : Number(row.superficie),

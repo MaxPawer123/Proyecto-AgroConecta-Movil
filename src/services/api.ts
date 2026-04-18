@@ -60,7 +60,6 @@ export type LoteApi = {
   id_productor: number;
   tipo_cultivo: string;
   variedad?: string;
-  id_producto?: number;
   nombre_producto?: string;
   nombre_lote: string;
   superficie: string;
@@ -107,14 +106,7 @@ export type GastoApi = {
   fecha_gasto: string;
 };
 
-export type ProductoApi = {
-  id_producto: number;
-  id_lote?: number | null;
-  id_productor?: number | null;
-  nombre: string;
-  categoria: string;
-  imagen_url?: string | null;
-};
+
 
 export type AuthRegisterPayload = {
   nombre: string;
