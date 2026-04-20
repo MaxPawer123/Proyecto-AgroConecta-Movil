@@ -27,14 +27,14 @@ const camposBase = {
     key: 'ubicacion',
     tipo: 'gps',
     label: 'Ubicacion GPS',
-    placeholder: 'Toca para capturar la ubicacion GPS del lote',
+    placeholder: 'Toca para capturar la ubicacion GPS de la parcela',
     hint: 'Se guarda localmente con coordenadas y se sincroniza automaticamente cuando hay internet.',
   } satisfies CampoFormularioConfig,
   ubicacionHortalizas: {
     key: 'ubicacion',
     tipo: 'gps',
     label: 'Ubicacion GPS',
-    placeholder: 'Toca para capturar la ubicacion GPS del lote',
+    placeholder: 'Toca para capturar la ubicacion GPS de la parcela',
     hint: 'Se guarda localmente con coordenadas y se sincroniza automaticamente cuando hay internet.',
   } satisfies CampoFormularioConfig,
   fotoTerreno: {
@@ -103,7 +103,7 @@ const construirSecciones = (campos: {
 
 export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubroSiembra> = {
   quinua: {
-    tituloTipoCultivo: 'Tipo de Quinua',
+    tituloTipoCultivo: 'Variedades de Quinua',
     mensajeBotonGuardar: 'Crear parcela y Comenzar',
     secciones: construirSecciones({
       nombrePlaceholder: 'Ej: Parcela 1 - Quinua Real',
