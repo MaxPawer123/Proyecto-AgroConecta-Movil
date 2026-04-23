@@ -15,6 +15,8 @@ const TABLES = [
   'usuario',
   'productor',
   'lote',
+  'PRODUCTO',
+  'LOTE_PRODUCTO',
   'gasto_lote',
   'produccion_lote',
 ] as const;

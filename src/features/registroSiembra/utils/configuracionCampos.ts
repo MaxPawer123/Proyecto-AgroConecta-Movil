@@ -8,13 +8,22 @@ import {
 const TIPOS_QUINUA = [
   'Quinua Real Blanca',
   'Quinua Roja Pasankalla',
-  'Quinua Negra Collana',
+  'Quinua Negra Collana ',
   'Quinua Toledo',
   'Quinua Jacha Grano',
   'Quinua Pandela',
+  'Otros',
 ];
 
-const TIPOS_HORTALIZA = ['Papa', 'Cebolla', 'Zanahoria', 'Beterraga', 'Haba', 'Nabo'];
+const TIPOS_HORTALIZA = [
+   'Papa',
+   'Cebolla', 
+   'Zanahoria', 
+   'Beterraga', 
+   'Haba', 
+   'Nabo', 
+   'Otros'
+];
 
 const camposBase = {
   nombre: {
@@ -110,9 +119,9 @@ export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubr
       tipoCultivo: {
         key: 'tipoCultivo',
         tipo: 'select',
-        label: 'Tipo de Quinua',
-        placeholder: 'Selecciona el tipo de quinua',
-        tituloSelector: 'Tipo de Quinua',
+        label: 'Variedades de Quinua',
+        placeholder: 'Seleccionar tipos de cultivo...',
+        tituloSelector: 'Variedades de Quinua',
         opciones: TIPOS_QUINUA,
       },
       ubicacion: camposBase.ubicacionQuinua,
@@ -126,9 +135,9 @@ export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubr
       tipoCultivo: {
         key: 'tipoCultivo',
         tipo: 'select',
-        label: 'Tipo de Hortaliza',
-        placeholder: 'Selecciona el tipo de hortaliza',
-        tituloSelector: 'Tipo de Hortaliza',
+        label: 'Variedades de Hortaliza',
+        placeholder: 'Seleccionar tipos de cultivo...',
+        tituloSelector: 'Variedades de Hortaliza',
         opciones: TIPOS_HORTALIZA,
       },
       ubicacion: camposBase.ubicacionHortalizas,

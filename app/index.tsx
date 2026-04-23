@@ -16,7 +16,6 @@ export default function Inicio() {
   const logosArribaOpacity = useRef(new Animated.Value(0)).current;
   const contenidoOpacity = useRef(new Animated.Value(0)).current;
   const contenidoTranslate = useRef(new Animated.Value(18)).current;
-
   useEffect(() => {
     let activo = true;
 
@@ -58,12 +57,12 @@ export default function Inicio() {
         if (!activo) return;
 
         if (existeCuenta) {
-          router.replace('/(tabs)' as any); //'  /(tabs)   '  
+          router.replace('/menu' as any); //'(tabs)'  
           return;
         }
 
         router.replace('/auth/walkthrough' as any);
-      }, 8000);
+      }, 5000);
     };
 
     void verificarEstadoProductor();
@@ -86,8 +85,7 @@ export default function Inicio() {
             <Image source={require('../assets/images/logoquinueros.png')} style={styles.badgeSecundario} />
             <Image source={require('../assets/images/dipgis.png')} style={styles.badgeDipgis} />
             <Image source={require('../assets/images/idh.png')} style={styles.badgeIdh} />
-
-            </View>
+          </View>
           </View>
         </Animated.View>
         <Animated.View

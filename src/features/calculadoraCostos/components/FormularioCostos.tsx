@@ -586,14 +586,20 @@ const styles = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 2, marginRight: 4 },
   legendText: { fontSize: 11, color: '#4b5563' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    paddingBottom: 24,
+  },
   modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', padding: 24 },
   modalContent: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    maxHeight: '80%',
+    paddingBottom: 28,
+    maxHeight: '78%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -614,7 +620,7 @@ const styles = StyleSheet.create({
   modalItemText: { fontSize: 16, color: '#4b5563' },
   modalItemUnit: { fontSize: 12, color: '#2eaa51', fontWeight: '700', textTransform: 'uppercase' },
   modalCloseBtn: {
-    marginTop: 20,
+    marginTop: 12,
     padding: 14,
     backgroundColor: '#f3f4f6',
     borderRadius: 10,

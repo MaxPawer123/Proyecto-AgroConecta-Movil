@@ -19,6 +19,7 @@ const formInicial: FormRegistroSiembra = {
 
 const superficieUnidadInicial: 'ha' | 'm2' = 'ha';
 const METROS_CUADRADOS_POR_HECTAREA = 10000;
+const OPCION_TIPO_CULTIVO_OTROS = 'Otros';
 
 const formatearFecha = (fechaIso: string): string => {
   if (!fechaIso) return '';
@@ -83,6 +84,9 @@ export function useRegistroSiembra({
   const [superficieUnidad, setSuperficieUnidad] = useState<'ha' | 'm2'>(superficieUnidadInicial);
   const [modalOpcionesOpen, setModalOpcionesOpen] = useState(false);
   const [modalCalendarioOpen, setModalCalendarioOpen] = useState(false);
+  const [modalCultivosOpen, setModalCultivosOpen] = useState(false);
+  const [cultivosSeleccionados, setCultivosSeleccionados] = useState<string[]>([]);
+  const [variedadOtro, setVariedadOtro] = useState('');
   const [campoOpcionesActivo, setCampoOpcionesActivo] = useState<'tipoCultivo' | 'ubicacion' | null>(null);
   const [campoFechaActivo, setCampoFechaActivo] = useState<'fechaSiembra' | 'fechaCosecha' | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -208,6 +212,63 @@ export function useRegistroSiembra({
     setModalOpcionesOpen(true);
   };
 
+  const abrirSelectorCultivos = useCallback(() => {
+    setModalCultivosOpen(true);
+  }, []);
+
+  const cerrarSelectorCultivos = useCallback(() => {
+    setModalCultivosOpen(false);
+  }, []);
+
+  const toggleCultivoSeleccionado = useCallback((cultivo: string) => {
+    setCultivosSeleccionados((anterior) => {
+      const existe = anterior.includes(cultivo);
+      const siguiente = existe ? anterior.filter((item) => item !== cultivo) : [...anterior, cultivo];
+      setForm((previo) => ({ ...previo, tipoCultivo: siguiente.join(', ') }));
+
+      if (cultivo === OPCION_TIPO_CULTIVO_OTROS && existe) {
+        setVariedadOtro('');
+      }
+
+      return siguiente;
+    });
+  }, []);
+
+  const actualizarVariedadOtro = useCallback((valor: string) => {
+    setVariedadOtro(valor);
+  }, []);
+
+  const confirmarSeleccionCultivos = useCallback((): boolean => {
+    const tieneOtros = cultivosSeleccionados.includes(OPCION_TIPO_CULTIVO_OTROS);
+    const variedadPersonalizada = variedadOtro.trim();
+    const nombreRubro = rubro === 'hortalizas' ? 'hortaliza' : 'quinua';
+
+    if (tieneOtros && !variedadPersonalizada) {
+      Alert.alert('Completa la variedad', `Escribe la otra variedad de ${nombreRubro} para continuar.`);
+      return false;
+    }
+
+    if (tieneOtros && variedadPersonalizada) {
+      const siguiente = cultivosSeleccionados
+        .filter((item) => item !== OPCION_TIPO_CULTIVO_OTROS)
+        .concat(variedadPersonalizada);
+
+      setCultivosSeleccionados(siguiente);
+      setForm((previo) => ({ ...previo, tipoCultivo: siguiente.join(', ') }));
+    }
+
+    setModalCultivosOpen(false);
+    return true;
+  }, [cultivosSeleccionados, rubro, variedadOtro]);
+
+  const removerCultivoSeleccionado = useCallback((cultivo: string) => {
+    setCultivosSeleccionados((anterior) => {
+      const siguiente = anterior.filter((item) => item !== cultivo);
+      setForm((previo) => ({ ...previo, tipoCultivo: siguiente.join(', ') }));
+      return siguiente;
+    });
+  }, []);
+
   const cerrarSelectorOpciones = () => {
     setModalOpcionesOpen(false);
     setCampoOpcionesActivo(null);
@@ -233,6 +294,9 @@ export function useRegistroSiembra({
     setFotoTerreno(null);
     setFotoPendienteCamara(null);
     setSuperficieUnidad(superficieUnidadInicial);
+    setCultivosSeleccionados([]);
+    setVariedadOtro('');
+    setModalCultivosOpen(false);
     setCampoFechaActivo(null);
     setCampoOpcionesActivo(null);
     setErrorUbicacionGps(null);
@@ -243,9 +307,15 @@ export function useRegistroSiembra({
     const superficie = normalizarSuperficie(form.superficie, superficieUnidad);
     const fechaSiembraIso = parsearFecha(form.fechaSiembra);
     const fechaCosechaIso = parsearFecha(form.fechaCosecha);
+    const cultivosArray = cultivosSeleccionados.length > 0
+      ? cultivosSeleccionados
+      : form.tipoCultivo.trim()
+        ? [form.tipoCultivo.trim()]
+        : [];
+    const cultivosString = cultivosArray.join(', ');
 
-    if (!nombre || !form.tipoCultivo || !form.ubicacion || !form.superficie.trim() || !fechaSiembraIso || !fechaCosechaIso) {
-      Alert.alert('Datos incompletos', 'Completa nombre, tipo, ubicacion GPS, superficie y fechas.');
+    if (!nombre || !cultivosString || !form.ubicacion || !form.superficie.trim() || !fechaSiembraIso || !fechaCosechaIso) {
+      Alert.alert('Datos incompletos', 'Completa nombre, cultivo(s), ubicacion GPS, superficie y fechas.');
       return;
     }
 
@@ -261,7 +331,8 @@ export function useRegistroSiembra({
         await registrarSiembraOfflineFirst({
           rubro: 'QUINUA',
           nombreLote: nombre,
-          tipoCultivo: form.tipoCultivo,
+          tipoCultivo: cultivosString,
+          cultivos: cultivosArray,
           ubicacion: form.ubicacion,
           superficie,
           fechaSiembraIso,
@@ -274,7 +345,8 @@ export function useRegistroSiembra({
         await registrarSiembraOfflineFirst({
           rubro: 'HORTALIZA',
           nombreLote: nombre,
-          tipoCultivo: form.tipoCultivo,
+          tipoCultivo: cultivosString,
+          cultivos: cultivosArray,
           ubicacion: form.ubicacion,
           superficie,
           fechaSiembraIso,
@@ -316,6 +388,9 @@ export function useRegistroSiembra({
     errorUbicacionGps,
     modalOpcionesOpen,
     modalCalendarioOpen,
+    modalCultivosOpen,
+    cultivosSeleccionados,
+    variedadOtro,
     campoFechaActivo,
     campoOpcionesActivo,
     actualizarCampo,
@@ -323,6 +398,12 @@ export function useRegistroSiembra({
     capturarUbicacionGps,
     abrirSelectorOpciones,
     cerrarSelectorOpciones,
+    abrirSelectorCultivos,
+    cerrarSelectorCultivos,
+    toggleCultivoSeleccionado,
+    actualizarVariedadOtro,
+    confirmarSeleccionCultivos,
+    removerCultivoSeleccionado,
     abrirSelectorFecha,
     cerrarSelectorFecha,
     seleccionarFecha,

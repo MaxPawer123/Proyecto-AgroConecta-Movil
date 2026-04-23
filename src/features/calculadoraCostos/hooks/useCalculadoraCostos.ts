@@ -56,10 +56,10 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
     descripcion: '',
     cantidad: '',
     monto: '',
-  });
+  });    
 
   const [produccion, setProduccion] = useState({ cantidad: '', precio: '' });
-  const [unidadCantidad, setUnidadCantidad] = useState<UnidadCantidad>('qq');
+  const [unidadCantidad,     setUnidadCantidad] = useState<UnidadCantidad>('qq');
   const [unidadPrecio, setUnidadPrecio] = useState<UnidadPrecio>('bsqq');
   const [modalUnidadCantidad, setModalUnidadCantidad] = useState(false);
   const [modalUnidadPrecio, setModalUnidadPrecio] = useState(false);
@@ -360,11 +360,12 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
 
   const cambiarFase = (nuevaFase: Fase) => {
     setFase(nuevaFase);
-    if (estrategia.usaValidacionCantidadPorCategoria) {
-      setFormGasto({ ...formGasto, categoria: '', cantidad: '' });
-    } else {
-      setFormGasto({ ...formGasto, categoria: '' });
-    }
+    setModalCategoria(true);
+    setFormGasto((actual) =>
+      estrategia.usaValidacionCantidadPorCategoria
+        ? { ...actual, categoria: '', cantidad: '' }
+        : { ...actual, categoria: '' },
+    );
   };
 
   const agregarGasto = async () => {

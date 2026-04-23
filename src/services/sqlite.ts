@@ -5,114 +5,32 @@ const DB_NAME = 'agroconecta.db';
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let loteServerColumnCache: 'id_lote' | 'id_servidor' | null = null;
 
+// ============================================
+// FUNCIONES SEGURAS (CORREGIDAS)
+// ============================================
+
 async function runSafe(db: SQLite.SQLiteDatabase, sql: string, ...params: (string | number | null)[]): Promise<void> {
   try {
     await db.runAsync(sql, ...params);
-  } catch {
-    // Ignora migraciones ya aplicadas o incompatibles con versiones antiguas.
-  }
-}
-
-async function normalizarTablaLoteSinIdProducto(db: SQLite.SQLiteDatabase): Promise<void> {
-  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
-  if (!Array.isArray(columns) || columns.length === 0) return;
-
-  const names = new Set(columns.map((c) => c.name));
-  if (!names.has('id_producto')) return;
-
-  const pick = (candidates: string[], fallbackSql: string): string => {
-    const found = candidates.find((name) => names.has(name));
-    return found ?? fallbackSql;
-  };
-
-  await db.execAsync('BEGIN');
-  try {
-    await db.runAsync('DROP TABLE IF EXISTS lote_tmp');
-    await db.runAsync(
-      `
-        CREATE TABLE lote_tmp (
-          id_local INTEGER PRIMARY KEY AUTOINCREMENT,
-          id_lote INTEGER,
-          id_productor INTEGER NOT NULL DEFAULT 1,
-          tipo_cultivo TEXT NOT NULL,
-          nombre_lote TEXT NOT NULL,
-          ubicacion TEXT,
-          superficie REAL,
-          fecha_siembra TEXT NOT NULL,
-          fecha_cosecha_est TEXT NOT NULL,
-          fecha_cierre_real TEXT,
-          rendimiento_estimado REAL,
-          precio_venta_est REAL,
-          rendimiento_real REAL,
-          foto_siembra_url TEXT,
-          foto_cosecha_url TEXT,
-          estado TEXT NOT NULL DEFAULT 'ACTIVO',
-          estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE',
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-      `
-    );
-
-    await db.runAsync(
-      `
-        INSERT INTO lote_tmp (
-          id_local,
-          id_lote,
-          id_productor,
-          tipo_cultivo,
-          nombre_lote,
-          ubicacion,
-          superficie,
-          fecha_siembra,
-          fecha_cosecha_est,
-          fecha_cierre_real,
-          rendimiento_estimado,
-          precio_venta_est,
-          rendimiento_real,
-          foto_siembra_url,
-          foto_cosecha_url,
-          estado,
-          estado_sincronizacion,
-          created_at,
-          updated_at
-        )
-        SELECT
-          ${pick(['id_local'], 'NULL')},
-          ${pick(['id_lote', 'id_servidor'], 'NULL')},
-          COALESCE(${pick(['id_productor'], '1')}, 1),
-          COALESCE(NULLIF(TRIM(${pick(['tipo_cultivo', 'variedad'], "''")}), ''), 'Sin especificar'),
-          COALESCE(NULLIF(TRIM(${pick(['nombre_lote'], "''")}), ''), 'Lote sin nombre'),
-          ${pick(['ubicacion'], 'NULL')},
-          ${pick(['superficie'], 'NULL')},
-          COALESCE(${pick(['fecha_siembra'], "''")}, ''),
-          COALESCE(${pick(['fecha_cosecha_est'], "''")}, ''),
-          ${pick(['fecha_cierre_real'], 'NULL')},
-          ${pick(['rendimiento_estimado'], 'NULL')},
-          ${pick(['precio_venta_est'], 'NULL')},
-          ${pick(['rendimiento_real'], 'NULL')},
-          ${pick(['foto_siembra_url', 'foto_siembra_uri_local'], 'NULL')},
-          ${pick(['foto_cosecha_url'], 'NULL')},
-          COALESCE(NULLIF(TRIM(${pick(['estado'], "''")}), ''), 'ACTIVO'),
-          COALESCE(NULLIF(TRIM(${pick(['estado_sincronizacion'], "''")}), ''), 'PENDIENTE'),
-          COALESCE(${pick(['created_at'], "datetime('now')")}, datetime('now')),
-          COALESCE(${pick(['updated_at'], "datetime('now')")}, datetime('now'))
-        FROM lote
-      `
-    );
-
-    await db.runAsync('DROP TABLE lote');
-    await db.runAsync('ALTER TABLE lote_tmp RENAME TO lote');
-    await db.runAsync('CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_id_lote ON lote(id_lote)');
-    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_lote_tipo_cultivo ON lote(tipo_cultivo)');
-    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_lote_servidor ON lote(id_lote)');
-    await db.runAsync('CREATE INDEX IF NOT EXISTS idx_lote_sync ON lote(estado_sincronizacion)');
-    await db.execAsync('COMMIT');
-  } catch (error) {
-    await db.execAsync('ROLLBACK');
+  } catch (error: any) {
+    // Solo ignorar errores de columna/tabla ya existente
+    const msg = String(error?.message || '');
+    if (
+      msg.includes('duplicate column name') ||
+      msg.includes('already exists') ||
+      msg.includes('no such column')
+    ) {
+      // Ignorar estos errores comunes en migraciones
+      return;
+    }
+    // Relanzar otros errores
     throw error;
   }
 }
+
+// ============================================
+// ESQUEMA BASE
+// ============================================
 
 async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   const statements = [
@@ -143,7 +61,6 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         id_local INTEGER PRIMARY KEY AUTOINCREMENT,
         id_lote INTEGER,
         id_productor INTEGER NOT NULL DEFAULT 1,
-        tipo_cultivo TEXT NOT NULL,
         nombre_lote TEXT NOT NULL,
         ubicacion TEXT,
         superficie REAL,
@@ -157,11 +74,36 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         foto_cosecha_url TEXT,
         estado TEXT NOT NULL DEFAULT 'ACTIVO',
         estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE',
+        tipo_cultivo TEXT,
+        variedad TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `,
+    `
+      CREATE TABLE IF NOT EXISTS PRODUCTO (
+        id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        variedad TEXT,
+        categoria TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS LOTE_PRODUCTO (
+        id_lote_producto INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_lote INTEGER,
+        id_producto INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (id_lote) REFERENCES lote(id_local) ON DELETE CASCADE,
+        FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id_producto) ON DELETE CASCADE,
+        UNIQUE(id_lote, id_producto)
+      )
+    `,
     'CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_id_lote ON lote(id_lote)',
+    'CREATE INDEX IF NOT EXISTS idx_lote_servidor ON lote(id_lote)',
+    'CREATE INDEX IF NOT EXISTS idx_lote_sync ON lote(estado_sincronizacion)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_producto_rel ON LOTE_PRODUCTO(id_lote, id_producto)',
     `
       CREATE TABLE IF NOT EXISTS gasto_lote (
         id_local INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,9 +141,6 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       )
     `,
     'CREATE UNIQUE INDEX IF NOT EXISTS uq_produccion_lote_id_produccion ON produccion_lote(id_produccion)',
-    'CREATE INDEX IF NOT EXISTS idx_lote_tipo_cultivo ON lote(tipo_cultivo)',
-    'CREATE INDEX IF NOT EXISTS idx_lote_servidor ON lote(id_lote)',
-    'CREATE INDEX IF NOT EXISTS idx_lote_sync ON lote(estado_sincronizacion)',
     'CREATE INDEX IF NOT EXISTS idx_gasto_sync ON gasto_lote(sincronizado)',
     'CREATE INDEX IF NOT EXISTS idx_produccion_sync ON produccion_lote(estado_sincronizacion)',
   ];
@@ -209,103 +148,190 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   for (const statement of statements) {
     await runSafe(db, statement);
   }
+}
 
+// ============================================
+// MIGRACIONES SIMPLIFICADAS (SIN DROP PELIGROSO)
+// ============================================
+
+async function ensureProductoTables(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Verificar si PRODUCTO existe
+  const existeProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='PRODUCTO'"
+  );
+  
+  if (!existeProducto || existeProducto.count === 0) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS PRODUCTO (
+        id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT NOT NULL,
+        variedad TEXT,
+        categoria TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+  }
+  
+  // Verificar si LOTE_PRODUCTO existe
+  const existeLoteProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='LOTE_PRODUCTO'"
+  );
+  
+  if (!existeLoteProducto || existeLoteProducto.count === 0) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS LOTE_PRODUCTO (
+        id_lote_producto INTEGER PRIMARY KEY AUTOINCREMENT,
+        id_lote INTEGER,
+        id_producto INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (id_lote) REFERENCES lote(id_local) ON DELETE CASCADE,
+        FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id_producto) ON DELETE CASCADE,
+        UNIQUE(id_lote, id_producto)
+      )
+    `);
+    
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_lote_producto_lote ON LOTE_PRODUCTO(id_lote);
+      CREATE INDEX IF NOT EXISTS idx_lote_producto_producto ON LOTE_PRODUCTO(id_producto);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_producto_rel ON LOTE_PRODUCTO(id_lote, id_producto);
+    `);
+  }
+}
+
+async function migrarCultivosExistentes(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Verificar si hay datos que migrar
+  const tieneTipoCultivo = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM lote WHERE tipo_cultivo IS NOT NULL AND tipo_cultivo != ''"
+  );
+  
+  const tieneVariedad = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM lote WHERE variedad IS NOT NULL AND variedad != ''"
+  );
+  
+  const tieneLotes = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM lote"
+  );
+  
+  // Verificar si ya hay relaciones
+  const tieneRelaciones = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM LOTE_PRODUCTO"
+  );
+  
+  // Si no hay lotes o ya hay relaciones, no migrar
+  if ((!tieneLotes || tieneLotes.count === 0) || (tieneRelaciones && tieneRelaciones.count > 0)) {
+    return;
+  }
+  
+  if ((tieneTipoCultivo && tieneTipoCultivo.count > 0) || (tieneVariedad && tieneVariedad.count > 0)) {
+    await db.withTransactionAsync(async () => {
+      // Insertar cultivos únicos en PRODUCTO
+      await db.execAsync(`
+        INSERT OR IGNORE INTO PRODUCTO (nombre, variedad, categoria)
+        SELECT DISTINCT 
+          COALESCE(tipo_cultivo, variedad, 'Sin cultivo'),
+          'General',
+          'General'
+        FROM lote
+        WHERE tipo_cultivo IS NOT NULL OR variedad IS NOT NULL
+      `);
+      
+      // Crear relaciones LOTE_PRODUCTO
+      await db.execAsync(`
+        INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto)
+        SELECT 
+          l.id_local,
+          p.id_producto
+        FROM lote l
+        JOIN PRODUCTO p ON p.nombre = COALESCE(l.tipo_cultivo, l.variedad, 'Sin cultivo')
+        WHERE l.tipo_cultivo IS NOT NULL OR l.variedad IS NOT NULL
+      `);
+    });
+  }
 }
 
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
-  await normalizarTablaLoteSinIdProducto(db);
-
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN id_lote INTEGER');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN id_productor INTEGER NOT NULL DEFAULT 1');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN tipo_cultivo TEXT');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN ubicacion TEXT');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN fecha_cierre_real TEXT');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN rendimiento_real REAL');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN foto_siembra_url TEXT');
-  await runSafe(db, 'ALTER TABLE lote ADD COLUMN foto_cosecha_url TEXT');
-  await runSafe(db, "ALTER TABLE lote ADD COLUMN estado TEXT NOT NULL DEFAULT 'ACTIVO'");
-  await runSafe(db, "ALTER TABLE lote ADD COLUMN estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE'");
-  await runSafe(db, "ALTER TABLE lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
-  await runSafe(db, "ALTER TABLE lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
-
-  await runSafe(db, 'UPDATE lote SET id_lote = id_servidor WHERE id_lote IS NULL AND id_servidor IS NOT NULL');
-  await runSafe(
-    db,
-    "UPDATE lote SET foto_siembra_url = foto_siembra_uri_local WHERE (foto_siembra_url IS NULL OR foto_siembra_url = '') AND foto_siembra_uri_local IS NOT NULL"
-  );
-
-  await runSafe(
-    db,
-    "UPDATE lote SET tipo_cultivo = COALESCE(tipo_cultivo, variedad, 'Sin especificar') WHERE tipo_cultivo IS NULL OR TRIM(tipo_cultivo) = ''"
-  );
-
-  await runSafe(
-    db,
-    `
-      INSERT INTO lote (
-        id_local,
-        id_lote,
-        id_productor,
-        tipo_cultivo,
-        nombre_lote,
-        superficie,
-        fecha_siembra,
-        fecha_cosecha_est,
-        rendimiento_estimado,
-        precio_venta_est,
-        foto_siembra_url,
-        estado_sincronizacion,
-        created_at,
-        updated_at
-      )
-      SELECT
-        id_local,
-        id_servidor,
-        1,
-        COALESCE(variedad, 'Sin especificar'),
-        nombre_lote,
-        superficie,
-        fecha_siembra,
-        fecha_cosecha_est,
-        rendimiento_estimado,
-        precio_venta_est,
-        foto_siembra_uri_local,
-        estado_sincronizacion,
-        created_at,
-        updated_at
-      FROM lotes
-      WHERE NOT EXISTS (SELECT 1 FROM lote WHERE lote.id_local = lotes.id_local)
-    `
-  );
-
-  await runSafe(db, 'DROP TABLE IF EXISTS lotes');
-  await runSafe(db, 'DROP TABLE IF EXISTS costos');
-  await runSafe(db, 'DROP TABLE IF EXISTS siembras_queue');
-  await runSafe(db, 'DROP TABLE IF EXISTS productos_offline');
-  await runSafe(db, 'DROP TABLE IF EXISTS producto');
-
-  // Compatibilidad con bases locales antiguas que no tienen todas las columnas offline.
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_gasto INTEGER');
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_lote_local INTEGER');
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_lote_servidor INTEGER');
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN id_lote INTEGER');
-  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN tipo_costo TEXT NOT NULL DEFAULT 'VARIABLE'");
-  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN modalidad_pago TEXT NOT NULL DEFAULT 'NA'");
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN fecha_gasto TEXT');
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN sincronizado INTEGER NOT NULL DEFAULT 0');
-  await runSafe(db, 'ALTER TABLE gasto_lote ADD COLUMN ultimo_error TEXT');
-  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
-  await runSafe(db, "ALTER TABLE gasto_lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+  // Agregar columnas faltantes a lote (si no existen)
+  const columnasLote = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
+  const nombresColumnas = new Set(columnasLote.map(c => c.name));
+  
+  const columnasAAgregar = [
+    { nombre: 'id_lote', tipo: 'INTEGER' },
+    { nombre: 'id_productor', tipo: 'INTEGER NOT NULL DEFAULT 1' },
+    { nombre: 'ubicacion', tipo: 'TEXT' },
+    { nombre: 'fecha_cierre_real', tipo: 'TEXT' },
+    { nombre: 'rendimiento_real', tipo: 'REAL' },
+    { nombre: 'foto_siembra_url', tipo: 'TEXT' },
+    { nombre: 'foto_cosecha_url', tipo: 'TEXT' },
+    { nombre: 'estado', tipo: "TEXT NOT NULL DEFAULT 'ACTIVO'" },
+    { nombre: 'estado_sincronizacion', tipo: "TEXT NOT NULL DEFAULT 'PENDIENTE'" },
+    { nombre: 'tipo_cultivo', tipo: 'TEXT' },
+    { nombre: 'variedad', tipo: 'TEXT' },
+    { nombre: 'created_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
+    { nombre: 'updated_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
+  ];
+  
+  for (const col of columnasAAgregar) {
+    if (!nombresColumnas.has(col.nombre)) {
+      await runSafe(db, `ALTER TABLE lote ADD COLUMN ${col.nombre} ${col.tipo}`);
+    }
+  }
+  
+  // Asegurar tablas de productos
+  await ensureProductoTables(db);
+  
+  // Migrar cultivos existentes
+  await migrarCultivosExistentes(db);
+  
+  // Agregar columnas a gasto_lote
+  const columnasGasto = await db.getAllAsync<{ name: string }>('PRAGMA table_info(gasto_lote)');
+  const nombresGasto = new Set(columnasGasto.map(c => c.name));
+  
+  const columnasGastoAAgregar = [
+    { nombre: 'id_gasto', tipo: 'INTEGER' },
+    { nombre: 'id_lote_local', tipo: 'INTEGER' },
+    { nombre: 'id_lote_servidor', tipo: 'INTEGER' },
+    { nombre: 'id_lote', tipo: 'INTEGER' },
+    { nombre: 'tipo_costo', tipo: "TEXT NOT NULL DEFAULT 'VARIABLE'" },
+    { nombre: 'modalidad_pago', tipo: "TEXT NOT NULL DEFAULT 'NA'" },
+    { nombre: 'fecha_gasto', tipo: 'TEXT' },
+    { nombre: 'sincronizado', tipo: 'INTEGER NOT NULL DEFAULT 0' },
+    { nombre: 'ultimo_error', tipo: 'TEXT' },
+    { nombre: 'created_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
+    { nombre: 'updated_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
+  ];
+  
+  for (const col of columnasGastoAAgregar) {
+    if (!nombresGasto.has(col.nombre)) {
+      await runSafe(db, `ALTER TABLE gasto_lote ADD COLUMN ${col.nombre} ${col.tipo}`);
+    }
+  }
+  
+  // Actualizar fechas_gasto nulas
   await runSafe(db, "UPDATE gasto_lote SET fecha_gasto = datetime('now') WHERE fecha_gasto IS NULL OR fecha_gasto = ''");
-
-  await runSafe(db, 'ALTER TABLE produccion_lote ADD COLUMN id_produccion INTEGER');
-  await runSafe(db, 'ALTER TABLE produccion_lote ADD COLUMN id_lote_local INTEGER');
-  await runSafe(db, 'ALTER TABLE produccion_lote ADD COLUMN id_lote INTEGER');
-  await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE'");
-  await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
-  await runSafe(db, "ALTER TABLE produccion_lote ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
-
+  
+  // Agregar columnas a produccion_lote
+  const columnasProduccion = await db.getAllAsync<{ name: string }>('PRAGMA table_info(produccion_lote)');
+  const nombresProduccion = new Set(columnasProduccion.map(c => c.name));
+  
+  const columnasProduccionAAgregar = [
+    { nombre: 'id_produccion', tipo: 'INTEGER' },
+    { nombre: 'id_lote_local', tipo: 'INTEGER' },
+    { nombre: 'id_lote', tipo: 'INTEGER' },
+    { nombre: 'estado_sincronizacion', tipo: "TEXT NOT NULL DEFAULT 'PENDIENTE'" },
+    { nombre: 'created_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
+    { nombre: 'updated_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
+  ];
+  
+  for (const col of columnasProduccionAAgregar) {
+    if (!nombresProduccion.has(col.nombre)) {
+      await runSafe(db, `ALTER TABLE produccion_lote ADD COLUMN ${col.nombre} ${col.tipo}`);
+    }
+  }
 }
+
+// ============================================
+// FUNCIÓN PRINCIPAL
+// ============================================
 
 export async function getLoteServerColumn(): Promise<'id_lote' | 'id_servidor'> {
   if (loteServerColumnCache) return loteServerColumnCache;
@@ -332,12 +358,211 @@ export async function getLoteServerColumn(): Promise<'id_lote' | 'id_servidor'> 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
     dbPromise = (async () => {
-      const db = await SQLite.openDatabaseAsync(DB_NAME);
-      await createBaseSchema(db);
-      await runMigrations(db);
-      return db;
+      try {
+        const db = await SQLite.openDatabaseAsync(DB_NAME);
+        await createBaseSchema(db);
+        await runMigrations(db);
+        return db;
+      } catch (error) {
+        dbPromise = null;
+        throw error;
+      }
     })();
   }
 
   return dbPromise;
+}
+
+// ============================================
+// FUNCIONES PARA MANEJO DE PRODUCTOS
+// ============================================
+
+export function dividirCultivosSeleccionados(valor: string): string[] {
+  const vistos = new Set<string>();
+  const cultivos: string[] = [];
+
+  for (const parte of String(valor ?? '').split(',')) {
+    const cultivo = parte.trim();
+    if (!cultivo) continue;
+
+    const llave = cultivo.toLowerCase();
+    if (vistos.has(llave)) continue;
+    vistos.add(llave);
+    cultivos.push(cultivo);
+  }
+
+  return cultivos;
+}
+
+// Función CORREGIDA - sin error de sintaxis SQL
+export async function obtenerOInsertarProductoLocal(
+  db: SQLite.SQLiteDatabase,
+  nombre: string,
+  variedad = 'General',
+  categoria = 'General'
+): Promise<number> {
+  const nombreNormalizado = nombre.trim();
+  if (!nombreNormalizado) {
+    throw new Error('El nombre del producto no puede estar vacio.');
+  }
+
+  // Buscar producto existente (CORREGIDO)
+  const existente = await db.getFirstAsync<{ id_producto: number }>(
+    `
+      SELECT id_producto
+      FROM PRODUCTO
+      WHERE lower(nombre) = lower(?)
+        AND lower(COALESCE(variedad, '')) = lower(?)
+      LIMIT 1
+    `,
+    nombreNormalizado,
+    variedad || ''
+  );
+
+  if (existente?.id_producto) {
+    return Number(existente.id_producto);
+  }
+
+  // Insertar nuevo producto
+  const result = await db.runAsync(
+    'INSERT INTO PRODUCTO (nombre, variedad, categoria) VALUES (?, ?, ?)',
+    nombreNormalizado,
+    variedad || 'General',
+    categoria || 'General'
+  );
+
+  return Number(result.lastInsertRowId);
+}
+
+export async function vincularLoteConCultivosLocal(
+  db: SQLite.SQLiteDatabase,
+  idLote: number,
+  cultivos: string[]
+): Promise<void> {
+  for (const cultivo of cultivos) {
+    let idProducto = await obtenerOInsertarProductoLocal(db, cultivo);
+    
+    // Verificar si la relación ya existe
+    const existe = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM LOTE_PRODUCTO WHERE id_lote = ? AND id_producto = ?',
+      idLote,
+      idProducto
+    );
+    
+    if (!existe || existe.count === 0) {
+      await db.runAsync(
+        'INSERT INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)',
+        idLote,
+        idProducto
+      );
+    }
+  }
+}
+
+export async function obtenerProductosDeLote(
+  db: SQLite.SQLiteDatabase,
+  idLote: number
+): Promise<{ id_producto: number; nombre: string; variedad: string; categoria: string }[]> {
+  const productos = await db.getAllAsync<{ id_producto: number; nombre: string; variedad: string; categoria: string }>(
+    `
+      SELECT p.id_producto, p.nombre, p.variedad, p.categoria
+      FROM PRODUCTO p
+      JOIN LOTE_PRODUCTO lp ON p.id_producto = lp.id_producto
+      WHERE lp.id_lote = ?
+      ORDER BY p.nombre
+    `,
+    idLote
+  );
+  
+  return productos;
+}
+
+// ============================================
+// FUNCIÓN DE VERIFICACIÓN
+// ============================================
+
+export async function verificarEstadoBaseDatos(): Promise<{
+  tieneTablaProducto: boolean;
+  tieneTablaLoteProducto: boolean;
+  totalProductos: number;
+  totalRelaciones: number;
+  lotesConMultiplesCultivos: number;
+}> {
+  const db = await getDb();
+  
+  const existeProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='PRODUCTO'"
+  );
+  
+  const existeLoteProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='LOTE_PRODUCTO'"
+  );
+  
+  const totalProductos = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM PRODUCTO'
+  );
+  
+  const totalRelaciones = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM LOTE_PRODUCTO'
+  );
+  
+  const lotesMultiples = await db.getFirstAsync<{ count: number }>(
+    `
+      SELECT COUNT(*) as count
+      FROM (
+        SELECT id_lote, COUNT(*) as total
+        FROM LOTE_PRODUCTO
+        GROUP BY id_lote
+        HAVING COUNT(*) > 1
+      )
+    `
+  );
+  
+  return {
+    tieneTablaProducto: existeProducto?.count === 1,
+    tieneTablaLoteProducto: existeLoteProducto?.count === 1,
+    totalProductos: totalProductos?.count || 0,
+    totalRelaciones: totalRelaciones?.count || 0,
+    lotesConMultiplesCultivos: lotesMultiples?.count || 0,
+  };
+}
+
+// ============================================
+// FUNCIONES DE RESPALDO (OPCIONALES)
+// ============================================
+
+export async function limpiarProductosSinRelacion(): Promise<number> {
+  const db = await getDb();
+  
+  // Verificar si las tablas existen
+  const existeProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='PRODUCTO'"
+  );
+  const existeLoteProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='LOTE_PRODUCTO'"
+  );
+  
+  if (!existeProducto || !existeLoteProducto) {
+    return 0;
+  }
+  
+  const result = await db.runAsync(
+    `
+      DELETE FROM PRODUCTO
+      WHERE id_producto NOT IN (
+        SELECT DISTINCT id_producto
+        FROM LOTE_PRODUCTO
+        WHERE id_producto IS NOT NULL
+      )
+      AND id_producto NOT IN (
+        SELECT DISTINCT id_producto FROM (
+          SELECT lp.id_producto
+          FROM LOTE_PRODUCTO lp
+          WHERE lp.id_producto IS NOT NULL
+        )
+      )
+    `
+  );
+  
+  return result.changes || 0;
 }

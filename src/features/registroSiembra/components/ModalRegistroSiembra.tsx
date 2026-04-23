@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -41,6 +41,7 @@ LocaleConfig.locales.es = {
 LocaleConfig.defaultLocale = 'es';
 
 const METROS_CUADRADOS_POR_HECTAREA = 10000;
+const OPCION_TIPO_CULTIVO_OTROS = 'Otros';
 
 const formatearSuperficieEquivalente = (valor: string, unidad: 'ha' | 'm2'): string | null => {
   const numero = Number(valor.trim().replace(',', '.'));
@@ -65,6 +66,7 @@ export function ModalRegistroSiembra({
   rubro,
 }: ModalRegistroSiembraProps) {
   const [modalUnidadSuperficieOpen, setModalUnidadSuperficieOpen] = useState(false);
+  const [mostrarTipoCultivoPersonalizado, setMostrarTipoCultivoPersonalizado] = useState(false);
   const insets = useSafeAreaInsets();
   const configuracion = configuracionCamposPorRubro[rubro];
   const {
@@ -77,6 +79,9 @@ export function ModalRegistroSiembra({
     errorUbicacionGps,
     modalOpcionesOpen,
     modalCalendarioOpen,
+    modalCultivosOpen,
+    cultivosSeleccionados,
+    variedadOtro,
     campoFechaActivo,
     campoOpcionesActivo,
     actualizarCampo,
@@ -84,6 +89,12 @@ export function ModalRegistroSiembra({
     capturarUbicacionGps,
     abrirSelectorOpciones,
     cerrarSelectorOpciones,
+    abrirSelectorCultivos,
+    cerrarSelectorCultivos,
+    toggleCultivoSeleccionado,
+    actualizarVariedadOtro,
+    confirmarSeleccionCultivos,
+    removerCultivoSeleccionado,
     abrirSelectorFecha,
     cerrarSelectorFecha,
     seleccionarFecha,
@@ -102,6 +113,21 @@ export function ModalRegistroSiembra({
   const campoOpciones = configuracion.secciones
     .flatMap((seccion) => seccion.columnas)
     .find((campo) => campo.key === campoOpcionesActivo);
+
+  const opcionesCultivosMultiSelect =
+    configuracion.secciones
+      .flatMap((seccion) => seccion.columnas)
+      .find((campo) => campo.key === 'tipoCultivo')
+      ?.opciones ?? [];
+
+  const placeholderOtro =
+    rubro === 'hortalizas' ? 'Escribe otra variedad de hortaliza' : 'Escribe otra variedad de quinua';
+
+  useEffect(() => {
+    if (!visible) {
+      setMostrarTipoCultivoPersonalizado(false);
+    }
+  }, [visible]);
 
   const renderCampo = (campo: CampoFormularioConfig, posicion: 'izquierda' | 'derecha' | 'completo') => {
     const esMitad = posicion !== 'completo';
@@ -147,6 +173,38 @@ export function ModalRegistroSiembra({
 
     if (campo.tipo === 'select') {
       const valorActual = form[campo.key as keyof typeof form] as string;
+
+      if (campo.key === 'tipoCultivo') {
+        return (
+          <View key={campo.key} style={wrapperStyle}>
+            <Text style={styles.label}>{campo.label}</Text>
+            <TouchableOpacity style={styles.selectInput} onPress={abrirSelectorCultivos}>
+              <Text style={cultivosSeleccionados.length > 0 ? styles.selectValue : styles.selectPlaceholder}>
+                {cultivosSeleccionados.length > 0
+                  ? `${cultivosSeleccionados.length} cultivo(s) seleccionado(s)`
+                  : 'Seleccionar tipos de cultivo...'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#6b7280" />
+            </TouchableOpacity>
+
+            <View style={styles.chipsContainer}>
+              {cultivosSeleccionados.map((cultivo) => (
+                <View key={cultivo} style={styles.chip}>
+                  <Text style={styles.chipText}>{cultivo}</Text>
+                  <TouchableOpacity
+                    style={styles.chipRemoveButton}
+                    onPress={() => removerCultivoSeleccionado(cultivo)}
+                    hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                  >
+                    <Ionicons name="close" size={14} color="#2BA14A" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      }
+
       return (
         <View key={campo.key} style={wrapperStyle}>
           <Text style={styles.label}>{campo.label}</Text>
@@ -277,7 +335,7 @@ export function ModalRegistroSiembra({
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
               <MaterialCommunityIcons name="seed-outline" size={24} color="#2eaa51" />
-              <Text style={styles.headerTitle}>Nueva Siembra / Iniciar Lote</Text>
+              <Text style={styles.headerTitle}>Nueva Siembra / Iniciar la Parcela</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#6b7280" />
@@ -362,19 +420,66 @@ export function ModalRegistroSiembra({
                 style={styles.selectorOption}
                 onPress={() => {
                   if (campoOpcionesActivo) {
-                    actualizarCampo(campoOpcionesActivo, opcion);
+                    if (campoOpcionesActivo === 'tipoCultivo' && opcion === OPCION_TIPO_CULTIVO_OTROS) {
+                      setMostrarTipoCultivoPersonalizado(true);
+                      actualizarCampo('tipoCultivo', '');
+                    } else {
+                      if (campoOpcionesActivo === 'tipoCultivo') {
+                        setMostrarTipoCultivoPersonalizado(false);
+                      }
+                      actualizarCampo(campoOpcionesActivo, opcion);
+                    }
                   }
                   cerrarSelectorOpciones();
                 }}
               >
                 <Text style={styles.selectorOptionText}>{opcion}</Text>
-                {campoOpcionesActivo && form[campoOpcionesActivo] === opcion ? (
+                {campoOpcionesActivo &&
+                ((campoOpcionesActivo === 'tipoCultivo' &&
+                  opcion === OPCION_TIPO_CULTIVO_OTROS &&
+                  mostrarTipoCultivoPersonalizado) ||
+                  form[campoOpcionesActivo] === opcion) ? (
                   <Ionicons name="checkmark" size={18} color="#2eaa51" />
                 ) : null}
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={styles.selectorCancel} onPress={cerrarSelectorOpciones}>
               <Text style={styles.selectorCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={modalCultivosOpen} transparent animationType="fade" onRequestClose={cerrarSelectorCultivos}>
+        <View style={styles.selectorOverlay}>
+          <View style={styles.selectorModal}>
+            <Text style={styles.selectorTitle}>Selecciona uno o varios cultivos</Text>
+            {(opcionesCultivosMultiSelect ?? []).map((opcion) => {
+              const seleccionado = cultivosSeleccionados.includes(opcion);
+              return (
+                <TouchableOpacity key={opcion} style={styles.selectorOption} onPress={() => toggleCultivoSeleccionado(opcion)}>
+                  <Text style={styles.selectorOptionText}>{opcion}</Text>
+                  <Ionicons
+                    name={seleccionado ? 'checkbox' : 'square-outline'}
+                    size={20}
+                    color={seleccionado ? '#2BA14A' : '#9ca3af'}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+
+            {cultivosSeleccionados.includes(OPCION_TIPO_CULTIVO_OTROS) ? (
+              <TextInput
+                style={[styles.input, styles.otrosVariedadInput]}
+                placeholder={placeholderOtro}
+                placeholderTextColor="#9ca3af"
+                value={variedadOtro}
+                onChangeText={actualizarVariedadOtro}
+              />
+            ) : null}
+
+            <TouchableOpacity style={styles.confirmSelectionButton} onPress={confirmarSeleccionCultivos}>
+              <Text style={styles.confirmSelectionButtonText}>Confirmar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -527,6 +632,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1f2937',
   },
+  customTypeInput: {
+    marginTop: 10,
+  },
   selectInput: {
     backgroundColor: '#f9fafb',
     borderWidth: 1,
@@ -549,6 +657,38 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     flex: 1,
     marginRight: 8,
+  },
+  chipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+    gap: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF3',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingVertical: 6,
+    paddingLeft: 10,
+    paddingRight: 8,
+  },
+  chipText: {
+    color: '#2BA14A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chipRemoveButton: {
+    marginLeft: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otrosVariedadInput: {
+    marginTop: 10,
+    borderColor: '#bbf7d0',
+    backgroundColor: '#f9fffb',
   },
   gpsInput: {
     backgroundColor: '#f9fafb',
@@ -793,6 +933,18 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 14,
     fontWeight: '600',
+  },
+  confirmSelectionButton: {
+    marginTop: 14,
+    backgroundColor: '#2eaa51',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  confirmSelectionButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   previewContainer: {
     flex: 1,

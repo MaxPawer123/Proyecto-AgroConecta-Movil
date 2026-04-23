@@ -67,6 +67,9 @@ export interface UseRegistroSiembraResult {
 	errorUbicacionGps: string | null;
 	modalOpcionesOpen: boolean;
 	modalCalendarioOpen: boolean;
+	modalCultivosOpen: boolean;
+	cultivosSeleccionados: string[];
+	variedadOtro: string;
 	campoFechaActivo: 'fechaSiembra' | 'fechaCosecha' | null;
 	campoOpcionesActivo: 'tipoCultivo' | 'ubicacion' | null;
 	actualizarCampo: (campo: keyof FormRegistroSiembra, valor: string) => void;
@@ -74,6 +77,12 @@ export interface UseRegistroSiembraResult {
 	capturarUbicacionGps: () => Promise<void>;
 	abrirSelectorOpciones: (campo: 'tipoCultivo' | 'ubicacion') => void;
 	cerrarSelectorOpciones: () => void;
+	abrirSelectorCultivos: () => void;
+	cerrarSelectorCultivos: () => void;
+	toggleCultivoSeleccionado: (cultivo: string) => void;
+	actualizarVariedadOtro: (valor: string) => void;
+	confirmarSeleccionCultivos: () => boolean;
+	removerCultivoSeleccionado: (cultivo: string) => void;
 	abrirSelectorFecha: (campo: 'fechaSiembra' | 'fechaCosecha') => void;
 	cerrarSelectorFecha: () => void;
 	seleccionarFecha: (dateString: string) => void;

@@ -12,7 +12,7 @@ import {
   marcarCostoComoSincronizado,
   actualizarCostoLocal,
 } from '@/src/services/database';
-import { getDb, getLoteServerColumn } from './sqlite';
+import { dividirCultivosSeleccionados, getDb, getLoteServerColumn, obtenerOInsertarProductoLocal } from './sqlite';
 
 const SYNC_INTERVAL_MS = 10000;
 const MAX_ITEMS_PER_SYNC = 6;
@@ -38,6 +38,7 @@ export type RegistrarSiembraInput = {
   rubro: 'QUINUA' | 'HORTALIZA';
   nombreLote: string;
   tipoCultivo: string;
+  cultivos?: string[];
   ubicacion: string;
   superficie: number;
   fechaSiembraIso: string;
@@ -90,6 +91,7 @@ async function hayConexionDisponible(): Promise<boolean> {
 
 function mapRowToPendiente(row: Record<string, unknown>): LotePendiente {
   const idServidorRaw = row.id_lote ?? row.id_servidor;
+  const tipoCultivoRelacional = String(row.tipo_cultivo_rel ?? '').trim();
 
   return {
     idLocal: Number(row.id_local),
@@ -97,7 +99,7 @@ function mapRowToPendiente(row: Record<string, unknown>): LotePendiente {
     idProductor: Number(row.id_productor ?? 1),
     nombreLote: String(row.nombre_lote ?? ''),
     ubicacion: String(row.ubicacion ?? ''),
-    tipoCultivo: String(row.tipo_cultivo ?? row.variedad ?? ''),
+    tipoCultivo: tipoCultivoRelacional,
     superficie: Number(row.superficie ?? 0),
     fechaSiembraIso: String(row.fecha_siembra ?? ''),
     fechaCosechaIso: String(row.fecha_cosecha_est ?? ''),
@@ -112,8 +114,18 @@ async function obtenerLotesPendientes(): Promise<LotePendiente[]> {
   const serverColumn = await getLoteServerColumn();
   const rows = await db.getAllAsync<Record<string, unknown>>(
     `
-      SELECT *
-      FROM lote
+      SELECT
+        l.*, 
+        COALESCE(
+          (
+            SELECT GROUP_CONCAT(p.nombre, ', ')
+            FROM LOTE_PRODUCTO lp
+            JOIN PRODUCTO p ON p.id_producto = lp.id_producto
+            WHERE lp.id_lote = l.id_local
+          ),
+          ''
+        ) AS tipo_cultivo_rel
+      FROM lote l
       WHERE estado_sincronizacion <> 'SINCRONIZADO' OR ${serverColumn} IS NULL
       ORDER BY id_local DESC
       LIMIT ?
@@ -301,9 +313,20 @@ export async function sincronizarSiembrasPendientes(): Promise<{
 export async function registrarSiembraOfflineFirst(
   input: RegistrarSiembraInput
 ): Promise<RegistrarSiembraResultado> {
+  const db = await getDb();
+  const cultivos = Array.isArray(input.cultivos) && input.cultivos.length > 0
+    ? input.cultivos
+    : dividirCultivosSeleccionados(input.tipoCultivo);
+
+  const idProductos: number[] = [];
+  for (const cultivo of cultivos) {
+    const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', input.rubro);
+    idProductos.push(idProducto);
+  }
+
   const idLocal = await insertarLoteLocal({
     id_servidor: null,
-    tipo_cultivo: input.tipoCultivo,
+    id_productos: idProductos,
     nombre_lote: input.nombreLote,
     ubicacion: input.ubicacion,
     superficie: input.superficie,
