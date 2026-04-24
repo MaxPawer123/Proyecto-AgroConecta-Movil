@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import {
   insertarLoteLocal,
+  actualizarCultivosDeLote,
   actualizarLoteLocal,
   actualizarLoteLocalPorServidor,
   eliminarLoteLocal,
@@ -145,6 +146,25 @@ const esErrorUniqueIdLote = (error: unknown): boolean => {
   return /UNIQUE\s+constraint\s+failed:\s*lote\.id_lote/i.test(mensaje);
 };
 
+const dividirCultivos = (valor: unknown): string[] => {
+  const partes = String(valor ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return [...new Set(partes)];
+};
+
+const obtenerTextoCultivo = (item: any, fallback = ''): string => {
+  const valor = String(item?.cultivos_mostrados ?? item?.tipo_cultivo ?? item?.variedad ?? '').trim();
+  return valor || fallback;
+};
+
+const esSinCultivo = (valor: string): boolean => {
+  const normalizado = valor.trim().toLowerCase();
+  return !normalizado || normalizado === 'sin cultivo';
+};
+
 export function useLotes(rubro: RubroType): UseLotesResult {
   const rubroConfig = RUBRO_CONFIG[rubro];
 
@@ -222,12 +242,12 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
   const cargarLotesLocalesInmediato = useCallback(async () => {
     const esLoteQuinua = (item: any) => {
-      const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').toLowerCase();
+      const tipo = obtenerTextoCultivo(item).toLowerCase();
       return tipo.includes('quinua');
     };
 
     const esLoteHortaliza = (item: any) => {
-      const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase();
+      const tipo = obtenerTextoCultivo(item).trim().toLowerCase();
       if (!tipo) return true;
       return !tipo.includes('quinua');
     };
@@ -239,7 +259,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       const ingresoEstimado = rendimiento * precio;
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
-      const tipoProducto = String(item.tipo_cultivo ?? item.variedad ?? rubroConfig.defaultVariedad);
+      const tipoProducto = obtenerTextoCultivo(item, rubroConfig.defaultVariedad);
 
       return {
         key: `local-${item.id_local}`,
@@ -274,15 +294,35 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     };
 
     const datosLocales = await obtenerLotesLocales();
+    const cultivoFallback = rubro === 'quinua' ? 'Quinua' : 'Hortaliza';
+
+    const lotesSinCultivo = (Array.isArray(datosLocales) ? datosLocales : []).filter((item: any) => {
+      const texto = obtenerTextoCultivo(item);
+      return Number(item?.id_local) > 0 && esSinCultivo(texto);
+    });
+
+    for (const item of lotesSinCultivo) {
+      await actualizarCultivosDeLote(Number(item.id_local), [cultivoFallback]);
+    }
+
+    const datosLocalesFinales = lotesSinCultivo.length > 0 ? await obtenerLotesLocales() : datosLocales;
     const filtro = rubro === 'quinua' ? esLoteQuinua : esLoteHortaliza;
-    const filtrados = Array.isArray(datosLocales) ? datosLocales.filter(filtro) : [];
+    const filtrados = Array.isArray(datosLocalesFinales) ? datosLocalesFinales.filter(filtro) : [];
     const mapeados = filtrados.map(mapearRapido);
     setLotesOrdenados(mapeados);
     setDiagnosticoCarga(`Carga rapida local: ${mapeados.length}`);
-  }, [rubro, rubroConfig]);
+  }, [rubro, rubroConfig, setLotesOrdenados]);
 
   const cargarLotesLocales = useCallback(async () => {
     const sincronizarCacheLocalConRemotos = async (remotos: any[], localesActuales: any[]) => {
+      const localesPorServidor = new Map<number, any>();
+      for (const item of Array.isArray(localesActuales) ? localesActuales : []) {
+        const idServidorLocal = normalizarIdServidor(item?.id_servidor);
+        if (idServidorLocal) {
+          localesPorServidor.set(idServidorLocal, item);
+        }
+      }
+
       const idsLocalesServidor = new Set(
         (Array.isArray(localesActuales) ? localesActuales : [])
           .map((item) => normalizarIdServidor(item?.id_servidor))
@@ -293,7 +333,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         const idServidor = normalizarIdServidor(remoto?.id_lote);
         if (!idServidor) continue;
 
-        const tipoCultivo = String(remoto?.tipo_cultivo ?? remoto?.variedad ?? 'sin_tipo');
+        const tipoCultivo = String(remoto?.tipo_cultivo ?? remoto?.variedad ?? '').trim();
+        const cultivosRemotos = dividirCultivos(tipoCultivo);
 
         const payload = {
           id_servidor: idServidor,
@@ -312,15 +353,26 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
         if (idsLocalesServidor.has(idServidor)) {
           await actualizarLoteLocalPorServidor(idServidor, payload);
+          const loteLocal = localesPorServidor.get(idServidor);
+          if (loteLocal?.id_local && cultivosRemotos.length > 0) {
+            await actualizarCultivosDeLote(Number(loteLocal.id_local), cultivosRemotos);
+          }
           continue;
         }
 
         try {
-          await insertarLoteLocal(payload);
+          const idLocalNuevo = await insertarLoteLocal(payload);
+          if (cultivosRemotos.length > 0) {
+            await actualizarCultivosDeLote(idLocalNuevo, cultivosRemotos);
+          }
           idsLocalesServidor.add(idServidor);
         } catch (error) {
           if (esErrorUniqueIdLote(error)) {
             await actualizarLoteLocalPorServidor(idServidor, payload);
+            const loteLocal = localesPorServidor.get(idServidor);
+            if (loteLocal?.id_local && cultivosRemotos.length > 0) {
+              await actualizarCultivosDeLote(Number(loteLocal.id_local), cultivosRemotos);
+            }
             idsLocalesServidor.add(idServidor);
             continue;
           }
@@ -367,7 +419,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           idServidor: item.id_servidor,
           codigo: item.id_servidor ? `H-B-${item.id_servidor}` : `H-L-${item.id_local}`,
           nombre: item.nombre_lote || `Lote ${item.id_local}`,
-          tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
+          tipoProducto: obtenerTextoCultivo(item, 'Hortaliza'),
           imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
           imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
           area: superficie,
@@ -405,7 +457,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           idServidor: item.id_lote,
           codigo: `H-B-${item.id_lote}`,
           nombre: item.nombre_lote || `Lote ${item.id_lote}`,
-          tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Hortaliza'),
+          tipoProducto: obtenerTextoCultivo(item, 'Hortaliza'),
           imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
           imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
           area: superficie,
@@ -429,7 +481,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       };
 
       const esLoteHortaliza = (item: any) => {
-        const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').toLowerCase();
+        const tipo = obtenerTextoCultivo(item).toLowerCase();
         if (!tipo) return true;
         return !tipo.includes('quinua');
       };
@@ -461,7 +513,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
         const tiposCultivo = new Set(
           (Array.isArray(datosLocales) ? datosLocales : [])
-            .map((item: any) => String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase())
+            .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
             .filter((tipo) => tipo && !tipo.includes('quinua'))
         );
 
@@ -501,7 +553,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     }
 
     const esLoteQuinua = (item: any) => {
-      const tipo = String(item.tipo_cultivo ?? item.variedad ?? '').toLowerCase();
+      const tipo = obtenerTextoCultivo(item).toLowerCase();
       return tipo.includes('quinua');
     };
 
@@ -519,7 +571,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idServidor: item.id_servidor,
         codigo: item.id_servidor ? `Q-B${item.id_servidor}` : `Q-L-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
-        tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
+        tipoProducto: obtenerTextoCultivo(item, 'Quinua'),
         imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
@@ -556,7 +608,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         idServidor: item.id_lote,
         codigo: `Q-B-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
-        tipoProducto: String(item.tipo_cultivo ?? item.variedad ?? 'Sin variedad'),
+        tipoProducto: obtenerTextoCultivo(item, 'Quinua'),
         imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
         area: superficie,
@@ -624,7 +676,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       const tiposCultivo = new Set([
         'quinua',
         ...(Array.isArray(datosLocales) ? datosLocales : [])
-          .map((item: any) => String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase())
+          .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
           .filter((tipo) => tipo && tipo.includes('quinua')),
       ]);
 
@@ -756,6 +808,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
     setGuardandoEdicion(true);
     try {
+      const cultivosEditados = dividirCultivos(tipoCultivo);
+
       if (loteEditando.idLocal) {
         await actualizarLoteLocal(loteEditando.idLocal, {
           nombre_lote: nombre,
@@ -766,6 +820,10 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           fecha_cosecha_est: fechaCosechaIso,
           foto_siembra_uri_local: fotoSiembra || null,
         });
+
+        if (cultivosEditados.length > 0) {
+          await actualizarCultivosDeLote(loteEditando.idLocal, cultivosEditados);
+        }
       } else if (loteEditando.idServidor) {
         await actualizarLoteLocalPorServidor(loteEditando.idServidor, {
           nombre_lote: nombre,
