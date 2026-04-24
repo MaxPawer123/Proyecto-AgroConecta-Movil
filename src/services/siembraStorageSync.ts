@@ -12,6 +12,7 @@ import {
   marcarCostoComoSincronizado,
   actualizarCostoLocal,
 } from '@/src/services/database';
+import { obtenerProductorActivoLocal } from '@/src/features/auth/hooks/useAuthLocal';
 import { dividirCultivosSeleccionados, getDb, getLoteServerColumn, obtenerOInsertarProductoLocal } from './sqlite';
 
 const SYNC_INTERVAL_MS = 10000;
@@ -314,6 +315,7 @@ export async function registrarSiembraOfflineFirst(
   input: RegistrarSiembraInput
 ): Promise<RegistrarSiembraResultado> {
   const db = await getDb();
+  const idProductorActivo = (await obtenerProductorActivoLocal()) ?? 1;
   const cultivos = Array.isArray(input.cultivos) && input.cultivos.length > 0
     ? input.cultivos
     : dividirCultivosSeleccionados(input.tipoCultivo);
@@ -326,6 +328,7 @@ export async function registrarSiembraOfflineFirst(
 
   const idLocal = await insertarLoteLocal({
     id_servidor: null,
+    id_productor: idProductorActivo,
     id_productos: idProductos,
     nombre_lote: input.nombreLote,
     ubicacion: input.ubicacion,

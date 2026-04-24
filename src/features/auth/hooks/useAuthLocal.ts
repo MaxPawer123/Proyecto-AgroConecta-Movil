@@ -258,6 +258,34 @@ async function abrirSesionLocal(db: Awaited<ReturnType<typeof getDb>>, idUsuario
   await AsyncStorage.setItem('id_usuario', idUsuario.toString());
 }
 
+async function buscarRegistroExistentePorTelefono(
+  db: Awaited<ReturnType<typeof getDb>>,
+  tablaUsuario: string,
+  tablaProductor: string,
+  telefono: string
+): Promise<RegistroProductorResult | null> {
+  const row = await db.getFirstAsync<{ id_usuario: number; id_productor: number }>(
+    `
+      SELECT u.id_usuario AS id_usuario, p.id_productor AS id_productor
+      FROM ${tablaUsuario} u
+      LEFT JOIN ${tablaProductor} p ON p.id_usuario = u.id_usuario
+      WHERE u.telefono = ?
+      ORDER BY u.id_usuario DESC
+      LIMIT 1
+    `,
+    telefono
+  );
+
+  if (!row?.id_usuario || !row?.id_productor) {
+    return null;
+  }
+
+  return {
+    idUsuario: Number(row.id_usuario),
+    idProductor: Number(row.id_productor),
+  };
+}
+
 async function marcarSesionLocalCerrada(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
   await asegurarEsquemaAuth(db);
   await db.runAsync(
@@ -281,6 +309,23 @@ async function obtenerSesionLocal(db: Awaited<ReturnType<typeof getDb>>): Promis
     activa: Number(row?.activa ?? 0) === 1,
     idUsuario: row?.id_usuario !== null && row?.id_usuario !== undefined ? Number(row.id_usuario) : null,
   };
+}
+
+export async function obtenerProductorActivoLocal(): Promise<number | null> {
+  const db = await getDb();
+  const { tablaProductor } = await asegurarEsquemaAuth(db);
+
+  const row = await db.getFirstAsync<{ id_productor: number }>(
+    `
+      SELECT p.id_productor
+      FROM auth_sesion s
+      INNER JOIN ${tablaProductor} p ON p.id_usuario = s.id_usuario
+      WHERE s.id = 1 AND s.activa = 1
+      LIMIT 1
+    `
+  );
+
+  return row?.id_productor ? Number(row.id_productor) : null;
 }
 
 async function sincronizarRegistroEnBackend(input: RegistroProductorInput): Promise<boolean> {
@@ -327,6 +372,12 @@ export function useAuthLocal() {
     const { tablaUsuario, tablaProductor } = await asegurarEsquemaAuth(db);
     const columnasUsuario = await columnasTabla(db, tablaUsuario);
     const columnasProductor = await columnasTabla(db, tablaProductor);
+
+    const existente = await buscarRegistroExistentePorTelefono(db, tablaUsuario, tablaProductor, telefono);
+    if (existente) {
+      await abrirSesionLocal(db, existente.idUsuario);
+      return existente;
+    }
 
     let idUsuario = 0;
     let idProductor = 0;

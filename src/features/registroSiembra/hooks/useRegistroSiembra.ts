@@ -307,11 +307,13 @@ export function useRegistroSiembra({
     const superficie = normalizarSuperficie(form.superficie, superficieUnidad);
     const fechaSiembraIso = parsearFecha(form.fechaSiembra);
     const fechaCosechaIso = parsearFecha(form.fechaCosecha);
-    const cultivosArray = cultivosSeleccionados.length > 0
+    const cultivosArray = (cultivosSeleccionados.length > 0
       ? cultivosSeleccionados
       : form.tipoCultivo.trim()
         ? [form.tipoCultivo.trim()]
-        : [];
+        : [])
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     const cultivosString = cultivosArray.join(', ');
 
     if (!nombre || !cultivosString || !form.ubicacion || !form.superficie.trim() || !fechaSiembraIso || !fechaCosechaIso) {

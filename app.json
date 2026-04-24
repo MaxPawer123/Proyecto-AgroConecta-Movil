@@ -4,7 +4,7 @@
     "slug": "agroConectaMejor",
     "version": "1.0.6",
     "orientation": "portrait",
-    "icon": "./assets/images/yapu_aromacuadrado.png",
+    "icon": "./assets/images/yapu_aromacuadrada.png",
     "scheme": "yapuaroma",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

@@ -5,8 +5,6 @@ const DB_NAME = 'agroconecta.db';
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let loteServerColumnCache: 'id_lote' | 'id_servidor' | null = null;
 
-const CULTIVOS_GENERICOS = new Set(['', 'sin cultivo', 'quinua', 'hortaliza', 'hortalizas']);
-
 // ============================================
 // FUNCIONES SEGURAS (CORREGIDAS)
 // ============================================
@@ -62,7 +60,7 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       CREATE TABLE IF NOT EXISTS lote (
         id_local INTEGER PRIMARY KEY AUTOINCREMENT,
         id_lote INTEGER,
-        id_productor INTEGER NOT NULL DEFAULT 1,
+        id_productor INTEGER NOT NULL REFERENCES productor(id_productor),
         nombre_lote TEXT NOT NULL,
         ubicacion TEXT,
         superficie REAL,
@@ -76,6 +74,8 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         foto_cosecha_url TEXT,
         estado TEXT NOT NULL DEFAULT 'ACTIVO',
         estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE',
+        tipo_cultivo TEXT,
+        variedad TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
@@ -151,12 +151,17 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
 }
 
 // ============================================
-// MIGRACIONES A MODELO N:M
+// MIGRACIONES SIMPLIFICADAS (SIN DROP PELIGROSO)
 // ============================================
 
 async function ensureProductoTables(db: SQLite.SQLiteDatabase): Promise<void> {
-  const statements = [
-    `
+  // Verificar si PRODUCTO existe
+  const existeProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='PRODUCTO'"
+  );
+  
+  if (!existeProducto || existeProducto.count === 0) {
+    await db.execAsync(`
       CREATE TABLE IF NOT EXISTS PRODUCTO (
         id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
         nombre TEXT NOT NULL,
@@ -164,8 +169,16 @@ async function ensureProductoTables(db: SQLite.SQLiteDatabase): Promise<void> {
         categoria TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
-    `,
-    `
+    `);
+  }
+  
+  // Verificar si LOTE_PRODUCTO existe
+  const existeLoteProducto = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='LOTE_PRODUCTO'"
+  );
+  
+  if (!existeLoteProducto || existeLoteProducto.count === 0) {
+    await db.execAsync(`
       CREATE TABLE IF NOT EXISTS LOTE_PRODUCTO (
         id_lote_producto INTEGER PRIMARY KEY AUTOINCREMENT,
         id_lote INTEGER,
@@ -175,157 +188,39 @@ async function ensureProductoTables(db: SQLite.SQLiteDatabase): Promise<void> {
         FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id_producto) ON DELETE CASCADE,
         UNIQUE(id_lote, id_producto)
       )
-    `,
-    'CREATE INDEX IF NOT EXISTS idx_lote_producto_lote ON LOTE_PRODUCTO(id_lote)',
-    'CREATE INDEX IF NOT EXISTS idx_lote_producto_producto ON LOTE_PRODUCTO(id_producto)',
-    'CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_producto_rel ON LOTE_PRODUCTO(id_lote, id_producto)',
-  ];
-
-  for (const statement of statements) {
-    await runSafe(db, statement);
+    `);
+    
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_lote_producto_lote ON LOTE_PRODUCTO(id_lote);
+      CREATE INDEX IF NOT EXISTS idx_lote_producto_producto ON LOTE_PRODUCTO(id_producto);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_producto_rel ON LOTE_PRODUCTO(id_lote, id_producto);
+    `);
   }
 }
 
-function normalizarCultivosDesdeTexto(valor: unknown): string[] {
-  const partes = String(valor ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+async function reconstruirTablaLoteSinForeignKeyProductor(db: SQLite.SQLiteDatabase): Promise<void> {
+  const foreignKeys = await db.getAllAsync<{ table: string; from: string }>('PRAGMA foreign_key_list(lote)');
+  const tieneFkProductor = foreignKeys.some((fk) => fk.table === 'productor' && fk.from === 'id_productor');
 
-  const unicos = [...new Set(partes)];
-  return unicos.filter((item) => !CULTIVOS_GENERICOS.has(item.toLowerCase()));
-}
-
-function buildFirmaLote(row: Record<string, unknown>): string {
-  const nombre = String(row.nombre_lote ?? '').trim().toLowerCase();
-  const fechaSiembra = String(row.fecha_siembra ?? '').trim().toLowerCase();
-  const fechaCosecha = String(row.fecha_cosecha_est ?? '').trim().toLowerCase();
-  const superficieNum = Number(row.superficie ?? 0);
-  const superficie = Number.isFinite(superficieNum) ? superficieNum.toFixed(4) : '0.0000';
-  return `${nombre}|${fechaSiembra}|${fechaCosecha}|${superficie}`;
-}
-
-async function recuperarCultivosDesdeTablaLotesLegacy(db: SQLite.SQLiteDatabase): Promise<void> {
-  const existeTablaLegacy = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='lotes'"
-  );
-
-  if (!existeTablaLegacy || existeTablaLegacy.count === 0) {
+  if (!tieneFkProductor) {
     return;
   }
 
-  const lotesLegacy = await db.getAllAsync<Record<string, unknown>>('SELECT * FROM lotes');
-  if (!Array.isArray(lotesLegacy) || lotesLegacy.length === 0) {
-    return;
-  }
-
-  const lotesActuales = await db.getAllAsync<Record<string, unknown>>(
-    'SELECT id_local, id_lote, nombre_lote, fecha_siembra, fecha_cosecha_est, superficie FROM lote'
-  );
-
-  const mapPorIdLocal = new Map<number, number>();
-  const mapPorIdServidor = new Map<number, number>();
-  const mapPorFirma = new Map<string, number>();
-
-  for (const row of lotesActuales) {
-    const idLocal = Number(row.id_local);
-    if (Number.isFinite(idLocal) && idLocal > 0) {
-      mapPorIdLocal.set(idLocal, idLocal);
-      mapPorFirma.set(buildFirmaLote(row), idLocal);
-    }
-
-    const idServidor = Number(row.id_lote);
-    if (Number.isFinite(idServidor) && idServidor > 0) {
-      mapPorIdServidor.set(idServidor, idLocal);
-    }
-  }
-
-  for (const legacy of lotesLegacy) {
-    const cultivoTexto = String(legacy.variedad ?? legacy.tipo_cultivo ?? '').trim();
-    const cultivos = normalizarCultivosDesdeTexto(cultivoTexto);
-    if (cultivos.length === 0) continue;
-
-    let idLoteObjetivo: number | null = null;
-
-    const legacyIdLocal = Number(legacy.id_local);
-    if (Number.isFinite(legacyIdLocal) && legacyIdLocal > 0 && mapPorIdLocal.has(legacyIdLocal)) {
-      idLoteObjetivo = legacyIdLocal;
-    }
-
-    if (!idLoteObjetivo) {
-      const legacyIdServidor = Number(legacy.id_lote ?? legacy.id_servidor);
-      if (Number.isFinite(legacyIdServidor) && legacyIdServidor > 0) {
-        idLoteObjetivo = mapPorIdServidor.get(legacyIdServidor) ?? null;
-      }
-    }
-
-    if (!idLoteObjetivo) {
-      idLoteObjetivo = mapPorFirma.get(buildFirmaLote(legacy)) ?? null;
-    }
-
-    if (!idLoteObjetivo) continue;
-
-    await db.runAsync('DELETE FROM LOTE_PRODUCTO WHERE id_lote = ?', idLoteObjetivo);
-
-    for (const cultivo of cultivos) {
-      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', 'General');
-      await db.runAsync(
-        'INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)',
-        idLoteObjetivo,
-        idProducto
-      );
-    }
-  }
-}
-
-async function depurarCultivosGenericosConEspecificos(db: SQLite.SQLiteDatabase): Promise<void> {
-  await db.execAsync(`
-    DELETE FROM LOTE_PRODUCTO
-    WHERE id_lote IN (
-      SELECT lp.id_lote
-      FROM LOTE_PRODUCTO lp
-      JOIN PRODUCTO p ON p.id_producto = lp.id_producto
-      GROUP BY lp.id_lote
-      HAVING SUM(
-        CASE
-          WHEN lower(trim(p.nombre)) NOT IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo', '') THEN 1
-          ELSE 0
-        END
-      ) > 0
-    )
-    AND id_producto IN (
-      SELECT id_producto
-      FROM PRODUCTO
-      WHERE lower(trim(nombre)) IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo', '')
-    )
-  `);
-}
-
-async function reconstruirTablaLoteSinColumnasLegacy(db: SQLite.SQLiteDatabase): Promise<void> {
   const columnasLote = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
   const nombres = new Set(columnasLote.map((c) => c.name));
-
-  const tieneTipoCultivo = nombres.has('tipo_cultivo');
-  const tieneVariedad = nombres.has('variedad');
-
-  if (!tieneTipoCultivo && !tieneVariedad) {
-    return;
-  }
-
   const expresionIdLote = nombres.has('id_lote')
     ? (nombres.has('id_servidor') ? 'COALESCE(id_lote, id_servidor)' : 'id_lote')
     : (nombres.has('id_servidor') ? 'id_servidor' : 'NULL');
 
   await db.execAsync('PRAGMA foreign_keys = OFF');
-
   try {
-    await db.execAsync('ALTER TABLE lote RENAME TO lote_old');
+    await db.execAsync('ALTER TABLE lote RENAME TO lote_old_fk');
 
     await db.execAsync(`
       CREATE TABLE lote (
         id_local INTEGER PRIMARY KEY AUTOINCREMENT,
         id_lote INTEGER,
-        id_productor INTEGER NOT NULL DEFAULT 1,
+        id_productor INTEGER NOT NULL,
         nombre_lote TEXT NOT NULL,
         ubicacion TEXT,
         superficie REAL,
@@ -339,6 +234,8 @@ async function reconstruirTablaLoteSinColumnasLegacy(db: SQLite.SQLiteDatabase):
         foto_cosecha_url TEXT,
         estado TEXT NOT NULL DEFAULT 'ACTIVO',
         estado_sincronizacion TEXT NOT NULL DEFAULT 'PENDIENTE',
+        tipo_cultivo TEXT,
+        variedad TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
@@ -384,97 +281,67 @@ async function reconstruirTablaLoteSinColumnasLegacy(db: SQLite.SQLiteDatabase):
         COALESCE(estado_sincronizacion, 'PENDIENTE') AS estado_sincronizacion,
         COALESCE(created_at, datetime('now')) AS created_at,
         COALESCE(updated_at, datetime('now')) AS updated_at
-      FROM lote_old
+      FROM lote_old_fk
     `);
 
-    await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS LOTE_PRODUCTO_NEW (
-        id_lote_producto INTEGER PRIMARY KEY AUTOINCREMENT,
-        id_lote INTEGER,
-        id_producto INTEGER,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (id_lote) REFERENCES lote(id_local) ON DELETE CASCADE,
-        FOREIGN KEY (id_producto) REFERENCES PRODUCTO(id_producto) ON DELETE CASCADE,
-        UNIQUE(id_lote, id_producto)
-      )
-    `);
-
-    const existeLoteProducto = await db.getFirstAsync<{ count: number }>(
-      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='LOTE_PRODUCTO'"
-    );
-
-    if (existeLoteProducto?.count === 1) {
-      await db.execAsync(`
-        INSERT OR IGNORE INTO LOTE_PRODUCTO_NEW (id_lote_producto, id_lote, id_producto, created_at)
-        SELECT id_lote_producto, id_lote, id_producto, COALESCE(created_at, datetime('now'))
-        FROM LOTE_PRODUCTO
-      `);
-      await db.execAsync('DROP TABLE LOTE_PRODUCTO');
-    }
-
-    await db.execAsync('ALTER TABLE LOTE_PRODUCTO_NEW RENAME TO LOTE_PRODUCTO');
-    await db.execAsync('DROP TABLE lote_old');
-
+    await db.execAsync('DROP TABLE lote_old_fk');
     await runSafe(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_id_lote ON lote(id_lote)');
     await runSafe(db, 'CREATE INDEX IF NOT EXISTS idx_lote_servidor ON lote(id_lote)');
     await runSafe(db, 'CREATE INDEX IF NOT EXISTS idx_lote_sync ON lote(estado_sincronizacion)');
-    await runSafe(db, 'CREATE INDEX IF NOT EXISTS idx_lote_producto_lote ON LOTE_PRODUCTO(id_lote)');
-    await runSafe(db, 'CREATE INDEX IF NOT EXISTS idx_lote_producto_producto ON LOTE_PRODUCTO(id_producto)');
-    await runSafe(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_lote_producto_rel ON LOTE_PRODUCTO(id_lote, id_producto)');
   } finally {
     await db.execAsync('PRAGMA foreign_keys = ON');
   }
 }
 
-async function migrarCultivosAMuchosAMuchos(db: SQLite.SQLiteDatabase): Promise<void> {
-  await ensureProductoTables(db);
-
-  // Rescate de parcelas antiguas que solo existian en almacenamiento local legacy.
-  await recuperarCultivosDesdeTablaLotesLegacy(db);
-
-  const columnasLote = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
-  const nombres = new Set(columnasLote.map((c) => c.name));
-  const origenes: string[] = [];
-
-  if (nombres.has('tipo_cultivo')) {
-    origenes.push('tipo_cultivo');
+async function migrarCultivosExistentes(db: SQLite.SQLiteDatabase): Promise<void> {
+  // Verificar si hay datos que migrar
+  const tieneTipoCultivo = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM lote WHERE tipo_cultivo IS NOT NULL AND tipo_cultivo != ''"
+  );
+  
+  const tieneVariedad = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM lote WHERE variedad IS NOT NULL AND variedad != ''"
+  );
+  
+  const tieneLotes = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM lote"
+  );
+  
+  // Verificar si ya hay relaciones
+  const tieneRelaciones = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM LOTE_PRODUCTO"
+  );
+  
+  // Si no hay lotes o ya hay relaciones, no migrar
+  if ((!tieneLotes || tieneLotes.count === 0) || (tieneRelaciones && tieneRelaciones.count > 0)) {
+    return;
   }
-
-  if (nombres.has('variedad')) {
-    origenes.push('variedad');
-  }
-
-  if (origenes.length > 0) {
+  
+  if ((tieneTipoCultivo && tieneTipoCultivo.count > 0) || (tieneVariedad && tieneVariedad.count > 0)) {
     await db.withTransactionAsync(async () => {
-      for (const origen of origenes) {
-        await db.execAsync(`
-          INSERT OR IGNORE INTO PRODUCTO (nombre, variedad, categoria)
-          SELECT DISTINCT TRIM(${origen}) AS nombre, 'General', 'General'
-          FROM lote
-          WHERE ${origen} IS NOT NULL
-            AND TRIM(${origen}) != ''
-            AND lower(TRIM(${origen})) NOT IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo')
-        `);
-
-        await db.execAsync(`
-          INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto)
-          SELECT l.id_local, p.id_producto
-          FROM lote l
-          JOIN PRODUCTO p ON lower(p.nombre) = lower(TRIM(l.${origen}))
-          WHERE l.${origen} IS NOT NULL
-            AND TRIM(l.${origen}) != ''
-            AND lower(TRIM(l.${origen})) NOT IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo')
-        `);
-      }
+      // Insertar cultivos únicos en PRODUCTO
+      await db.execAsync(`
+        INSERT OR IGNORE INTO PRODUCTO (nombre, variedad, categoria)
+        SELECT DISTINCT 
+          COALESCE(tipo_cultivo, variedad, 'Sin cultivo'),
+          'General',
+          'General'
+        FROM lote
+        WHERE tipo_cultivo IS NOT NULL OR variedad IS NOT NULL
+      `);
+      
+      // Crear relaciones LOTE_PRODUCTO
+      await db.execAsync(`
+        INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto)
+        SELECT 
+          l.id_local,
+          p.id_producto
+        FROM lote l
+        JOIN PRODUCTO p ON p.nombre = COALESCE(l.tipo_cultivo, l.variedad, 'Sin cultivo')
+        WHERE l.tipo_cultivo IS NOT NULL OR l.variedad IS NOT NULL
+      `);
     });
   }
-
-  await depurarCultivosGenericosConEspecificos(db);
-
-  // La migracion final elimina las columnas legacy para evitar lecturas ambiguas.
-  await reconstruirTablaLoteSinColumnasLegacy(db);
-  await ensureProductoTables(db);
-  await depurarCultivosGenericosConEspecificos(db);
 }
 
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
@@ -492,6 +359,8 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     { nombre: 'foto_cosecha_url', tipo: 'TEXT' },
     { nombre: 'estado', tipo: "TEXT NOT NULL DEFAULT 'ACTIVO'" },
     { nombre: 'estado_sincronizacion', tipo: "TEXT NOT NULL DEFAULT 'PENDIENTE'" },
+    { nombre: 'tipo_cultivo', tipo: 'TEXT' },
+    { nombre: 'variedad', tipo: 'TEXT' },
     { nombre: 'created_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
     { nombre: 'updated_at', tipo: "TEXT NOT NULL DEFAULT (datetime('now'))" },
   ];
@@ -502,8 +371,14 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     }
   }
   
-  // Migracion definitiva de cultivos a relacion N:M
-  await migrarCultivosAMuchosAMuchos(db);
+  // Asegurar tablas de productos
+  await ensureProductoTables(db);
+
+  // Rehacer lote si la base vieja todavía trae la FK a productor.
+  await reconstruirTablaLoteSinForeignKeyProductor(db);
+  
+  // Migrar cultivos existentes
+  await migrarCultivosExistentes(db);
   
   // Agregar columnas a gasto_lote
   const columnasGasto = await db.getAllAsync<{ name: string }>('PRAGMA table_info(gasto_lote)');
