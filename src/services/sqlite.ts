@@ -5,6 +5,8 @@ const DB_NAME = 'agroconecta.db';
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let loteServerColumnCache: 'id_lote' | 'id_servidor' | null = null;
 
+const CULTIVOS_GENERICOS = new Set(['', 'sin cultivo', 'quinua', 'hortaliza', 'hortalizas']);
+
 // ============================================
 // FUNCIONES SEGURAS (CORREGIDAS)
 // ============================================
@@ -184,6 +186,121 @@ async function ensureProductoTables(db: SQLite.SQLiteDatabase): Promise<void> {
   }
 }
 
+function normalizarCultivosDesdeTexto(valor: unknown): string[] {
+  const partes = String(valor ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const unicos = [...new Set(partes)];
+  return unicos.filter((item) => !CULTIVOS_GENERICOS.has(item.toLowerCase()));
+}
+
+function buildFirmaLote(row: Record<string, unknown>): string {
+  const nombre = String(row.nombre_lote ?? '').trim().toLowerCase();
+  const fechaSiembra = String(row.fecha_siembra ?? '').trim().toLowerCase();
+  const fechaCosecha = String(row.fecha_cosecha_est ?? '').trim().toLowerCase();
+  const superficieNum = Number(row.superficie ?? 0);
+  const superficie = Number.isFinite(superficieNum) ? superficieNum.toFixed(4) : '0.0000';
+  return `${nombre}|${fechaSiembra}|${fechaCosecha}|${superficie}`;
+}
+
+async function recuperarCultivosDesdeTablaLotesLegacy(db: SQLite.SQLiteDatabase): Promise<void> {
+  const existeTablaLegacy = await db.getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='lotes'"
+  );
+
+  if (!existeTablaLegacy || existeTablaLegacy.count === 0) {
+    return;
+  }
+
+  const lotesLegacy = await db.getAllAsync<Record<string, unknown>>('SELECT * FROM lotes');
+  if (!Array.isArray(lotesLegacy) || lotesLegacy.length === 0) {
+    return;
+  }
+
+  const lotesActuales = await db.getAllAsync<Record<string, unknown>>(
+    'SELECT id_local, id_lote, nombre_lote, fecha_siembra, fecha_cosecha_est, superficie FROM lote'
+  );
+
+  const mapPorIdLocal = new Map<number, number>();
+  const mapPorIdServidor = new Map<number, number>();
+  const mapPorFirma = new Map<string, number>();
+
+  for (const row of lotesActuales) {
+    const idLocal = Number(row.id_local);
+    if (Number.isFinite(idLocal) && idLocal > 0) {
+      mapPorIdLocal.set(idLocal, idLocal);
+      mapPorFirma.set(buildFirmaLote(row), idLocal);
+    }
+
+    const idServidor = Number(row.id_lote);
+    if (Number.isFinite(idServidor) && idServidor > 0) {
+      mapPorIdServidor.set(idServidor, idLocal);
+    }
+  }
+
+  for (const legacy of lotesLegacy) {
+    const cultivoTexto = String(legacy.variedad ?? legacy.tipo_cultivo ?? '').trim();
+    const cultivos = normalizarCultivosDesdeTexto(cultivoTexto);
+    if (cultivos.length === 0) continue;
+
+    let idLoteObjetivo: number | null = null;
+
+    const legacyIdLocal = Number(legacy.id_local);
+    if (Number.isFinite(legacyIdLocal) && legacyIdLocal > 0 && mapPorIdLocal.has(legacyIdLocal)) {
+      idLoteObjetivo = legacyIdLocal;
+    }
+
+    if (!idLoteObjetivo) {
+      const legacyIdServidor = Number(legacy.id_lote ?? legacy.id_servidor);
+      if (Number.isFinite(legacyIdServidor) && legacyIdServidor > 0) {
+        idLoteObjetivo = mapPorIdServidor.get(legacyIdServidor) ?? null;
+      }
+    }
+
+    if (!idLoteObjetivo) {
+      idLoteObjetivo = mapPorFirma.get(buildFirmaLote(legacy)) ?? null;
+    }
+
+    if (!idLoteObjetivo) continue;
+
+    await db.runAsync('DELETE FROM LOTE_PRODUCTO WHERE id_lote = ?', idLoteObjetivo);
+
+    for (const cultivo of cultivos) {
+      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', 'General');
+      await db.runAsync(
+        'INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)',
+        idLoteObjetivo,
+        idProducto
+      );
+    }
+  }
+}
+
+async function depurarCultivosGenericosConEspecificos(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
+    DELETE FROM LOTE_PRODUCTO
+    WHERE id_lote IN (
+      SELECT lp.id_lote
+      FROM LOTE_PRODUCTO lp
+      JOIN PRODUCTO p ON p.id_producto = lp.id_producto
+      GROUP BY lp.id_lote
+      HAVING SUM(
+        CASE
+          WHEN lower(trim(p.nombre)) NOT IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo', '') THEN 1
+          ELSE 0
+        END
+      ) > 0
+    )
+    AND id_producto IN (
+      SELECT id_producto
+      FROM PRODUCTO
+      WHERE lower(trim(nombre)) IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo', '')
+    )
+  `);
+}
+
 async function reconstruirTablaLoteSinColumnasLegacy(db: SQLite.SQLiteDatabase): Promise<void> {
   const columnasLote = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
   const nombres = new Set(columnasLote.map((c) => c.name));
@@ -312,6 +429,9 @@ async function reconstruirTablaLoteSinColumnasLegacy(db: SQLite.SQLiteDatabase):
 async function migrarCultivosAMuchosAMuchos(db: SQLite.SQLiteDatabase): Promise<void> {
   await ensureProductoTables(db);
 
+  // Rescate de parcelas antiguas que solo existian en almacenamiento local legacy.
+  await recuperarCultivosDesdeTablaLotesLegacy(db);
+
   const columnasLote = await db.getAllAsync<{ name: string }>('PRAGMA table_info(lote)');
   const nombres = new Set(columnasLote.map((c) => c.name));
   const origenes: string[] = [];
@@ -331,7 +451,9 @@ async function migrarCultivosAMuchosAMuchos(db: SQLite.SQLiteDatabase): Promise<
           INSERT OR IGNORE INTO PRODUCTO (nombre, variedad, categoria)
           SELECT DISTINCT TRIM(${origen}) AS nombre, 'General', 'General'
           FROM lote
-          WHERE ${origen} IS NOT NULL AND TRIM(${origen}) != ''
+          WHERE ${origen} IS NOT NULL
+            AND TRIM(${origen}) != ''
+            AND lower(TRIM(${origen})) NOT IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo')
         `);
 
         await db.execAsync(`
@@ -339,15 +461,20 @@ async function migrarCultivosAMuchosAMuchos(db: SQLite.SQLiteDatabase): Promise<
           SELECT l.id_local, p.id_producto
           FROM lote l
           JOIN PRODUCTO p ON lower(p.nombre) = lower(TRIM(l.${origen}))
-          WHERE l.${origen} IS NOT NULL AND TRIM(l.${origen}) != ''
+          WHERE l.${origen} IS NOT NULL
+            AND TRIM(l.${origen}) != ''
+            AND lower(TRIM(l.${origen})) NOT IN ('quinua', 'hortaliza', 'hortalizas', 'sin cultivo')
         `);
       }
     });
   }
 
+  await depurarCultivosGenericosConEspecificos(db);
+
   // La migracion final elimina las columnas legacy para evitar lecturas ambiguas.
   await reconstruirTablaLoteSinColumnasLegacy(db);
   await ensureProductoTables(db);
+  await depurarCultivosGenericosConEspecificos(db);
 }
 
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {

@@ -149,8 +149,8 @@ async function obtenerUsuarioLocal(): Promise<UsuarioResumen> {
 
 function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[number]): LoteResumido {
   const nombre = String(item.nombre_lote ?? '').trim() || `Lote ${item.id_local}`;
-  const variedad = String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad';
-  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || undefined;
+  const variedad = String(item.cultivos_mostrados ?? '').trim() || 'Sin variedad';
+  const tipoCultivo = String(item.cultivos_mostrados?.split(',')[0] ?? '').trim() || undefined;
 
   return {
     id: `local-${item.id_local}`,

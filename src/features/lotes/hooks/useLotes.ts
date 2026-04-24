@@ -146,6 +146,27 @@ const esErrorUniqueIdLote = (error: unknown): boolean => {
   return /UNIQUE\s+constraint\s+failed:\s*lote\.id_lote/i.test(mensaje);
 };
 
+const TIPOS_HORTALIZAS_CONSULTA = [
+  'hortaliza',
+  'hortalizas',
+  'papa',
+  'cebolla',
+  'zanahoria',
+  'beterraga',
+  'haba',
+  'nabo',
+];
+
+const TIPOS_QUINUA_CONSULTA = [
+  'quinua',
+  'quinua real blanca',
+  'quinua roja pasankalla',
+  'quinua negra collana',
+  'quinua toledo',
+  'quinua jacha grano',
+  'quinua pandela',
+];
+
 const dividirCultivos = (valor: unknown): string[] => {
   const partes = String(valor ?? '')
     .split(',')
@@ -156,8 +177,16 @@ const dividirCultivos = (valor: unknown): string[] => {
 };
 
 const obtenerTextoCultivo = (item: any, fallback = ''): string => {
-  const valor = String(item?.cultivos_mostrados ?? item?.tipo_cultivo ?? item?.variedad ?? '').trim();
-  return valor || fallback;
+  const base = String(item?.cultivos_mostrados ?? item?.tipo_cultivo ?? item?.variedad ?? '').trim();
+  const partesUnicas = [...new Set(base.split(',').map((p) => p.trim()).filter(Boolean))];
+
+  const sinGenericos = partesUnicas.filter((p) => {
+    const t = p.toLowerCase();
+    return t !== 'quinua' && t !== 'hortaliza' && t !== 'hortalizas' && t !== 'sin cultivo';
+  });
+
+  const final = (sinGenericos.length > 0 ? sinGenericos : partesUnicas).join(', ');
+  return final || fallback;
 };
 
 const esSinCultivo = (valor: string): boolean => {
@@ -293,19 +322,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       };
     };
 
-    const datosLocales = await obtenerLotesLocales();
-    const cultivoFallback = rubro === 'quinua' ? 'Quinua' : 'Hortaliza';
-
-    const lotesSinCultivo = (Array.isArray(datosLocales) ? datosLocales : []).filter((item: any) => {
-      const texto = obtenerTextoCultivo(item);
-      return Number(item?.id_local) > 0 && esSinCultivo(texto);
-    });
-
-    for (const item of lotesSinCultivo) {
-      await actualizarCultivosDeLote(Number(item.id_local), [cultivoFallback]);
-    }
-
-    const datosLocalesFinales = lotesSinCultivo.length > 0 ? await obtenerLotesLocales() : datosLocales;
+    const datosLocalesFinales = await obtenerLotesLocales();
     const filtro = rubro === 'quinua' ? esLoteQuinua : esLoteHortaliza;
     const filtrados = Array.isArray(datosLocalesFinales) ? datosLocalesFinales.filter(filtro) : [];
     const mapeados = filtrados.map(mapearRapido);
@@ -334,7 +351,10 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         if (!idServidor) continue;
 
         const tipoCultivo = String(remoto?.tipo_cultivo ?? remoto?.variedad ?? '').trim();
-        const cultivosRemotos = dividirCultivos(tipoCultivo);
+        const cultivosRemotos = dividirCultivos(tipoCultivo).filter((cultivo) => {
+          const texto = cultivo.trim().toLowerCase();
+          return texto && texto !== 'quinua' && texto !== 'hortaliza' && texto !== 'hortalizas' && texto !== 'sin cultivo';
+        });
 
         const payload = {
           id_servidor: idServidor,
@@ -512,9 +532,11 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         const datosLocales = await obtenerLotesLocales();
 
         const tiposCultivo = new Set(
+          TIPOS_HORTALIZAS_CONSULTA.concat(
           (Array.isArray(datosLocales) ? datosLocales : [])
             .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
             .filter((tipo) => tipo && !tipo.includes('quinua'))
+          )
         );
 
         const lotesPorTipo = await Promise.all([...tiposCultivo].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
@@ -674,7 +696,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       const datosLocales = await obtenerLotesLocales();
 
       const tiposCultivo = new Set([
-        'quinua',
+        ...TIPOS_QUINUA_CONSULTA,
         ...(Array.isArray(datosLocales) ? datosLocales : [])
           .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
           .filter((tipo) => tipo && tipo.includes('quinua')),
@@ -726,26 +748,57 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
   }, [rubro]);
 
   useEffect(() => {
+    let activo = true;
+
+    const cargarInicial = async () => {
+      try {
+        await cargarLotesLocalesInmediato();
+        if (!activo) return;
+        await cargarLotesLocales();
+        if (!activo) return;
+        await actualizarInversionTotalConectada();
+      } catch (error) {
+        console.warn('Error en carga inicial de lotes:', error);
+      }
+    };
+
     iniciarSincronizacionAutomaticaSiembras();
-    void cargarLotesLocalesInmediato();
-    void cargarLotesLocales();
-    void actualizarInversionTotalConectada();
+    void cargarInicial();
 
     if (rubroConfig.stopAutoSyncOnUnmount) {
       return () => {
+        activo = false;
         detenerSincronizacionAutomaticaSiembras();
       };
     }
 
-    return;
+    return () => {
+      activo = false;
+    };
   }, [actualizarInversionTotalConectada, cargarLotesLocales, cargarLotesLocalesInmediato, rubroConfig.stopAutoSyncOnUnmount]);
 
   useEffect(() => {
+    let activo = true;
+
+    const recargarTrasModal = async () => {
+      try {
+        await cargarLotesLocalesInmediato();
+        if (!activo) return;
+        await cargarLotesLocales();
+        if (!activo) return;
+        await actualizarInversionTotalConectada();
+      } catch (error) {
+        console.warn('Error al recargar lotes tras cerrar modal:', error);
+      }
+    };
+
     if (!modalOpen) {
-      void cargarLotesLocalesInmediato();
-      void cargarLotesLocales();
-      void actualizarInversionTotalConectada();
+      void recargarTrasModal();
     }
+
+    return () => {
+      activo = false;
+    };
   }, [actualizarInversionTotalConectada, modalOpen, cargarLotesLocales, cargarLotesLocalesInmediato]);
 
   useEffect(() => {

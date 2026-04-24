@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Fase } from '../types';
 import { useCalculadoraCostos } from '../hooks/useCalculadoraCostos';
@@ -29,6 +29,9 @@ export function FormularioCostos({
   onVerResultados,
   calculadora,
 }: FormularioCostosProps) {
+  const insets = useSafeAreaInsets();
+  const modalBottomSpacing = Math.max(insets.bottom + 12, 24);
+
   const {
     estrategia,
     fase,
@@ -248,7 +251,7 @@ export function FormularioCostos({
       </ScrollView>
 
       <Modal visible={modalCategoria} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: modalBottomSpacing }] }>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Selecciona una Categoría</Text>
             <Text style={styles.modalSub}>Fase actual: {fase}</Text>
