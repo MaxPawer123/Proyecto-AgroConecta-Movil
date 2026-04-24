@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthLocal } from '../hooks/useAuthLocal';
+import { registrarUsuarioYProductor } from '@/src/services/sqlite';
 
 type FormRegistro = {
   nombre: string;
@@ -367,7 +367,6 @@ type PasoWizard = 1 | 2 | 3;
 
 export function RegistroScreen() {
   const router = useRouter();
-  const { registrarProductor } = useAuthLocal();
   const [form, setForm] = useState<FormRegistro>(formInicial);
   const [pasoActual, setPasoActual] = useState<PasoWizard>(1);
   const [guardando, setGuardando] = useState(false);
@@ -474,18 +473,20 @@ export function RegistroScreen() {
     }
 
     if (guardando) return;
-
     setGuardando(true);
 
     try {
-      await registrarProductor({
-        nombre: form.nombre.trim(),
-        apellido: form.apellido.trim(),
-        telefono: form.telefono.trim(),
-        departamento: form.departamento,
-        municipio: form.municipio,
-        comunidad: form.comunidad.trim(),
-      });
+      // ⭐ USAR LA FUNCIÓN UNIFICADA DE SQLITE.TS ⭐
+      const { id_usuario, id_productor } = await registrarUsuarioYProductor(
+        form.nombre.trim(),
+        form.apellido.trim(),
+        form.telefono.trim(),
+        form.departamento,
+        form.municipio,
+        form.comunidad.trim()
+      );
+      
+      console.log('✅ Registro exitoso:', { id_usuario, id_productor });
       setPasoActual(3);
     } catch (e) {
       const mensaje = e instanceof Error ? e.message : 'No fue posible completar el registro.';
@@ -500,7 +501,6 @@ export function RegistroScreen() {
       setPasoActual(1);
       return;
     }
-
     router.replace('/' as any);
   };
 

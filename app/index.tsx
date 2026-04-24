@@ -57,12 +57,12 @@ export default function Inicio() {
         if (!activo) return;
 
         if (existeCuenta) {
-          router.replace('/menu' as any); //'(tabs)'  
+          router.replace('/(tabs)' as any); //menu -> (tabs)
           return;
         }
 
         router.replace('/auth/walkthrough' as any);
-      }, 5000);
+      }, 4000);
     };
 
     void verificarEstadoProductor();
