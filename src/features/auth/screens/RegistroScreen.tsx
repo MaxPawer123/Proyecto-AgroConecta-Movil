@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { registrarUsuarioYProductor } from '@/src/services/sqlite';
+import { registrarUsuarioYProductor } from '@/src/services/auth';
 
 type FormRegistro = {
   nombre: string;
@@ -51,7 +51,7 @@ const crearMunicipios = (
   return data;
 };
 
-const UBICACIONES: Record<string, UbicacionData> = {
+export const UBICACIONES: Record<string, UbicacionData> = {
   LaPaz: {
     label: 'La Paz',
     municipios: crearMunicipios(

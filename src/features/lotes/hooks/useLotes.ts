@@ -8,20 +8,16 @@ import {
   eliminarLoteLocal,
   eliminarLoteLocalPorServidor,
   obtenerLotesLocales,
-} from '@/src/services/database';
-import {
   actualizarLoteApi,
   eliminarLoteApi,
   obtenerGastosPorLoteApi,
   obtenerLotesPorTipoCultivoApi,
-} from '@/src/services/api';
-import {
   iniciarSincronizacionAutomaticaSiembras,
   detenerSincronizacionAutomaticaSiembras,
   sincronizarSiembrasPendientes,
   suscribirEventosSincronizacionSiembras,
-} from '@/src/services/siembraStorageSync';
-import { obtenerTotalGastosLotesQuinuaYHortalizas } from '@/src/services/costosResumen';
+  obtenerTotalGastosLotesQuinuaYHortalizas,
+} from '@/src/services/lotes';
 import { RUBRO_CONFIG } from '../utils/constants';
 import { FormEdicionLote, LoteViewModel, RubroType, UseLotesResult } from '../types';
 
@@ -156,8 +152,23 @@ const dividirCultivos = (valor: unknown): string[] => {
 };
 
 const obtenerTextoCultivo = (item: any, fallback = ''): string => {
-  const valor = String(item?.cultivos_mostrados ?? item?.tipo_cultivo ?? item?.variedad ?? '').trim();
+  const valor = String(item?.cultivos_mostrados ?? item?.categorias_mostradas ?? item?.tipo_cultivo ?? item?.variedad ?? '').trim();
   return valor || fallback;
+};
+
+const obtenerCategoriasCultivo = (item: any): string => {
+  return String(item?.categorias_mostradas ?? item?.categoria ?? '').trim().toLowerCase();
+};
+
+const esLoteDelRubro = (item: any, rubro: RubroType): boolean => {
+  const texto = obtenerTextoCultivo(item).toLowerCase();
+  const categorias = obtenerCategoriasCultivo(item);
+
+  if (rubro === 'quinua') {
+    return texto.includes('quinua') || categorias.includes('quinua');
+  }
+
+  return categorias.includes('hortaliza') || (!texto.includes('quinua') && !categorias.includes('quinua'));
 };
 
 const esSinCultivo = (valor: string): boolean => {
@@ -241,17 +252,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
   }, []);
 
   const cargarLotesLocalesInmediato = useCallback(async () => {
-    const esLoteQuinua = (item: any) => {
-      const tipo = obtenerTextoCultivo(item).toLowerCase();
-      return tipo.includes('quinua');
-    };
-
-    const esLoteHortaliza = (item: any) => {
-      const tipo = obtenerTextoCultivo(item).trim().toLowerCase();
-      if (!tipo) return true;
-      return !tipo.includes('quinua');
-    };
-
     const mapearRapido = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
       const rendimiento = Number(item.rendimiento_estimado || 0);
@@ -306,7 +306,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     }
 
     const datosLocalesFinales = lotesSinCultivo.length > 0 ? await obtenerLotesLocales() : datosLocales;
-    const filtro = rubro === 'quinua' ? esLoteQuinua : esLoteHortaliza;
+    const filtro = (item: any) => esLoteDelRubro(item, rubro);
     const filtrados = Array.isArray(datosLocalesFinales) ? datosLocalesFinales.filter(filtro) : [];
     const mapeados = filtrados.map(mapearRapido);
     setLotesOrdenados(mapeados);
@@ -480,17 +480,11 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         };
       };
 
-      const esLoteHortaliza = (item: any) => {
-        const tipo = obtenerTextoCultivo(item).toLowerCase();
-        if (!tipo) return true;
-        return !tipo.includes('quinua');
-      };
-
       const cargarVistaLocalRapida = async () => {
         try {
           const datosLocales = await obtenerLotesLocales();
           const locales = Array.isArray(datosLocales)
-            ? datosLocales.filter((item: any) => esLoteHortaliza(item))
+            ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
             : [];
           const localesMapeados = locales.map(mapearLoteLocal);
           const localesConGastos = await enriquecerConGastos(localesMapeados);
@@ -514,13 +508,13 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         const tiposCultivo = new Set(
           (Array.isArray(datosLocales) ? datosLocales : [])
             .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
-            .filter((tipo) => tipo && !tipo.includes('quinua'))
+            .filter((tipo) => tipo && esLoteDelRubro({ cultivos_mostrados: tipo, categorias_mostradas: 'hortaliza' }, 'hortalizas'))
         );
 
         const lotesPorTipo = await Promise.all([...tiposCultivo].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
 
         const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item: any) => esLoteHortaliza(item))
+          ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
           : [];
 
         const remotos = deduplicarRemotosPorId(lotesPorTipo.flat());
@@ -538,7 +532,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         try {
           const datosLocales = await obtenerLotesLocales();
           const locales = Array.isArray(datosLocales)
-            ? datosLocales.filter((item: any) => esLoteHortaliza(item))
+            ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
             : [];
           const localesMapeados = locales.map(mapearLoteLocal);
           const localesConGastos = await enriquecerConGastos(localesMapeados);
@@ -551,11 +545,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
       return;
     }
-
-    const esLoteQuinua = (item: any) => {
-      const tipo = obtenerTextoCultivo(item).toLowerCase();
-      return tipo.includes('quinua');
-    };
 
     const mapearLoteLocal = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
@@ -634,7 +623,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     const cargarSoloLocales = async () => {
       const datosLocales = await obtenerLotesLocales();
       const localesFiltrados = Array.isArray(datosLocales)
-        ? datosLocales.filter((item: any) => esLoteQuinua(item))
+        ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
         : [];
       const localesMapeados = localesFiltrados.map((item) => mapearLoteLocal(item));
       return enriquecerConGastos(localesMapeados);
@@ -644,7 +633,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       try {
         const datosLocales = await obtenerLotesLocales();
         const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item: any) => esLoteQuinua(item))
+          ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
           : [];
         const localesMapeados = locales.map((item) => mapearLoteLocal(item));
         const localesConGastos = await enriquecerConGastos(localesMapeados);
@@ -677,7 +666,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         'quinua',
         ...(Array.isArray(datosLocales) ? datosLocales : [])
           .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
-          .filter((tipo) => tipo && tipo.includes('quinua')),
+          .filter((tipo) => tipo && esLoteDelRubro({ cultivos_mostrados: tipo, categorias_mostradas: 'quinua' }, 'quinua')),
       ]);
 
       const lotesPorTipo = await Promise.all([...tiposCultivo].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
@@ -687,7 +676,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       const datosBackend = lotesPorTipo.flat();
 
       const locales = Array.isArray(datosLocales)
-        ? datosLocales.filter((item: any) => esLoteQuinua(item))
+        ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
         : [];
 
       const remotos = deduplicarRemotosPorId(Array.isArray(datosBackend) ? datosBackend : []);
@@ -707,7 +696,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         const datosLocales = await obtenerLotesLocales();
 
         const locales = Array.isArray(datosLocales)
-          ? datosLocales.filter((item: any) => esLoteQuinua(item))
+          ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
           : [];
         const localesMapeados = locales.map((item) => mapearLoteLocal(item));
         const localesConGastos = await enriquecerConGastos(localesMapeados);

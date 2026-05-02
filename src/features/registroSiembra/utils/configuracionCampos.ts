@@ -6,11 +6,11 @@ import {
 } from '../types';
 
 const TIPOS_QUINUA = [
-  'Quinua Real Blanca',
+  'Quinua Jacha Grano',
   'Quinua Roja Pasankalla',
   'Quinua Negra Collana ',
   'Quinua Toledo',
-  'Quinua Jacha Grano',
+  'Quinua Real Blanca',
   'Quinua Pandela',
   'Otros',
 ];

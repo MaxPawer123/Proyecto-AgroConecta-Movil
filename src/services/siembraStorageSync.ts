@@ -9,10 +9,16 @@ import {
 import {
   insertarLoteLocal,
   obtenerGastosPendientesPorLoteLocal,
-  marcarCostoComoSincronizado,
+  marcarGastoComoSincronizado,
   actualizarCostoLocal,
-} from '@/src/services/database';
-import { dividirCultivosSeleccionados, getDb, getLoteServerColumn, obtenerOInsertarProductoLocal, getCurrentProductorId } from './sqlite';
+} from '@/src/services/sqlite';
+import {
+  dividirCultivosSeleccionados,
+  getDb,
+  getLoteServerColumn,
+  obtenerOInsertarProductoLocal,
+  getCurrentProductorId,
+} from './sqlite';
 
 const SYNC_INTERVAL_MS = 30000;
 const MAX_ITEMS_PER_SYNC = 10;
@@ -89,18 +95,14 @@ async function verificarBackendDisponible(): Promise<boolean> {
     if (!state.isConnected || state.isInternetReachable === false) {
       return false;
     }
-    
-    // Hacer una petición simple para verificar que el backend realmente responde
     const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
     if (!baseUrl) return false;
-    
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
     try {
-      const response = await fetch(`${baseUrl}/health`, { 
+      const response = await fetch(`${baseUrl}/health`, {
         method: 'HEAD',
-        signal: controller.signal 
+        signal: controller.signal,
       });
       clearTimeout(timeoutId);
       return response.ok;
@@ -122,7 +124,6 @@ function mapRowToPendiente(row: Record<string, unknown>): LotePendiente {
   const idServidorRaw = row.id_lote ?? row.id_servidor;
   const tipoCultivoRelacional = String(row.tipo_cultivo_rel ?? '').trim();
   const idProductorRaw = Number(row.id_productor);
-
   return {
     idLocal: Number(row.id_local),
     idServidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
@@ -143,7 +144,6 @@ async function obtenerLotesPendientes(): Promise<LotePendiente[]> {
   const db = await getDb();
   const serverColumn = await getLoteServerColumn();
   const idProductorActual = await getCurrentProductorId().catch(() => 0);
-  
   const rows = await db.getAllAsync<Record<string, unknown>>(
     `
       SELECT
@@ -166,7 +166,6 @@ async function obtenerLotesPendientes(): Promise<LotePendiente[]> {
     idProductorActual,
     MAX_ITEMS_PER_SYNC
   );
-
   return rows.map(mapRowToPendiente);
 }
 
@@ -193,7 +192,6 @@ async function buscarLoteServidorExistente(item: LotePendiente): Promise<number 
       const coincideSuperficie = Math.abs(Number(lote.superficie) - Number(item.superficie)) < 0.01;
       return coincideNombre && coincideSuperficie;
     });
-
     if (!encontrado) return null;
     const id = Number(encontrado.id_lote);
     return Number.isFinite(id) && id > 0 ? id : null;
@@ -211,12 +209,10 @@ async function sincronizarLote(item: LotePendiente): Promise<number> {
       throw new Error('No se pudo subir la foto local del lote.');
     }
   }
-
   const idExistente = await buscarLoteServidorExistente(item);
   if (idExistente) {
     return idExistente;
   }
-
   const loteServidor = await crearLoteApi({
     id_productor: item.idProductor,
     tipo_cultivo: item.tipoCultivo,
@@ -229,22 +225,55 @@ async function sincronizarLote(item: LotePendiente): Promise<number> {
     foto_siembra_url: fotoSiembraUrl,
     ubicacion: item.ubicacion || 'No especificada',
   });
-
   const idServidor = Number(loteServidor.id_lote);
   if (!Number.isFinite(idServidor) || idServidor <= 0) {
     throw new Error('El backend no devolvio un id_lote valido.');
   }
-
   return idServidor;
+}
+
+// ============================================
+// SINCRONIZAR GASTOS PENDIENTES DE UN LOTE
+// ============================================
+async function sincronizarGastosLocales(idLocal: number, idServidor: number): Promise<void> {
+  const gastosPendientes = await obtenerGastosPendientesPorLoteLocal(idLocal);
+  if (gastosPendientes.length === 0) return;
+
+  console.log(`💰 Sincronizando ${gastosPendientes.length} gastos del lote ${idLocal}...`);
+
+  for (const gasto of gastosPendientes) {
+    try {
+      const nuevoGasto = await crearGastoApi({
+        id_lote: idServidor,
+        categoria: gasto.categoria,
+        descripcion: gasto.descripcion ?? undefined,
+        cantidad: gasto.cantidad,
+        costo_unitario: gasto.costo_unitario,
+        tipo_costo: gasto.tipo_costo,
+        modalidad_pago: gasto.modalidad_pago,
+      });
+
+      const idGasto = Number(nuevoGasto.id_gasto);
+      if (!Number.isFinite(idGasto) || idGasto <= 0) {
+        throw new Error('El backend devolvió un id_gasto inválido.');
+      }
+
+      await marcarGastoComoSincronizado(gasto.id_local, idGasto);
+      console.log(`✅ Gasto ${gasto.id_local} sincronizado → ID servidor: ${idGasto}`);
+    } catch (error) {
+      console.warn(`❌ Error sincronizando gasto ${gasto.id_local}:`, error);
+      await actualizarCostoLocal(gasto.id_local, {
+        ultimo_error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 export async function sincronizarSiembrasPendientes(): Promise<{
   procesados: number;
   sincronizados: number;
 }> {
-  // ⭐ SOLO sincronizar si hay conexión real ⭐
   const hayConexion = await hayConexionDisponible();
-  
   if (!hayConexion) {
     if (!conexionEstablecida) {
       console.log('📡 Sin conexión a internet. Los lotes se guardarán localmente y se sincronizarán cuando haya red.');
@@ -252,31 +281,24 @@ export async function sincronizarSiembrasPendientes(): Promise<{
     conexionEstablecida = false;
     return { procesados: 0, sincronizados: 0 };
   }
-  
-  // Verificar que el backend responda
+
   const backendActivo = await verificarBackendDisponible();
   if (!backendActivo) {
     console.log('🖥️ Backend no disponible. Los lotes se sincronizarán cuando el servidor esté activo.');
     return { procesados: 0, sincronizados: 0 };
   }
-  
+
   if (!conexionEstablecida) {
     console.log('✅ Conexión a internet y backend detectados. Iniciando sincronización...');
     conexionEstablecida = true;
   }
 
-  if (syncEnCurso) {
-    return { procesados: 0, sincronizados: 0 };
-  }
-
+  if (syncEnCurso) return { procesados: 0, sincronizados: 0 };
   syncEnCurso = true;
 
   try {
     const pendientes = await obtenerLotesPendientes();
-    
-    if (pendientes.length === 0) {
-      return { procesados: 0, sincronizados: 0 };
-    }
+    if (pendientes.length === 0) return { procesados: 0, sincronizados: 0 };
 
     console.log(`🔄 Sincronizando ${pendientes.length} lotes pendientes...`);
     let sincronizados = 0;
@@ -286,9 +308,16 @@ export async function sincronizarSiembrasPendientes(): Promise<{
         console.log(`📤 Subiendo lote ${item.idLocal}...`);
         const idServidor = await sincronizarLote(item);
         await marcarLoteSincronizado(item.idLocal, idServidor);
+
+        // Sincronizar gastos asociados
+        try {
+          await sincronizarGastosLocales(item.idLocal, idServidor);
+        } catch (error) {
+          console.warn('Error al sincronizar gastos del lote:', error);
+        }
+
         sincronizados++;
         console.log(`✅ Lote ${item.idLocal} sincronizado → ID servidor: ${idServidor}`);
-        
         emitirEventoSincronizacion({
           tipo: 'LOTE_SINCRONIZADO',
           idLocal: item.idLocal,
@@ -316,7 +345,7 @@ export async function registrarSiembraOfflineFirst(
 ): Promise<RegistrarSiembraResultado> {
   const db = await getDb();
   const idProductorActual = await getCurrentProductorId();
-  
+
   const cultivos = Array.isArray(input.cultivos) && input.cultivos.length > 0
     ? input.cultivos
     : dividirCultivosSeleccionados(input.tipoCultivo);
@@ -342,8 +371,7 @@ export async function registrarSiembraOfflineFirst(
   });
 
   console.log(`💾 Lote guardado LOCALMENTE con ID: ${idLocal} (Productor: ${idProductorActual})`);
-  
-  // Intentar sincronizar solo si hay conexión
+
   const hayConexion = await hayConexionDisponible();
   if (hayConexion) {
     setTimeout(() => {
@@ -387,7 +415,6 @@ export function iniciarSincronizacionAutomaticaSiembras(): void {
     });
   }
 
-  // Intentar sincronizar al inicio si hay conexión
   sincronizarSiembrasPendientes().catch(() => {});
 }
 

@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDb } from '@/src/services/sqlite';
-import { registrarProductorApi } from '@/src/services/api';
+import { getDb, registrarProductorApi } from '@/src/services/auth';
 
 type RegistroProductorInput = {
   nombre: string;

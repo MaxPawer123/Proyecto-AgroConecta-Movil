@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getDb } from '../src/services/sqlite';
+import { getDb } from '../src/services/shared';
 
 type TableDebug = {
   name: string;

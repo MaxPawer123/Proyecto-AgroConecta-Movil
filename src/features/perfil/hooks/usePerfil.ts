@@ -2,11 +2,24 @@ import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuthLocal } from '@/src/features/auth/hooks/useAuthLocal';
-import { getDb } from '@/src/services/sqlite';
-import { sincronizarSiembrasPendientes } from '@/src/services/siembraStorageSync';
+import { getDb } from '@/src/services/shared';
+import { sincronizarSiembrasPendientes } from '@/src/services/siembra';
 
 export type PerfilProductor = {
+  idUsuario: number;
+  idProductor: number;
+  nombre: string;
+  apellido: string;
   nombreCompleto: string;
+  telefono: string;
+  departamento: string;
+  municipio: string;
+  comunidad: string;
+};
+
+export type PerfilEdicionForm = {
+  nombre: string;
+  apellido: string;
   telefono: string;
   departamento: string;
   municipio: string;
@@ -67,6 +80,7 @@ async function obtenerPerfilProductor(): Promise<PerfilProductor | null> {
     `
       SELECT
         u.id_usuario,
+        p.id_productor,
         TRIM(COALESCE(${nombreSql}, '')) as nombre,
         TRIM(COALESCE(${apellidoSql}, '')) as apellido,
         TRIM(COALESCE(${nombreCompletoSql}, '')) as nombre_completo,
@@ -90,6 +104,7 @@ async function obtenerPerfilProductor(): Promise<PerfilProductor | null> {
       `
       SELECT
         u.id_usuario,
+        p.id_productor,
         TRIM(COALESCE(${nombreSql}, '')) as nombre,
         TRIM(COALESCE(${apellidoSql}, '')) as apellido,
         TRIM(COALESCE(${nombreCompletoSql}, '')) as nombre_completo,
@@ -116,6 +131,10 @@ async function obtenerPerfilProductor(): Promise<PerfilProductor | null> {
     nombreCompletoBase || `${nombre} ${apellido}`.trim() || 'PRODUCTOR AGROCONECTA';
 
   return {
+    idUsuario: Number(perfilFallback.id_usuario),
+    idProductor: Number(perfilFallback.id_productor ?? 0),
+    nombre,
+    apellido,
     nombreCompleto,
     telefono:
       String(perfilFallback.telefono_productor ?? '').trim() ||
@@ -131,12 +150,31 @@ export function usePerfil() {
   const router = useRouter();
   const { cerrarSesionLocal } = useAuthLocal();
   const [perfil, setPerfil] = useState<PerfilProductor | null>(null);
+  const [perfilEdicion, setPerfilEdicion] = useState<PerfilEdicionForm>({
+    nombre: '',
+    apellido: '',
+    telefono: '',
+    departamento: '',
+    municipio: '',
+    comunidad: '',
+  });
   const [sincronizando, setSincronizando] = useState(false);
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
 
   const cargarPerfil = useCallback(async () => {
     try {
       const data = await obtenerPerfilProductor();
       setPerfil(data);
+      if (data) {
+        setPerfilEdicion({
+          nombre: data.nombre,
+          apellido: data.apellido,
+          telefono: data.telefono,
+          departamento: data.departamento,
+          municipio: data.municipio,
+          comunidad: data.comunidad,
+        });
+      }
     } catch {
       setPerfil(null);
     }
@@ -195,6 +233,63 @@ export function usePerfil() {
     }
   }, [sincronizando]);
 
+  const guardarPerfilLocal = useCallback(async () => {
+    if (!perfil) {
+      Alert.alert('Perfil no disponible', 'No se pudo encontrar el perfil local para editar.');
+      return;
+    }
+
+    const nombre = perfilEdicion.nombre.trim();
+    const apellido = perfilEdicion.apellido.trim();
+    const telefono = perfilEdicion.telefono.trim();
+    const departamento = perfilEdicion.departamento.trim();
+    const municipio = perfilEdicion.municipio.trim();
+    const comunidad = perfilEdicion.comunidad.trim();
+
+    if (!nombre || !apellido || !telefono || !departamento || !municipio || !comunidad) {
+      Alert.alert('Datos incompletos', 'Completa nombre, apellido, ubicación y teléfono antes de guardar.');
+      return;
+    }
+
+    const nombreCompleto = `${nombre} ${apellido}`.trim();
+    const db = await getDb();
+
+    try {
+      setGuardandoPerfil(true);
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          `UPDATE usuario
+           SET nombre = ?, apellido = ?, nombre_completo = ?, telefono = ?, sincronizado = 0
+           WHERE id_usuario = ?`,
+          nombre,
+          apellido,
+          nombreCompleto,
+          telefono,
+          perfil.idUsuario
+        );
+
+        await db.runAsync(
+          `UPDATE productor
+           SET departamento = ?, municipio = ?, comunidad = ?, telefono = ?, sincronizado = 0
+           WHERE id_productor = ?`,
+          departamento,
+          municipio,
+          comunidad,
+          telefono,
+          perfil.idProductor
+        );
+      });
+
+      await cargarPerfil();
+      Alert.alert('Perfil actualizado', 'Tus datos se guardaron localmente en este dispositivo.');
+    } catch (error) {
+      console.warn('No se pudo guardar el perfil local:', error);
+      Alert.alert('Error', 'No se pudo guardar el perfil local. Intenta nuevamente.');
+    } finally {
+      setGuardandoPerfil(false);
+    }
+  }, [cargarPerfil, perfil, perfilEdicion]);
+
   const nombrePerfil = (perfil?.nombreCompleto ?? 'PRODUCTOR AGROCONECTA').toUpperCase();
   const ubicacionPerfil = [perfil?.departamento, perfil?.municipio, perfil?.comunidad]
     .filter((item) => item && item !== 'No registrado')
@@ -202,9 +297,13 @@ export function usePerfil() {
 
   return {
     perfil,
+    perfilEdicion,
+    guardandoPerfil,
     sincronizando,
     nombrePerfil,
     ubicacionPerfil,
+    setPerfilEdicion,
+    guardarPerfilLocal,
     onSincronizar,
     confirmarCierreSesion,
   };

@@ -1,4 +1,4 @@
-import { getDb, getLoteServerColumn, obtenerOInsertarProductoLocal, dividirCultivosSeleccionados } from './sqlite';
+import { getDb, getLoteServerColumn, obtenerOInsertarProductoLocal, dividirCultivosSeleccionados, getCurrentProductorId } from './sqlite';
 
 type LoteInsertInput = {
   id_servidor?: number | null;
@@ -21,6 +21,7 @@ export type LoteLocal = {
   tipo_cultivo: string;
   variedad?: string;
   cultivos_mostrados: string;
+  categorias_mostradas: string;
   id_productos: number[];
   nombre_lote: string;
   ubicacion: string | null;
@@ -79,6 +80,30 @@ type ProduccionLocal = {
   estado_sincronizacion: string;
 };
 
+async function getTableColumns(db: Awaited<ReturnType<typeof getDb>>, tableName: string): Promise<Set<string>> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${tableName})`);
+  return new Set(columns.map((column) => column.name));
+}
+
+async function deleteFromTableWithAvailableColumns(
+  db: Awaited<ReturnType<typeof getDb>>,
+  tableName: string,
+  columnCandidates: string[],
+  value: number
+): Promise<void> {
+  const columns = await getTableColumns(db, tableName);
+  const activeColumns = columnCandidates.filter((column) => columns.has(column));
+
+  if (activeColumns.length === 0) {
+    return;
+  }
+
+  await db.runAsync(
+    `DELETE FROM ${tableName} WHERE ${activeColumns.map((column) => `${column} = ?`).join(' OR ')}`,
+    ...activeColumns.map(() => value)
+  );
+}
+
 // ============================================
 // MAPPER CORREGIDO
 // ============================================
@@ -107,6 +132,7 @@ const LOTE_SELECT_FIELDS = `
 function mapRowToLote(row: Record<string, unknown>): LoteLocal {
   const idServidorRaw = row.id_lote ?? row.id_servidor;
   const cultivosMostrados = String(row.cultivos_mostrados ?? '').trim();
+  const categoriasMostradas = String(row.categorias_mostradas ?? '').trim();
   const cultivosVisuales = cultivosMostrados || 'Sin cultivo';
   const idsProductosConcat = String(row.ids_productos_concat ?? '').trim();
   
@@ -122,6 +148,7 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     tipo_cultivo: cultivosVisuales,
     variedad: cultivosVisuales,
     cultivos_mostrados: cultivosVisuales,
+    categorias_mostradas: categoriasMostradas,
     id_productos: idProductos,
     nombre_lote: String(row.nombre_lote ?? ''),
     ubicacion: row.ubicacion === null || row.ubicacion === undefined ? null : String(row.ubicacion),
@@ -150,6 +177,7 @@ export async function obtenerLotesPendientesLocales(): Promise<LoteLocal[]> {
       SELECT
         ${LOTE_SELECT_FIELDS},
         COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
+        COALESCE(GROUP_CONCAT(p.categoria, ', '), '') AS categorias_mostradas,
         COALESCE(GROUP_CONCAT(lp.id_producto, ','), '') AS ids_productos_concat
       FROM lote l
       LEFT JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
@@ -206,27 +234,29 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
 
     const idProductos = [...new Set([...idProductosDirectos, ...idsProductoCompat])];
 
-    // Insertar lote
-    const insertLote = await db.runAsync(
-      `
-        INSERT INTO lote (
-          ${serverColumn},
-          id_productor,
-          nombre_lote,
-          ubicacion,
-          superficie,
-          fecha_siembra,
-          fecha_cosecha_est,
-          rendimiento_estimado,
-          precio_venta_est,
-          foto_siembra_url,
-          estado_sincronizacion,
-          created_at,
-          updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
+    // Construir inserción dinámica para soportar instalaciones antiguas
+    const idProductorActual = await getCurrentProductorId();
+    const tablaCols = await getTableColumns(db, 'lote');
+
+    const columnas: string[] = [
+      serverColumn,
+      'id_productor',
+      'nombre_lote',
+      'ubicacion',
+      'superficie',
+      'fecha_siembra',
+      'fecha_cosecha_est',
+      'rendimiento_estimado',
+      'precio_venta_est',
+      'foto_siembra_url',
+      'estado_sincronizacion',
+      'created_at',
+      'updated_at'
+    ];
+
+    const params: (string | number | null)[] = [
       loteData.id_servidor ?? null,
-      1,
+      idProductorActual,
       loteData.nombre_lote,
       loteData.ubicacion ?? null,
       loteData.superficie ?? null,
@@ -238,8 +268,20 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
       loteData.estado_sincronizacion ?? 'PENDIENTE',
       now,
       now
-    );
+    ];
 
+    if (tablaCols.has('tipo_cultivo')) {
+      const valorTipoCultivo = (String(loteData.tipo_cultivo ?? '').trim())
+        || (nombresCultivoCompat.length > 0 ? nombresCultivoCompat.join(', ') : 'Sin cultivo');
+
+      columnas.splice(columnas.length - 2, 0, 'tipo_cultivo');
+      params.splice(params.length - 2, 0, valorTipoCultivo);
+    }
+
+    const placeholders = columnas.map(() => '?').join(', ');
+    const sql = `INSERT INTO lote (${columnas.join(', ')}) VALUES (${placeholders})`;
+
+    const insertLote = await db.runAsync(sql, ...params);
     idLoteLocalCreado = Number(insertLote.lastInsertRowId);
 
     // Insertar relaciones con productos (múltiples cultivos)
@@ -266,6 +308,7 @@ export async function obtenerLotesLocales(): Promise<LoteLocal[]> {
       SELECT
         ${LOTE_SELECT_FIELDS},
         COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
+        COALESCE(GROUP_CONCAT(p.categoria, ', '), '') AS categorias_mostradas,
         COALESCE(GROUP_CONCAT(lp.id_producto, ','), '') AS ids_productos_concat
       FROM lote l
       LEFT JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
@@ -356,16 +399,16 @@ export async function actualizarLoteLocalPorServidor(
 
 export async function eliminarLoteLocal(idLocal: number): Promise<void> {
   const db = await getDb();
-  await db.runAsync('DELETE FROM gasto_lote WHERE id_lote_local = ? OR id_lote = ?', idLocal, idLocal);
-  await db.runAsync('DELETE FROM produccion_lote WHERE id_lote_local = ? OR id_lote = ?', idLocal, idLocal);
+  await deleteFromTableWithAvailableColumns(db, 'gasto_lote', ['id_lote_local', 'id_lote_servidor', 'id_lote'], idLocal);
+  await deleteFromTableWithAvailableColumns(db, 'produccion_lote', ['id_lote_local', 'id_lote'], idLocal);
   await db.runAsync('DELETE FROM lote WHERE id_local = ?', idLocal);
 }
 
 export async function eliminarLoteLocalPorServidor(idServidor: number): Promise<void> {
   const db = await getDb();
   const serverColumn = await getLoteServerColumn();
-  await db.runAsync('DELETE FROM gasto_lote WHERE id_lote_servidor = ? OR id_lote = ?', idServidor, idServidor);
-  await db.runAsync('DELETE FROM produccion_lote WHERE id_lote = ?', idServidor);
+  await deleteFromTableWithAvailableColumns(db, 'gasto_lote', ['id_lote_servidor', 'id_lote'], idServidor);
+  await deleteFromTableWithAvailableColumns(db, 'produccion_lote', ['id_lote'], idServidor);
   await db.runAsync(`DELETE FROM lote WHERE ${serverColumn} = ?`, idServidor);
 }
 
@@ -381,43 +424,38 @@ export async function guardarCostoLocal(input: GuardarCostoLocalInput): Promise<
   const modalidad = input.modalidad_pago ?? 'NA';
   const montoTotal = input.cantidad * input.costo_unitario;
 
+  const columnas = await getTableColumns(db, 'gasto_lote');
+  const columnasInsertables: Array<{ nombre: string; valor: string | number | null }> = [
+    { nombre: 'id_gasto', valor: null },
+    { nombre: 'id_lote_local', valor: input.id_lote_local ?? null },
+    { nombre: 'id_lote_servidor', valor: input.id_lote_servidor ?? null },
+    { nombre: 'categoria', valor: input.categoria },
+    { nombre: 'descripcion', valor: input.descripcion ?? null },
+    { nombre: 'cantidad', valor: input.cantidad },
+    { nombre: 'costo_unitario', valor: input.costo_unitario },
+    { nombre: 'monto_total', valor: montoTotal },
+    { nombre: 'tipo_costo', valor: tipoCosto },
+    { nombre: 'modalidad_pago', valor: modalidad },
+    { nombre: 'fecha_gasto', valor: fechaGasto },
+    { nombre: 'sincronizado', valor: input.sincronizado ? 1 : 0 },
+    { nombre: 'ultimo_error', valor: input.ultimo_error ?? null },
+    { nombre: 'created_at', valor: now },
+    { nombre: 'updated_at', valor: now },
+  ].filter((item) => columnas.has(item.nombre));
+
+  if (columnasInsertables.length === 0) {
+    throw new Error('La tabla gasto_lote no tiene columnas insertables.');
+  }
+
+  const nombresColumnas = columnasInsertables.map((item) => item.nombre).join(', ');
+  const placeholders = columnasInsertables.map(() => '?').join(', ');
+  const valores = columnasInsertables.map((item) => item.valor);
+
   const result = await db.runAsync(
     `
-      INSERT INTO gasto_lote (
-        id_gasto,
-        id_lote_local,
-        id_lote_servidor,
-        id_lote,
-        categoria,
-        descripcion,
-        cantidad,
-        costo_unitario,
-        monto_total,
-        tipo_costo,
-        modalidad_pago,
-        fecha_gasto,
-        sincronizado,
-        ultimo_error,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO gasto_lote (${nombresColumnas}) VALUES (${placeholders})
     `,
-    null,
-    input.id_lote_local ?? null,
-    input.id_lote_servidor ?? null,
-    input.id_lote_servidor ?? null,
-    input.categoria,
-    input.descripcion ?? null,
-    input.cantidad,
-    input.costo_unitario,
-    montoTotal,
-    tipoCosto,
-    modalidad,
-    fechaGasto,
-    input.sincronizado ? 1 : 0,
-    input.ultimo_error ?? null,
-    now,
-    now
+    ...valores
   );
 
   return Number(result.lastInsertRowId);
@@ -503,9 +541,10 @@ export async function obtenerGastosPendientesPorLoteLocal(idLoteLocal: number): 
     `
       SELECT *
       FROM gasto_lote
-      WHERE id_lote_local = ? AND sincronizado = 0
+      WHERE (id_lote_local = ? OR id_lote_servidor = ?) AND sincronizado = 0
       ORDER BY id_local DESC
     `,
+    idLoteLocal,
     idLoteLocal
   );
 

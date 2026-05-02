@@ -147,7 +147,7 @@ export function FormularioCostos({
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Monto (Bs)</Text>
+              <Text style={styles.inputLabel}>Costo unitario (Bs)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="0.00"
@@ -392,7 +392,7 @@ export function FormularioCostos({
                       />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.inputLabel}>Monto (Bs)</Text>
+                      <Text style={styles.inputLabel}>Costo unitario (Bs)</Text>
                       <TextInput
                         style={styles.input}
                         placeholder="0.00"

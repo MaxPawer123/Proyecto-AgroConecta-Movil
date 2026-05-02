@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
-import { obtenerCostosLocalesPorLote, obtenerLotesLocales } from '@/src/services/database';
-import { obtenerGastosPorLoteApi, obtenerLotesPorTipoCultivoApi, type GastoApi, type LoteApi } from '@/src/services/api';
+import {
+  obtenerCostosLocalesPorLote,
+  obtenerLotesLocales,
+  obtenerGastosPorLoteApi,
+  obtenerLotesPorTipoCultivoApi,
+  type GastoApi,
+  type LoteApi,
+  suscribirEventosGastos,
+} from '@/src/services/reportes';
 import { inferirFaseDesdeCategoria, obtenerEstrategiaCalculo, obtenerUnidadCategoria } from '../../calculadoraCostos/utils/estrategiasCalculo';
-import { suscribirEventosGastos } from '@/src/services/gastosStorageEvents';
 
 type CostosLocalesLote = Awaited<ReturnType<typeof obtenerCostosLocalesPorLote>>;
 

@@ -3,11 +3,9 @@ import { Alert } from 'react-native';
 import {
   obtenerGastosPorLoteApi,
   obtenerUltimaProduccionLoteApi,
-} from '@/src/services/api';
-import {
   obtenerCostosLocalesPorLote,
   obtenerBorradorProduccionLocal,
-} from '@/src/services/database';
+} from '@/src/services/resultados';
 import { Gasto, ResultadoCalculos, RubroResultado } from '../types';
 
 const KG_POR_QUINTAL = 46;

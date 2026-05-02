@@ -9,8 +9,7 @@ import {
 const CATEGORIAS_POR_FASE_BASE: Record<Fase, string[]> = {
   Siembra: [
     'Alquiler de Terreno',
-    'Alquiler tractor (arado y rastreo)',
-    'Tractorista (arado y rastreo)',
+    'Maquinaria para roturar',
     'Maquinaria para Siembra',
     'Mano de obra para siembra',
     'Semillas',
@@ -40,13 +39,13 @@ const CATEGORIAS_POR_FASE_BASE: Record<Fase, string[]> = {
 
 const UNIDAD_POR_CATEGORIA: Record<string, UnidadCategoria> = {
   'Alquiler de Terreno': 'ha',
-  'Alquiler tractor (arado y rastreo)': 'unidad',
-  'Tractorista (arado y rastreo)':'jornal',
+  'Maquinaria para roturar': 'ha',
+   'Maquinaria para Siembra': 'ha',
   'Mano de obra para siembra': 'jornal',
   'Semillas': 'kg',
-   'Agua/Riego': 'hora',
+  'Agua/Riego': 'hora',
   'Abonos': 'kg',
-  'Pesticidas': 'unidad',
+  'Pesticidas': 'litro',
   'Mano de obra para persticidas': 'jornal',
   'Fertilizantes': 'litro',
   'Mano de obra para fertilizantes': 'jornal',
@@ -54,8 +53,8 @@ const UNIDAD_POR_CATEGORIA: Record<string, UnidadCategoria> = {
   'Maquinaria para trillado': 'ha',
   'Mano de obra para trillado': 'jornal',
   'Mano de obra para venteado': 'jornal',
-   'Transporte': 'viaje',
-   'Herramientas': 'unidad',
+  'Transporte': 'viaje',
+  'Herramientas': 'unidad',
   'Otros': 'unidad',
 };
 

@@ -8,15 +8,15 @@ import {
   obtenerGastosPorLoteApi,
   obtenerUltimaProduccionLoteApi,
   registrarProduccionLoteApi,
-} from '@/src/services/api';
-import {
   actualizarCostoLocal,
   eliminarCostoLocal,
+  marcarCostoComoSincronizado,
   guardarBorradorProduccionLocal,
   guardarCostoLocal,
   obtenerBorradorProduccionLocal,
   obtenerCostosLocalesPorLote,
-} from '@/src/services/database';
+  emitirEventoGastoActualizado,
+} from '@/src/services/costos';
 import {
   Escenario,
   Fase,
@@ -34,7 +34,6 @@ import {
   sanitizarCantidadPorCategoria,
   validarCantidadPorCategoria,
 } from '../utils/estrategiasCalculo';
-import { emitirEventoGastoActualizado } from '@/src/services/gastosStorageEvents';
 
 const KG_POR_QUINTAL = 46;
 
@@ -131,6 +130,18 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
   const inferirFaseDesdeApi = (gasto: GastoApi): Fase =>
     inferirFaseDesdeCategoria(gasto.categoria, gasto.tipo_costo, estrategia.categoriasPorFase);
 
+  const mapearGastoLocal = (gasto: Awaited<ReturnType<typeof obtenerCostosLocalesPorLote>>[number]): Gasto => ({
+    id: `local-${gasto.id_local}`,
+    fase: inferirFaseDesdeCategoria(gasto.categoria, gasto.tipo_costo, estrategia.categoriasPorFase),
+    categoria: gasto.categoria,
+    descripcion: gasto.descripcion || '',
+    cantidad: String(gasto.cantidad),
+    monto: gasto.monto_total.toFixed(2),
+    origen: 'LOCAL',
+    idLocal: gasto.id_local,
+    sincronizado: gasto.sincronizado,
+  });
+
   const crearGastoUi = (input: {
     id: string;
     categoria: string;
@@ -203,20 +214,12 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
 
   const cargarGastosDelLote = async () => {
     const gastosLocales = await obtenerCostosLocalesPorLote({ idLoteLocal, idLoteServidor }).catch(() => []);
-    const gastosLocalesPendientes = gastosLocales.filter((gasto) => !gasto.sincronizado);
-    const gastosLocalesMapeados: Gasto[] = gastosLocalesPendientes.map((gasto) => ({
-      id: `local-${gasto.id_local}`,
-      fase: inferirFaseDesdeCategoria(gasto.categoria, gasto.tipo_costo, estrategia.categoriasPorFase),
-      categoria: gasto.categoria,
-      descripcion: gasto.descripcion || '',
-      cantidad: String(gasto.cantidad),
-      monto: gasto.monto_total.toFixed(2),
-      origen: 'LOCAL',
-      idLocal: gasto.id_local,
-      sincronizado: gasto.sincronizado,
-    }));
+    const gastosLocalesMapeados: Gasto[] = gastosLocales.map(mapearGastoLocal);
+    const gastosLocalesPendientes: Gasto[] = gastosLocales
+      .filter((gasto) => !gasto.sincronizado)
+      .map(mapearGastoLocal);
 
-    // Primero pintamos locales para no bloquear la UI en modo offline.
+    // Primero pintamos todo lo local para no bloquear la UI en modo offline.
     setGastos(gastosLocalesMapeados);
 
     if (!idLoteServidor) {
@@ -235,8 +238,9 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
         origen: 'API',
       }));
 
-      setGastos([...gastosApi, ...gastosLocalesMapeados]);
+      setGastos([...gastosApi, ...gastosLocalesPendientes]);
     } catch (error) {
+      setGastos(gastosLocalesMapeados);
       console.warn('No se pudieron cargar gastos remotos, se muestran locales:', error);
     }
   };
@@ -381,13 +385,12 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
     }
 
     const cantidad = validacionCantidad.cantidad;
-    const monto = Number(formGasto.monto);
-    if (!monto || monto <= 0) {
-      Alert.alert('Datos inválidos', estrategia.usaValidacionCantidadPorCategoria ? 'El monto debe ser mayor a cero.' : 'Cantidad y monto deben ser mayores a cero.');
+    const costoUnitario = Number(formGasto.monto);
+    if (!costoUnitario || costoUnitario <= 0) {
+      Alert.alert('Datos inválidos', estrategia.usaValidacionCantidadPorCategoria ? 'El costo unitario debe ser mayor a cero.' : 'Cantidad y costo unitario deben ser mayores a cero.');
       return;
     }
-
-    const costoUnitario = monto / cantidad;
+    const montoTotal = costoUnitario * cantidad;
     const tipoCosto = fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
     const tieneLoteLocal = typeof idLoteLocal === 'number' && idLoteLocal > 0;
     const tieneLoteServidor = typeof idLoteServidor === 'number' && idLoteServidor > 0;
@@ -397,7 +400,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
       categoria: formGasto.categoria,
       descripcion: formGasto.descripcion,
       cantidad,
-      monto,
+      monto: montoTotal,
       fase,
       origen: 'LOCAL',
       sincronizado: false,
@@ -415,91 +418,68 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
         throw new Error('No hay ID de lote válido para registrar el gasto.');
       }
 
-      void (async () => {
-        if (tieneLoteLocal && !tieneLoteServidor) {
-          const idLocalCreado = await guardarCostoLocal({
-            id_lote_local: idLoteLocal,
-            id_lote_servidor: null,
-            categoria: gastoOptimista.categoria,
-            descripcion: gastoOptimista.descripcion || null,
-            cantidad,
-            costo_unitario: costoUnitario,
-            tipo_costo: tipoCosto,
-            modalidad_pago: 'CICLO',
-            sincronizado: false,
-          });
+      const idLocalCreado = await guardarCostoLocal({
+        id_lote_local: tieneLoteLocal ? idLoteLocal : null,
+        id_lote_servidor: tieneLoteServidor ? idLoteServidor : null,
+        categoria: gastoOptimista.categoria,
+        descripcion: gastoOptimista.descripcion || null,
+        cantidad,
+        costo_unitario: costoUnitario,
+        tipo_costo: tipoCosto,
+        modalidad_pago: 'CICLO',
+        sincronizado: false,
+      });
 
-          setGastos((actuales) =>
-            actuales.map((item) =>
-              item.id === tempId
-                ? { ...item, id: `local-${idLocalCreado}`, idLocal: idLocalCreado, sincronizado: false, origen: 'LOCAL' }
-                : item
-            )
-          );
-          emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
-          return;
-        }
+      setGastos((actuales) =>
+        actuales.map((item) =>
+          item.id === tempId
+            ? { ...item, id: `local-${idLocalCreado}`, idLocal: idLocalCreado, sincronizado: false, origen: 'LOCAL' }
+            : item
+        )
+      );
 
-        if (tieneLoteServidor) {
-          try {
-            const creado = await crearGastoApi({
-              id_lote: idLoteServidor,
-              categoria: gastoOptimista.categoria,
-              descripcion: gastoOptimista.descripcion,
-              cantidad,
-              costo_unitario: costoUnitario,
-              tipo_costo: tipoCosto,
-              modalidad_pago: 'CICLO',
-            });
-
+      if (tieneLoteServidor) {
+        crearGastoApi({
+          id_lote: idLoteServidor,
+          categoria: gastoOptimista.categoria,
+          descripcion: gastoOptimista.descripcion,
+          cantidad,
+          costo_unitario: costoUnitario,
+          tipo_costo: tipoCosto,
+          modalidad_pago: 'CICLO',
+        })
+          .then((creado) => {
             const montoApi = Number(creado.monto_total ?? cantidad * costoUnitario);
             const faseApi = inferirFaseDesdeApi(creado);
 
             setGastos((actuales) =>
               actuales.map((item) =>
-                item.id === tempId
+                item.id === `local-${idLocalCreado}`
                   ? crearGastoUi({
-                    id: String(creado.id_gasto),
-                    categoria: creado.categoria,
-                    descripcion: creado.descripcion || '',
-                    cantidad: Number(creado.cantidad ?? cantidad),
-                    monto: montoApi,
-                    fase: faseApi,
-                    origen: 'API',
-                  })
+                      id: `local-${idLocalCreado}`,
+                      categoria: creado.categoria,
+                      descripcion: creado.descripcion || '',
+                      cantidad: Number(creado.cantidad ?? cantidad),
+                      monto: montoApi,
+                      fase: faseApi,
+                      origen: 'LOCAL',
+                      idLocal: idLocalCreado,
+                      sincronizado: true,
+                    })
                   : item
               )
             );
-            emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
-          } catch (apiError) {
-            console.warn('Fallo API al agregar gasto, guardando localmente:', apiError);
-            const idLocalCreado = await guardarCostoLocal({
-              id_lote_local: tieneLoteLocal ? idLoteLocal : null,
-              id_lote_servidor: tieneLoteServidor ? idLoteServidor : null,
-              categoria: gastoOptimista.categoria,
-              descripcion: gastoOptimista.descripcion || null,
-              cantidad,
-              costo_unitario: costoUnitario,
-              tipo_costo: tipoCosto,
-              modalidad_pago: 'CICLO',
-              sincronizado: false,
-            });
 
-            setGastos((actuales) =>
-              actuales.map((item) =>
-                item.id === tempId
-                  ? { ...item, id: `local-${idLocalCreado}`, idLocal: idLocalCreado, sincronizado: false, origen: 'LOCAL' }
-                  : item
-              )
-            );
+            void marcarCostoComoSincronizado(idLocalCreado, Number(creado.id_gasto));
             emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
-          }
-        }
-      })().catch((error) => {
-        console.warn('Error al persistir gasto optimista:', error);
-        setGastos((actuales) => actuales.filter((item) => item.id !== tempId));
-        Alert.alert('Sin conexión', 'No se pudo guardar el gasto. Intenta nuevamente.');
-      });
+          })
+          .catch((apiError) => {
+            console.warn('Fallo API al agregar gasto, se mantiene pendiente localmente:', apiError);
+            emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
+          });
+      } else {
+        emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
+      }
     } catch (error) {
       if (estrategia.mensajeNoLoteSinError) {
         console.warn('No se pudo registrar gasto:', error);
@@ -545,11 +525,14 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
 
   const editarGasto = (gasto: Gasto) => {
     setGastoEnEdicion(gasto as GastoEnEdicion);
+    const cantidadNum = Number(gasto.cantidad) || 1;
+    const montoNum = Number(gasto.monto) || 0;
+    const costoUnitarioTexto = cantidadNum > 0 ? (montoNum / cantidadNum).toFixed(2) : '0.00';
     setFormEdicion({
       categoria: gasto.categoria,
       descripcion: gasto.descripcion,
       cantidad: gasto.cantidad,
-      monto: gasto.monto,
+      monto: costoUnitarioTexto,
     });
     setModalEdicion(true);
   };
@@ -567,13 +550,12 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
     }
 
     const cantidad = validacionCantidad.cantidad;
-    const monto = Number(formEdicion.monto);
-    if (!monto || monto <= 0) {
-      Alert.alert('Datos inválidos', estrategia.usaValidacionCantidadPorCategoria ? 'El monto debe ser mayor a cero.' : 'Cantidad y monto deben ser mayores a cero.');
+    const costoUnitario = Number(formEdicion.monto);
+    if (!costoUnitario || costoUnitario <= 0) {
+      Alert.alert('Datos inválidos', estrategia.usaValidacionCantidadPorCategoria ? 'El costo unitario debe ser mayor a cero.' : 'Cantidad y costo unitario deben ser mayores a cero.');
       return;
     }
-
-    const costoUnitario = monto / cantidad;
+    const montoTotal = costoUnitario * cantidad;
     const tipoCosto = gastoEnEdicion.fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
     const gastoId = gastoEnEdicion.id;
     const snapshot = [...gastos];
@@ -581,7 +563,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
       categoria: formEdicion.categoria,
       descripcion: formEdicion.descripcion || '',
       cantidad: String(cantidad),
-      monto: monto.toFixed(2),
+      monto: montoTotal.toFixed(2),
     };
 
     setModalEdicion(false);
@@ -599,13 +581,13 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
     );
 
     try {
-      if (gastoEnEdicion.origen === 'LOCAL' && gastoEnEdicion.idLocal) {
+        if (gastoEnEdicion.origen === 'LOCAL' && gastoEnEdicion.idLocal) {
         await actualizarCostoLocal(gastoEnEdicion.idLocal, {
           categoria: formEdicion.categoria,
           descripcion: formEdicion.descripcion || null,
           cantidad,
           costo_unitario: costoUnitario,
-          monto_total: monto,
+          monto_total: montoTotal,
           tipo_costo: tipoCosto,
           modalidad_pago: 'CICLO',
           sincronizado: false,

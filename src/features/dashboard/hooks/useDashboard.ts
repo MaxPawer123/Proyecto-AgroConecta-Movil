@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getDb } from '@/src/services/sqlite';
-import { obtenerLotesLocales } from '@/src/services/database';
-import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '@/src/services/api';
-import { obtenerTotalGastosLocales, obtenerTotalGastosSubidosDesdeLotes } from '@/src/services/costosResumen';
-import { suscribirEventosGastos } from '@/src/services/gastosStorageEvents';
+import {
+  getDb,
+  obtenerLotesLocales,
+  obtenerLotesPorTipoCultivoApi,
+  type LoteApi,
+  obtenerTotalGastosLocales,
+  obtenerTotalGastosSubidosDesdeLotes,
+  suscribirEventosGastos,
+} from '@/src/services/dashboard';
 
 export type EstadisticasDashboard = {
   lotesActivos: number;

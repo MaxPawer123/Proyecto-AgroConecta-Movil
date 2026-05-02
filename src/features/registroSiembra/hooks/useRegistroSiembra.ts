@@ -2,10 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import {
-  iniciarSincronizacionAutomaticaSiembras,
-  registrarSiembraOfflineFirst,
-} from '@/src/services/siembraStorageSync';
+import { iniciarSincronizacionAutomaticaSiembras, registrarSiembraOfflineFirst } from '@/src/services/siembra';
 import { FormRegistroSiembra, UseRegistroSiembraParams, UseRegistroSiembraResult } from '../types';
 
 const formInicial: FormRegistroSiembra = {
@@ -42,6 +39,10 @@ const parsearFecha = (valor: string): string => {
 };
 
 const formatearNumeroGps = (valor: number): string => valor.toFixed(6);
+
+const obtenerEtiquetaOtrosPorRubro = (rubro: 'quinua' | 'hortalizas'): string => {
+  return rubro === 'quinua' ? 'Quinua - Otros' : 'Hortaliza - Otros';
+};
 
 const normalizarSuperficie = (valor: string, unidad: 'ha' | 'm2'): number => {
   const texto = valor.trim().replace(',', '.');
@@ -241,12 +242,6 @@ export function useRegistroSiembra({
   const confirmarSeleccionCultivos = useCallback((): boolean => {
     const tieneOtros = cultivosSeleccionados.includes(OPCION_TIPO_CULTIVO_OTROS);
     const variedadPersonalizada = variedadOtro.trim();
-    const nombreRubro = rubro === 'hortalizas' ? 'hortaliza' : 'quinua';
-
-    if (tieneOtros && !variedadPersonalizada) {
-      Alert.alert('Completa la variedad', `Escribe la otra variedad de ${nombreRubro} para continuar.`);
-      return false;
-    }
 
     if (tieneOtros && variedadPersonalizada) {
       const siguiente = cultivosSeleccionados
@@ -307,11 +302,19 @@ export function useRegistroSiembra({
     const superficie = normalizarSuperficie(form.superficie, superficieUnidad);
     const fechaSiembraIso = parsearFecha(form.fechaSiembra);
     const fechaCosechaIso = parsearFecha(form.fechaCosecha);
-    const cultivosArray = cultivosSeleccionados.length > 0
+    const cultivosArrayBase = cultivosSeleccionados.length > 0
       ? cultivosSeleccionados
       : form.tipoCultivo.trim()
         ? [form.tipoCultivo.trim()]
         : [];
+    const cultivosArray = cultivosArrayBase.map((cultivo) => {
+      if (cultivo === OPCION_TIPO_CULTIVO_OTROS) {
+        const variedadPersonalizada = variedadOtro.trim();
+        return variedadPersonalizada || obtenerEtiquetaOtrosPorRubro(rubro);
+      }
+
+      return cultivo;
+    });
     const cultivosString = cultivosArray.join(', ');
 
     if (!nombre || !cultivosString || !form.ubicacion || !form.superficie.trim() || !fechaSiembraIso || !fechaCosechaIso) {
