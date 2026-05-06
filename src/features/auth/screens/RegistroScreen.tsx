@@ -630,7 +630,7 @@ export function RegistroScreen() {
 
       <Text style={styles.successTitle}>¡Cuenta Creada Exitosamente!</Text>
       <Text style={styles.successSubtitle}>
-        Tu perfil está listo. Ya puedes empezar a registrar tus lotes y calcular tus costos.
+        Tu perfil está listo. Ya puedes empezar a registrar tus parcelas y calcular tus costos.
       </Text>
 
       <View style={styles.benefitsCard}>
@@ -639,7 +639,7 @@ export function RegistroScreen() {
             <Ionicons name="leaf-outline" size={18} color="#2BA14A" />
           </View>
           <View style={styles.benefitTextWrap}>
-            <Text style={styles.benefitTitle}>Gestiona tus Lotes</Text>
+            <Text style={styles.benefitTitle}>Gestiona tus Parcelas</Text>
             <Text style={styles.benefitText}>Registra y organiza tus parcelas productivas.</Text>
           </View>
         </View>

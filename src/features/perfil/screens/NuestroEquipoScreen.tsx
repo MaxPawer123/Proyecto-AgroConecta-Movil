@@ -50,11 +50,11 @@ const TEAM_MEMBERS: TeamMember[] = [
   },
   {
     id: '6', 
-    name: 'Enrique Javier Mamani Nina',
+    name: 'Yoshio Nicolas Parisaca Coarite',
     role: 'Comunicación Social',
-    phone: '+591 79149684',
-    email: 'enriquejaviermnina@gmail.com',
-    image: require('../../../../assets/images/enrique.png'),
+    phone: '+591 77509232',
+    email: 'yoshiop1517@gmail.com',
+    image: require('../../../../assets/images/yoshio.png'),
   },
 ];
 

@@ -281,7 +281,7 @@ export function usePerfil() {
       });
 
       await cargarPerfil();
-      Alert.alert('Perfil actualizado', 'Tus datos se guardaron localmente en este dispositivo.');
+      Alert.alert('Perfil actualizado', 'Tus datos se guardaron en este dispositivo.');
     } catch (error) {
       console.warn('No se pudo guardar el perfil local:', error);
       Alert.alert('Error', 'No se pudo guardar el perfil local. Intenta nuevamente.');

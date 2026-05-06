@@ -89,7 +89,7 @@ export default function Inicio() {
           <Image source={require('../assets/images/yapu_aroma.png')} style={styles.logo} />
           <Text style={styles.title}>Yapu Aroma</Text>
           <Text style={styles.educativo}>
-            Gestiona tus cultivos de quinua y calcula tus costos.
+           Organiza tus cultivos y lleva el control exacto de tus gastos.
           </Text>
         </Animated.View>
 

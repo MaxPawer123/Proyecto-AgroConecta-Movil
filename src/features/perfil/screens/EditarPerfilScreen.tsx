@@ -258,7 +258,7 @@ export function EditarPerfilScreen() {
               activeOpacity={0.9}
             >
               <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>{guardandoPerfil ? 'Guardando...' : 'Guardar cambios locales'}</Text>
+              <Text style={styles.saveButtonText}>{guardandoPerfil ? 'Guardando...' : 'Guardar cambios '}</Text>
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
