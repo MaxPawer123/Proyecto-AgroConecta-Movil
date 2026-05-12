@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuthLocal } from '@/src/features/auth/hooks/useAuthLocal';
-import { getDb } from '@/src/services/shared';
-import { sincronizarSiembrasPendientes } from '@/src/services/siembra';
+import { getDb } from '@/src/core/database/sqlite.config';
+import { sincronizarSiembrasPendientes } from '@/src/modules/siembra/siembra.sync';
 
 export type PerfilProductor = {
   idUsuario: number;

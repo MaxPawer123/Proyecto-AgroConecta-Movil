@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { iniciarSincronizacionAutomaticaSiembras, registrarSiembraOfflineFirst } from '@/src/services/siembra';
+import { iniciarSincronizacionAutomaticaSiembras, registrarSiembraOfflineFirst } from '@/src/modules/siembra/siembra.sync';
 import { FormRegistroSiembra, UseRegistroSiembraParams, UseRegistroSiembraResult } from '../types';
 
 const formInicial: FormRegistroSiembra = {

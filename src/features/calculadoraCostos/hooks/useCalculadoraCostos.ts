@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import {
-  actualizarGastoApi,
-  crearGastoApi,
-  eliminarGastoApi,
-  GastoApi,
-  obtenerGastosPorLoteApi,
-  obtenerUltimaProduccionLoteApi,
-  registrarProduccionLoteApi,
   actualizarCostoLocal,
   eliminarCostoLocal,
   marcarCostoComoSincronizado,
@@ -15,8 +8,17 @@ import {
   guardarCostoLocal,
   obtenerBorradorProduccionLocal,
   obtenerCostosLocalesPorLote,
-  emitirEventoGastoActualizado,
-} from '@/src/services/costos';
+} from '@/src/modules/costos/costos.repository';
+import { emitirEventoGastoActualizado } from '@/src/modules/gastos/gastos.events';
+import {
+  crearGastoApi,
+  eliminarGastoApi,
+  GastoApi,
+  obtenerGastosPorLoteApi,
+  actualizarGastoApi,
+} from '@/src/core/network/api/gastos';
+import { registrarProduccionLoteApi } from '@/src/core/network/api/produccion';
+import { obtenerUltimaProduccionLoteApi } from '@/src/core/network/api/produccion';
 import {
   Escenario,
   Fase,

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { registrarUsuarioYProductor } from '@/src/services/auth';
+import { registrarUsuarioYProductor } from '@/src/modules/auth/auth.repository';
 
 type FormRegistro = {
   nombre: string;

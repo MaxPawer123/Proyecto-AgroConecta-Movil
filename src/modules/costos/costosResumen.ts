@@ -1,5 +1,6 @@
-import { getDb } from './sqlite';
-import { obtenerGastosPorLoteApi, obtenerLotesPorTipoCultivoApi, type GastoApi, type LoteApi } from './api';
+import { getDb } from '../../core/database/sqlite.config';
+import { obtenerGastosPorLoteApi, type GastoApi } from '../../core/network/api/gastos';
+import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '../../core/network/api/lotes';
 
 type LoteResumenApi = Pick<LoteApi, 'id_lote'>;
 
@@ -35,9 +36,7 @@ function obtenerIdLote(valor: number | string | null | undefined): number | null
 
 export async function obtenerTotalGastosLocales(): Promise<number> {
   const db = await getDb();
-  const row = await db.getFirstAsync<{ total: number }>(
-    'SELECT COALESCE(SUM(monto_total), 0) as total FROM gasto_lote'
-  );
+  const row = await db.getFirstAsync<{ total: number }>('SELECT COALESCE(SUM(monto_total), 0) as total FROM gasto_lote');
 
   return Number(row?.total ?? 0);
 }
@@ -49,9 +48,7 @@ export async function obtenerTotalGastosSubidosDesdeLotes(lotes: LoteApi[]): Pro
     return 0;
   }
 
-  const gastosPorLote = await Promise.all(
-    idsUnicos.map((idLote) => obtenerGastosPorLoteApi(idLote).catch(() => []))
-  );
+  const gastosPorLote = await Promise.all(idsUnicos.map((idLote) => obtenerGastosPorLoteApi(idLote).catch(() => [])));
 
   return gastosPorLote.reduce((total, gastos) => total + sumarGastosApi(gastos), 0);
 }
@@ -69,9 +66,7 @@ export async function obtenerTotalGastosSubidosPorTipos(tiposCultivo: string[]):
     return 0;
   }
 
-  const lotesResultados = await Promise.allSettled(
-    tiposNormalizados.map((tipo) => obtenerLotesPorTipoCultivoApi(tipo))
-  );
+  const lotesResultados = await Promise.allSettled(tiposNormalizados.map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
 
   const lotesUnicos = deduplicarIds(
     lotesResultados.flatMap((resultado) => (resultado.status === 'fulfilled' ? resultado.value : []))

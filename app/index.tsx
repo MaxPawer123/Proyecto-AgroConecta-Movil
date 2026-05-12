@@ -57,7 +57,7 @@ export default function Inicio() {
         if (!activo) return;
 
         if (existeCuenta) {
-          router.replace('/(tabs)' as any); //menu -> (tabs)
+          router.replace('/menu' as any); //menu -> (tabs)
           return;
         }
 

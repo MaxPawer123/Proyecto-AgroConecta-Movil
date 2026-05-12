@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  getDb,
-  obtenerLotesLocales,
-  obtenerLotesPorTipoCultivoApi,
-  type LoteApi,
-  obtenerTotalGastosLocales,
-  obtenerTotalGastosSubidosDesdeLotes,
-  suscribirEventosGastos,
-} from '@/src/services/dashboard';
+import { getDb } from '@/src/core/database/sqlite.config';
+import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '@/src/core/network/api/lotes';
+import { obtenerLotesLocales } from '@/src/modules/siembra/siembra.repository';
+import { obtenerTotalGastosLocales, obtenerTotalGastosSubidosDesdeLotes } from '@/src/modules/costos/costosResumen';
+import { suscribirEventosGastos } from '@/src/modules/gastos/gastos.events';
 
 export type EstadisticasDashboard = {
   lotesActivos: number;

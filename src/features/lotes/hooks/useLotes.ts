@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import {
-  insertarLoteLocal,
   actualizarCultivosDeLote,
-  actualizarLoteLocal,
-  actualizarLoteLocalPorServidor,
   eliminarLoteLocal,
   eliminarLoteLocalPorServidor,
   obtenerLotesLocales,
-  actualizarLoteApi,
-  eliminarLoteApi,
-  obtenerGastosPorLoteApi,
-  obtenerLotesPorTipoCultivoApi,
+  insertarLoteLocal,
+  actualizarLoteLocal,
+  actualizarLoteLocalPorServidor,
+} from '@/src/modules/siembra/siembra.repository';
+import {
   iniciarSincronizacionAutomaticaSiembras,
   detenerSincronizacionAutomaticaSiembras,
   sincronizarSiembrasPendientes,
   suscribirEventosSincronizacionSiembras,
-  obtenerTotalGastosLotesQuinuaYHortalizas,
-} from '@/src/services/lotes';
+} from '@/src/modules/siembra/siembra.sync';
+import {
+  actualizarLoteApi,
+  eliminarLoteApi,
+  obtenerLotesPorTipoCultivoApi,
+} from '@/src/core/network/api/lotes';
+import { obtenerGastosPorLoteApi } from '@/src/core/network/api/gastos';
+import { obtenerTotalGastosLotesQuinuaYHortalizas } from '@/src/modules/costos/costosResumen';
 import { RUBRO_CONFIG } from '../utils/constants';
 import { FormEdicionLote, LoteViewModel, RubroType, UseLotesResult } from '../types';
 
