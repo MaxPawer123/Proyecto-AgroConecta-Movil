@@ -11,8 +11,9 @@ export default function CalculadoraCostosRoute() {
   }>();
 
   function normalizarRubro(value: string | undefined): RubroCalculadora {
-    if (value === 'quinua') return 'quinua';
-    if (value === 'hortalizas') return 'hortalizas';
+    const rubro = value?.trim().toLowerCase();
+    if (rubro === 'quinua') return 'quinua';
+    if (rubro === 'hortalizas') return 'hortalizas';
     return 'quinua'; // valor por defecto
   }
 

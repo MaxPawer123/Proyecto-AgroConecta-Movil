@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { getDb } from '@/src/services/shared';
+import { getDb } from '@/src/core/database/sqlite.config';
 
 export default function Inicio() {
   const router = useRouter();

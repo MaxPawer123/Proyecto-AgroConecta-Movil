@@ -14,8 +14,9 @@ const RUBRO_CONFIG: Record<RubroResultado, RubroConfig> = {
 };
 
 export function normalizarRubro(rubro: string | undefined): RubroResultado {
-  if (rubro === 'quinua' || rubro === 'hortalizas') {
-    return rubro;
+  const valor = rubro?.trim().toLowerCase();
+  if (valor === 'quinua' || valor === 'hortalizas') {
+    return valor;
   }
 
   return 'hortalizas';

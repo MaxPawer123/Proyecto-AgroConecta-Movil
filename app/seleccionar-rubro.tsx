@@ -15,9 +15,10 @@ export default function SeleccionarRubro() {
   // Función para ir a la pantalla de lotes pasando el rubro elegido
   const irALotes = (rubroSeleccionado: string) => {
     // Redirige a la pantalla correspondiente según el rubro seleccionado
-    const ruta = rubroSeleccionado === 'Quinua' ? '/lotes_quinua' : '/lotes_hortalizas';
+    const rubroNormalizado = rubroSeleccionado.trim().toLowerCase();
+    const ruta = rubroNormalizado === 'quinua' ? '/lotes_quinua' : '/lotes_hortalizas';
     // Usamos la forma objeto y casteamos a any para evitar restricciones de tipos rígidas
-    router.push({ pathname: ruta, params: { rubro: rubroSeleccionado } } as any);
+    router.push({ pathname: ruta, params: { rubro: rubroNormalizado } } as any);
   };
 
   return (

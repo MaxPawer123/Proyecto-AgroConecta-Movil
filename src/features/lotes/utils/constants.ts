@@ -52,6 +52,6 @@ export const RUBRO_CONFIG: Record<RubroType, RubroConfig> = {
 
 export const normalizeRubro = (value?: string | string[] | null): RubroType => {
   const raw = Array.isArray(value) ? value[0] : value;
-  if (raw === 'hortalizas') return 'hortalizas';
+  if (raw?.trim().toLowerCase() === 'hortalizas') return 'hortalizas';
   return 'quinua';
 };
