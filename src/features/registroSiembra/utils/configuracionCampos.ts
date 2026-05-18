@@ -16,15 +16,24 @@ const TIPOS_QUINUA = [
 ];
 
 const TIPOS_HORTALIZA = [
-   'Papa',
+  'Zanahoria', 
+  'Cebolla',
+  'Beterraga', 
+  'Nabo', 
+  'Haba',
+  'Otros'
+];
+
+// Papa y haba es diferen
+
+    {/*  'Papa',
    'Cebolla', 
    'Zanahoria', 
    'Beterraga', 
-   'Haba', 
+   'Haba',    
    'Nabo', 
    'Otros'
-];
-
+     */}
 const camposBase = {
   nombre: {
     key: 'nombre',

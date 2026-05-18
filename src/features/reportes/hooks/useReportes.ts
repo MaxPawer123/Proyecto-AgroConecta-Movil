@@ -74,9 +74,10 @@ const TIPOS_CULTIVO_BASE = [
   'zanahoria',
   'beterraga',
   'nabo',
-  'lechuga',
-  'tuberculo',
 ];
+
+
+ 
 const BACKEND_TIMEOUT_MS = 3500;
 
 function normalizarTexto(valor: unknown): string {

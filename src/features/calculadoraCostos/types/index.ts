@@ -3,7 +3,7 @@ export type RubroCalculadora = 'quinua' | 'hortalizas';
 export type Fase = 'Siembra' | 'Crecimiento' | 'Cosecha';
 export type UnidadCantidad = 'kg' | 'qq';
 export type UnidadPrecio = 'bskg' | 'bsqq';
-export type UnidadCategoria = 'ha' | 'kg' | 'hora' | 'jornal' | 'unidad' | 'viaje' | 'litro' ;
+export type UnidadCategoria = 'ha' | 'kg' | 'hora' | 'jornal' | 'unidad' | 'viaje' | 'litro' | 'rollo';
 
 export type GastoOrigen = 'API' | 'LOCAL';
 

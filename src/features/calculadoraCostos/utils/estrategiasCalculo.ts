@@ -6,14 +6,14 @@ import {
   ValidacionCantidad,
 } from '../types';
 
-const CATEGORIAS_POR_FASE_BASE: Record<Fase, string[]> = {
+const CATEGORIAS_POR_FASE_QUINUA: Record<Fase, string[]> = {
   Siembra: [
     'Alquiler de Terreno',
     'Maquinaria para roturar',
     'Maquinaria para Siembra',
     'Mano de obra para siembra',
     'Semillas',
-    'Abonos',
+    'Abono',
     'Agua/Riego',
     'Refrigerio',
     'Otros',
@@ -36,11 +36,10 @@ const CATEGORIAS_POR_FASE_BASE: Record<Fase, string[]> = {
     'Otros',
   ],
 };
-
-const UNIDAD_POR_CATEGORIA: Record<string, UnidadCategoria> = {
+const UNIDAD_POR_CATEGORIA_QUINUA: Record<string, UnidadCategoria> = {
   'Alquiler de Terreno': 'ha',
   'Maquinaria para roturar': 'ha',
-   'Maquinaria para Siembra': 'ha',
+  'Maquinaria para Siembra': 'ha',
   'Mano de obra para siembra': 'jornal',
   'Semillas': 'kg',
   'Agua/Riego': 'hora',
@@ -58,7 +57,83 @@ const UNIDAD_POR_CATEGORIA: Record<string, UnidadCategoria> = {
   'Otros': 'unidad',
 };
 
-const CATEGORIAS_CANTIDAD_ENTERA = new Set<string>(['Herramientas', 'Transporte', 'Otros']);
+const CATEGORIAS_POR_FASE_HORTALIZAS: Record<Fase, string[]> = {
+Siembra: [
+    'Alquiler de Terreno',
+    'Maquinaria para roturar',
+    'Mano de obra para aradura',
+    'Maquinaria para rastreo "barbecho"',
+    'Mano de obra para rastreo',
+    'Mano de obra para Colocación de paja',
+    'Maquinaria para Siembra',
+    'Mano de obra para siembra',
+    'Mano de obra para Surcado manual',
+    'Abono',
+    'Mano de obra para el abono',
+    'Semillas',
+   
+    'Refrigerio',
+    'Otros',
+  ],
+  Crecimiento: [
+    'Herbicidas',
+    'Mano de obra para Herbicidas',
+    'Mano de obra para Deshierbe',
+    'Fertilizantes',
+    'Mano de obra para fertilizantes',   
+    'Riego (cinta de lluvia)',
+    'Mano de obra para Riego',
+    'Mano de obra para carpida',
+    'Refrigerio',
+    'Otros',
+  ],
+  Cosecha: [
+    'Maquinaria para lavadora',
+    'Mano de obra para lavadora',
+    'Mano de obra para enbolsado',
+    'Transporte',
+    'Refrigerio',
+    'Otros',
+  ],
+};
+
+const UNIDAD_POR_CATEGORIA_HORTALIZAS: Record<string, UnidadCategoria> = {
+  //siembra
+  'Alquiler de Terreno': 'hora',
+  'Maquinaria para roturar': 'ha',
+  'Mano de obra para aradura': 'jornal',
+  'Maquinaria para rastreo "barbecho"': 'ha',
+  'Mano de obra para rastreo': 'jornal',
+  'Mano de obra para Colocación de paja': 'jornal',
+  'Maquinaria para Siembra': 'ha',
+  'Mano de obra para siembra': 'jornal',
+  'Mano de obra para Surcado manual': 'ha',
+  'Abono': 'kg',
+  'Mano de obra para el abono': 'ha',
+  'Semillas': 'kg',
+  
+  //crecimiento
+  'Herbicidas': 'litro',
+  'Mano de obra para Herbicidas': 'jornal',
+  'Mano de obra para Deshierbe': 'jornal',
+  'Fertilizantes': 'litro',
+  'Mano de obra para fertilizantes': 'jornal',
+  'Riego (cinta de lluvia)': 'rollo',
+  'Mano de obra para Riego': 'jornal',
+  'Mano de obra para carpida': 'jornal',
+  
+  //cosecha
+  'Maquinaria para lavadora': 'ha',
+  'Mano de obra para lavadora': 'jornal',
+  'Mano de obra para enbolsado': 'jornal',
+  'Transporte': 'viaje',
+  'Refrigerio': 'unidad',
+  'Herramientas': 'unidad',
+  'Otros': 'unidad',
+};
+
+const CATEGORIAS_CANTIDAD_ENTERA_QUINUA = new Set<string>(['Herramientas', 'Transporte', 'Otros']);
+const CATEGORIAS_CANTIDAD_ENTERA_HORTALIZAS = new Set<string>(['Herramientas', 'Transporte', 'Otros']);
 
 const sanitizarDecimal = (texto: string): string => {
   const conPunto = texto.replace(/,/g, '.').replace(/[^\d.]/g, '');
@@ -72,12 +147,16 @@ export const sanitizarCantidadPorCategoria = (
   texto: string,
   rubro: RubroCalculadora,
 ): string => {
-  if (rubro === 'quinua') {
-    if (CATEGORIAS_CANTIDAD_ENTERA.has(categoria)) {
+  if (rubro === 'quinua' || rubro === 'hortalizas') {
+    if (CATEGORIAS_CANTIDAD_ENTERA_QUINUA.has(categoria)) {
       return texto.replace(/\D/g, '');
     }
     return sanitizarDecimal(texto);
   }
+
+  if (CATEGORIAS_CANTIDAD_ENTERA_HORTALIZAS.has(categoria)) {
+      return texto.replace(/\D/g, '');
+    }
 
   return texto;
 };
@@ -87,7 +166,7 @@ export const validarCantidadPorCategoria = (
   cantidadTexto: string,
   rubro: RubroCalculadora,
 ): ValidacionCantidad => {
-  if (rubro === 'quinua') {
+  if (rubro === 'quinua' || rubro === 'hortalizas') {
     const cantidadLimpia = cantidadTexto.trim();
     const unidad = obtenerUnidadCategoria(categoria);
 
@@ -100,7 +179,7 @@ export const validarCantidadPorCategoria = (
       return { esValida: false, mensaje: `La cantidad en ${unidad} debe ser mayor a cero.` };
     }
 
-    if (CATEGORIAS_CANTIDAD_ENTERA.has(categoria) && !Number.isInteger(cantidad)) {
+    if (CATEGORIAS_CANTIDAD_ENTERA_QUINUA.has(categoria) && !Number.isInteger(cantidad)) {
       return { esValida: false, mensaje: `La categoria ${categoria} solo permite cantidades enteras.` };
     }
 
@@ -116,7 +195,7 @@ export const validarCantidadPorCategoria = (
 };
 
 export const obtenerUnidadCategoria = (categoria: string): UnidadCategoria =>
-  UNIDAD_POR_CATEGORIA[categoria] || 'unidad';
+  UNIDAD_POR_CATEGORIA_QUINUA[categoria] || UNIDAD_POR_CATEGORIA_HORTALIZAS[categoria] || 'unidad';
 
 export const estrategiasCalculo: Record<RubroCalculadora, RubroStrategy> = {
   quinua: {
@@ -124,14 +203,14 @@ export const estrategiasCalculo: Record<RubroCalculadora, RubroStrategy> = {
     titulo: 'Calculadora de Costos de Quinua',
     subtitulo: 'Calcula tus gastos, ganancias y punto de equilibrio',
     rutaResultados: '/resultados_quinua',
-    categoriasPorFase: CATEGORIAS_POR_FASE_BASE,
+    categoriasPorFase: CATEGORIAS_POR_FASE_QUINUA,
     mostrarPendienteOffline: true,
     usaValidacionCantidadPorCategoria: true,
     mostrarPuntoEquilibrioEnUnidadSeleccionada: true,
     mensajeErrorGuardarProduccionConDetalle: true,
     mensajeNoLoteSinError: true,
-    unidadPorCategoria: UNIDAD_POR_CATEGORIA,
-    categoriasCantidadEntera: CATEGORIAS_CANTIDAD_ENTERA,
+    unidadPorCategoria: UNIDAD_POR_CATEGORIA_QUINUA,
+    categoriasCantidadEntera: CATEGORIAS_CANTIDAD_ENTERA_QUINUA,
     placeholderDescripcion: '',
   },
   hortalizas: {
@@ -139,14 +218,14 @@ export const estrategiasCalculo: Record<RubroCalculadora, RubroStrategy> = {
     titulo: 'Calculadora de Costos de Hortalizas',
     subtitulo: 'Calcula tus gastos, ganancias y punto de equilibrio',
     rutaResultados: '/resultados_hortalizas',
-    categoriasPorFase: CATEGORIAS_POR_FASE_BASE,
+    categoriasPorFase: CATEGORIAS_POR_FASE_HORTALIZAS,
     mostrarPendienteOffline: true,
     usaValidacionCantidadPorCategoria: true,
     mostrarPuntoEquilibrioEnUnidadSeleccionada: true,
     mensajeErrorGuardarProduccionConDetalle: true,
     mensajeNoLoteSinError: true,
-    unidadPorCategoria: UNIDAD_POR_CATEGORIA,
-    categoriasCantidadEntera: CATEGORIAS_CANTIDAD_ENTERA,
+    unidadPorCategoria: UNIDAD_POR_CATEGORIA_HORTALIZAS,
+    categoriasCantidadEntera: CATEGORIAS_CANTIDAD_ENTERA_HORTALIZAS,
     placeholderDescripcion: '',
   },
 };
