@@ -121,7 +121,11 @@ export function ModalRegistroSiembra({
       ?.opciones ?? [];
 
   const placeholderOtro =
-    rubro === 'hortalizas' ? 'Escribe otra variedad de hortaliza' : 'Escribe otra variedad de quinua';
+    rubro === 'hortalizas'
+      ? 'Escribe otra variedad de hortaliza'
+      : rubro === 'papa'
+        ? 'Escribe otra variedad de papa'
+        : 'Escribe otra variedad de quinua';
 
   useEffect(() => {
     if (!visible) {

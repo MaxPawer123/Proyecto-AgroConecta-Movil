@@ -74,6 +74,7 @@ const TIPOS_CULTIVO_BASE = [
   'zanahoria',
   'beterraga',
   'nabo',
+  'otros',
 ];
 
 

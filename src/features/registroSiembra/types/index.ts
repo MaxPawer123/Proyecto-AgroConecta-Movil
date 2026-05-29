@@ -1,4 +1,4 @@
-export type RubroSiembra = 'quinua' | 'hortalizas';
+export type RubroSiembra = 'quinua' | 'hortalizas' | 'papa';
 
 export type CampoFormularioKey =
 	| 'nombre'

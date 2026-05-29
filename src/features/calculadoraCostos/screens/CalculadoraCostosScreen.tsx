@@ -22,6 +22,7 @@ function normalizarRubro(value: string | undefined): RubroCalculadora {
   const rubro = value?.trim().toLowerCase();
   if (rubro === 'quinua') return 'quinua';
   if (rubro === 'hortalizas') return 'hortalizas';
+  if (rubro === 'papa') return 'papa';
   return 'quinua';
 }
 

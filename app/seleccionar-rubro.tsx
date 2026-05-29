@@ -16,7 +16,11 @@ export default function SeleccionarRubro() {
   const irALotes = (rubroSeleccionado: string) => {
     // Redirige a la pantalla correspondiente según el rubro seleccionado
     const rubroNormalizado = rubroSeleccionado.trim().toLowerCase();
-    const ruta = rubroNormalizado === 'quinua' ? '/lotes_quinua' : '/lotes_hortalizas';
+    const ruta = rubroNormalizado === 'quinua'
+      ? '/lotes_quinua'
+      : rubroNormalizado === 'papa'
+        ? '/lotes_papa'
+        : '/lotes_hortalizas';
     // Usamos la forma objeto y casteamos a any para evitar restricciones de tipos rígidas
     router.push({ pathname: ruta, params: { rubro: rubroNormalizado } } as any);
   };
@@ -63,9 +67,24 @@ export default function SeleccionarRubro() {
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>Parcelas de Hortalizas</Text>
-              <Text style={styles.cardDesc}>Calcula la siembra de hortalizas como papa, cebolla, zanahoria, etc.</Text>
+              <Text style={styles.cardDesc}>Calcula la siembra de hortalizas como cebolla, zanahoria</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#f97316" />
+          </TouchableOpacity>
+
+          {/* TARJETA PAPA */}
+          <TouchableOpacity
+            style={[styles.card, { borderColor: '#FFE082', backgroundColor: '#FFF8E1', marginTop: 4 }]}
+            onPress={() => irALotes('Papa')}
+          >
+            <View style={styles.iconContainerWarm}>
+              <MaterialCommunityIcons name="food-variant" size={40} color="#D97706" />
+            </View>
+            <View style={styles.cardText}>
+              <Text style={styles.cardTitle}>Parcelas de Papa</Text>
+              <Text style={styles.cardDesc}>Calcula la siembra y costos de papa.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#D97706" />
           </TouchableOpacity>
 
         </View>
@@ -87,6 +106,7 @@ const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', padding: 20, borderRadius: 20, borderWidth: 2 },
   iconContainerGreen: { width: 64, height: 64, backgroundColor: '#dcfce7', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
   iconContainerOrange: { width: 64, height: 64, backgroundColor: '#ffedd5', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  iconContainerWarm: { width: 64, height: 64, backgroundColor: '#fff3db', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
   cardText: { flex: 1 },
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
   cardDesc: { fontSize: 13, color: '#4b5563', lineHeight: 18 },

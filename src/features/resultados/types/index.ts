@@ -1,4 +1,4 @@
-export type RubroResultado = 'quinua' | 'hortalizas';
+export type RubroResultado = 'quinua' | 'hortalizas' | 'papa';
 
 export type Gasto = {
   id: string;

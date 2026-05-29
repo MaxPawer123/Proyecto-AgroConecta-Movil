@@ -19,6 +19,7 @@ function normalizarRubro(tipoCultivo?: string): RubroCalculadora {
   if (!tipoCultivo) return 'quinua';
   const lower = tipoCultivo.toLowerCase();
   if (lower.includes('hortaliza')) return 'hortalizas';
+  if (lower.includes('papa')) return 'papa';
   if (lower.includes('quinua')) return 'quinua';
   if (lower.includes('haba')) return 'hortalizas'; // mapear haba a hortalizas por defecto
   return 'quinua'; // defecto

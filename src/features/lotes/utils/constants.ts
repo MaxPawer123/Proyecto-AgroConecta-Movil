@@ -9,6 +9,10 @@ const HORTALIZAS_DEFAULT_IMAGE = Image.resolveAssetSource(
   require('../../../../assets/images/hortalizas_parcela.jpg')
 ).uri ?? '';
 
+const PAPA_DEFAULT_IMAGE = Image.resolveAssetSource(
+  require('../../../../assets/images/papa1.webp')
+).uri ?? '';
+
 const DEFAULT_CONFIG: RubroConfig = {
   rubro: 'quinua',
   routeParam: 'quinua',
@@ -48,10 +52,29 @@ export const RUBRO_CONFIG: Record<RubroType, RubroConfig> = {
     usesProductCatalogSync: false,
     stopAutoSyncOnUnmount: true,
   },
+  papa: {
+    rubro: 'papa',
+    routeParam: 'papa',
+    codePrefix: 'P',
+    title: 'Mis Parcelas de Papa',
+    subtitle: 'Calcula tus cultivos de papa, costos y proyecciones',
+    productLabel: 'Variedad',
+    defaultProductName: 'Papa',
+    defaultVariedad: 'Huaycha',
+    defaultImage: PAPA_DEFAULT_IMAGE,
+    fallbackProductoId: 3,
+    quickSyncedLabel: 'SINCRONIZADO',
+    quickPendingLabel: 'P',
+    localSyncedLabel: 'SUBIENDO',
+    localPendingLabel: 'PS',
+    usesProductCatalogSync: false,
+    stopAutoSyncOnUnmount: true,
+  },
 };
 
 export const normalizeRubro = (value?: string | string[] | null): RubroType => {
   const raw = Array.isArray(value) ? value[0] : value;
+  if (raw?.trim().toLowerCase() === 'papa') return 'papa';
   if (raw?.trim().toLowerCase() === 'hortalizas') return 'hortalizas';
   return 'quinua';
 };

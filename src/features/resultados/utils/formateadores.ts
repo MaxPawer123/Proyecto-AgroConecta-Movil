@@ -11,11 +11,16 @@ const RUBRO_CONFIG: Record<RubroResultado, RubroConfig> = {
     subtitle: 'Analisis financiero de tu parcela',
     accentColor: '#2eaa51',
   },
+  papa: {
+    title: 'Resultados Papa',
+    subtitle: 'Analisis financiero de tu parcela',
+    accentColor: '#d97706',
+  },
 };
 
 export function normalizarRubro(rubro: string | undefined): RubroResultado {
   const valor = rubro?.trim().toLowerCase();
-  if (valor === 'quinua' || valor === 'hortalizas') {
+  if (valor === 'quinua' || valor === 'hortalizas' || valor === 'papa') {
     return valor;
   }
 

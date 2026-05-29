@@ -1,4 +1,4 @@
-export type RubroType = 'quinua' | 'hortalizas';
+export type RubroType = 'quinua' | 'hortalizas' | 'papa';
 
 export type LoteEstadoSync = 'SINCRONIZADO' | 'PENDIENTE' | string;
 
@@ -50,7 +50,7 @@ export interface LotesStats {
 export interface RubroConfig {
 	rubro: RubroType;
 	routeParam: RubroType;
-	codePrefix: 'Q' | 'H';
+	codePrefix: 'Q' | 'H' | 'P';
 	title: string;
 	subtitle: string;
 	productLabel: string;

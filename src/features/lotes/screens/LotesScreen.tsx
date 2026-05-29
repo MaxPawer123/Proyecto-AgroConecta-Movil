@@ -14,6 +14,7 @@ import { Stack, router, useFocusEffect, useLocalSearchParams } from 'expo-router
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ModalRegistrarSiembraHortalizas from '@/app/_components/ModalRegistrarSiembra_Hortalizas';
 import ModalRegistrarSiembraQuinua from '@/app/_components/ModalRegistrarSiembra_Quinua';
+import ModalRegistrarSiembraPapa from '@/app/_components/ModalRegistrarSiembra_Papa';
 import { CalculadoraCostosScreen } from '@/src/features/calculadoraCostos';
 import { LoteItem } from '../components/LoteItem';
 import { RubroType } from '../types';
@@ -154,6 +155,15 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
               visible={modalOpen}
               onClose={() => {
                 setModalOpen(false);
+              }}
+              onCreated={manejarCreacionLote}
+            />
+          ) : rubroResuelto === 'papa' ? (
+            <ModalRegistrarSiembraPapa
+              visible={modalOpen}
+              onClose={() => {
+                setModalOpen(false);
+                void cargarLotesLocales();
               }}
               onCreated={manejarCreacionLote}
             />

@@ -172,6 +172,17 @@ const esLoteDelRubro = (item: any, rubro: RubroType): boolean => {
     return texto.includes('quinua') || categorias.includes('quinua');
   }
 
+  if (rubro === 'papa') {
+    return (
+      texto.includes('papa') ||
+      categorias.includes('papa') ||
+      texto.includes('huaycha') ||
+      texto.includes('imilla') ||
+      texto.includes('desiree') ||
+      texto.includes('runa')
+    );
+  }
+
   return categorias.includes('hortaliza') || (!texto.includes('quinua') && !categorias.includes('quinua'));
 };
 

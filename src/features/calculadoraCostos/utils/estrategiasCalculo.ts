@@ -76,6 +76,8 @@ Siembra: [
     'Otros',
   ],
   Crecimiento: [
+    'Pesticidas',
+    'Mano de obra para persticidas',
     'Herbicidas',
     'Mano de obra para Herbicidas',
     'Mano de obra para Deshierbe',
@@ -97,6 +99,12 @@ Siembra: [
   ],
 };
 
+const CATEGORIAS_POR_FASE_PAPA: Record<Fase, string[]> = {
+  Siembra: ['Semilla', 'Preparacion de suelo', 'Fertilizante base', 'Mano de obra'],
+  Crecimiento: ['Riego', 'Control de plagas', 'Fertilizante foliar', 'Deshierbe'],
+  Cosecha: ['Cosecha', 'Transporte', 'Clasificacion', 'Almacenamiento'],
+};
+
 const UNIDAD_POR_CATEGORIA_HORTALIZAS: Record<string, UnidadCategoria> = {
   //siembra
   'Alquiler de Terreno': 'hora',
@@ -116,6 +124,8 @@ const UNIDAD_POR_CATEGORIA_HORTALIZAS: Record<string, UnidadCategoria> = {
   'Herbicidas': 'litro',
   'Mano de obra para Herbicidas': 'jornal',
   'Mano de obra para Deshierbe': 'jornal',
+  'Pesticidas': 'litro',
+  'Mano de obra para persticidas': 'jornal',
   'Fertilizantes': 'litro',
   'Mano de obra para fertilizantes': 'jornal',
   'Riego (cinta de lluvia)': 'rollo',
@@ -132,8 +142,25 @@ const UNIDAD_POR_CATEGORIA_HORTALIZAS: Record<string, UnidadCategoria> = {
   'Otros': 'unidad',
 };
 
+const UNIDAD_POR_CATEGORIA_PAPA: Record<string, UnidadCategoria> = {
+  Semilla: 'kg',
+  'Preparacion de suelo': 'ha',
+  'Fertilizante base': 'kg',
+  'Mano de obra': 'jornal',
+  Riego: 'hora',
+  'Control de plagas': 'litro',
+  'Fertilizante foliar': 'litro',
+  Deshierbe: 'jornal',
+  Cosecha: 'jornal',
+  Transporte: 'viaje',
+  Clasificacion: 'jornal',
+  Almacenamiento: 'unidad',
+  Otros: 'unidad',
+};
+
 const CATEGORIAS_CANTIDAD_ENTERA_QUINUA = new Set<string>(['Herramientas', 'Transporte', 'Otros']);
 const CATEGORIAS_CANTIDAD_ENTERA_HORTALIZAS = new Set<string>(['Herramientas', 'Transporte', 'Otros']);
+const CATEGORIAS_CANTIDAD_ENTERA_PAPA = new Set<string>(['Transporte', 'Otros']);
 
 const sanitizarDecimal = (texto: string): string => {
   const conPunto = texto.replace(/,/g, '.').replace(/[^\d.]/g, '');
@@ -154,6 +181,14 @@ export const sanitizarCantidadPorCategoria = (
     return sanitizarDecimal(texto);
   }
 
+  if (rubro === 'papa') {
+    if (CATEGORIAS_CANTIDAD_ENTERA_PAPA.has(categoria)) {
+      return texto.replace(/\D/g, '');
+    }
+
+    return sanitizarDecimal(texto);
+  }
+
   if (CATEGORIAS_CANTIDAD_ENTERA_HORTALIZAS.has(categoria)) {
       return texto.replace(/\D/g, '');
     }
@@ -166,7 +201,7 @@ export const validarCantidadPorCategoria = (
   cantidadTexto: string,
   rubro: RubroCalculadora,
 ): ValidacionCantidad => {
-  if (rubro === 'quinua' || rubro === 'hortalizas') {
+  if (rubro === 'quinua' || rubro === 'hortalizas' || rubro === 'papa') {
     const cantidadLimpia = cantidadTexto.trim();
     const unidad = obtenerUnidadCategoria(categoria);
 
@@ -179,7 +214,11 @@ export const validarCantidadPorCategoria = (
       return { esValida: false, mensaje: `La cantidad en ${unidad} debe ser mayor a cero.` };
     }
 
-    if (CATEGORIAS_CANTIDAD_ENTERA_QUINUA.has(categoria) && !Number.isInteger(cantidad)) {
+    const requiereEntero =
+      CATEGORIAS_CANTIDAD_ENTERA_QUINUA.has(categoria) ||
+      CATEGORIAS_CANTIDAD_ENTERA_PAPA.has(categoria);
+
+    if (requiereEntero && !Number.isInteger(cantidad)) {
       return { esValida: false, mensaje: `La categoria ${categoria} solo permite cantidades enteras.` };
     }
 
@@ -195,7 +234,10 @@ export const validarCantidadPorCategoria = (
 };
 
 export const obtenerUnidadCategoria = (categoria: string): UnidadCategoria =>
-  UNIDAD_POR_CATEGORIA_QUINUA[categoria] || UNIDAD_POR_CATEGORIA_HORTALIZAS[categoria] || 'unidad';
+  UNIDAD_POR_CATEGORIA_QUINUA[categoria] ||
+  UNIDAD_POR_CATEGORIA_HORTALIZAS[categoria] ||
+  UNIDAD_POR_CATEGORIA_PAPA[categoria] ||
+  'unidad';
 
 export const estrategiasCalculo: Record<RubroCalculadora, RubroStrategy> = {
   quinua: {
@@ -226,6 +268,21 @@ export const estrategiasCalculo: Record<RubroCalculadora, RubroStrategy> = {
     mensajeNoLoteSinError: true,
     unidadPorCategoria: UNIDAD_POR_CATEGORIA_HORTALIZAS,
     categoriasCantidadEntera: CATEGORIAS_CANTIDAD_ENTERA_HORTALIZAS,
+    placeholderDescripcion: '',
+  },
+  papa: {
+    rubro: 'papa',
+    titulo: 'Calculadora de Costos de Papa',
+    subtitulo: 'Calcula tus gastos, ganancias y punto de equilibrio',
+    rutaResultados: '/resultados_papa',
+    categoriasPorFase: CATEGORIAS_POR_FASE_PAPA,
+    mostrarPendienteOffline: true,
+    usaValidacionCantidadPorCategoria: true,
+    mostrarPuntoEquilibrioEnUnidadSeleccionada: true,
+    mensajeErrorGuardarProduccionConDetalle: true,
+    mensajeNoLoteSinError: true,
+    unidadPorCategoria: UNIDAD_POR_CATEGORIA_PAPA,
+    categoriasCantidadEntera: CATEGORIAS_CANTIDAD_ENTERA_PAPA,
     placeholderDescripcion: '',
   },
 };

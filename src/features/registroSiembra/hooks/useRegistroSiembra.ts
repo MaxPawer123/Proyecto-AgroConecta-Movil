@@ -40,8 +40,10 @@ const parsearFecha = (valor: string): string => {
 
 const formatearNumeroGps = (valor: number): string => valor.toFixed(6);
 
-const obtenerEtiquetaOtrosPorRubro = (rubro: 'quinua' | 'hortalizas'): string => {
-  return rubro === 'quinua' ? 'Quinua - Otros' : 'Hortaliza - Otros';
+const obtenerEtiquetaOtrosPorRubro = (rubro: 'quinua' | 'hortalizas' | 'papa'): string => {
+  if (rubro === 'quinua') return 'Quinua - Otros';
+  if (rubro === 'papa') return 'Papa - Otros';
+  return 'Hortaliza - Otros';
 };
 
 const normalizarSuperficie = (valor: string, unidad: 'ha' | 'm2'): number => {

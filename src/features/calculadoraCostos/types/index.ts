@@ -1,4 +1,4 @@
-export type RubroCalculadora = 'quinua' | 'hortalizas';
+export type RubroCalculadora = 'quinua' | 'hortalizas' | 'papa';
 
 export type Fase = 'Siembra' | 'Crecimiento' | 'Cosecha';
 export type UnidadCantidad = 'kg' | 'qq';
@@ -50,7 +50,7 @@ export type RubroStrategy = {
   rubro: RubroCalculadora;
   titulo: string;
   subtitulo: string;
-  rutaResultados: '/resultados_quinua' | '/resultados_hortalizas';
+  rutaResultados: '/resultados_quinua' | '/resultados_hortalizas' | '/resultados_papa';
   categoriasPorFase: Record<Fase, string[]>;
   mostrarPendienteOffline: boolean;
   usaValidacionCantidadPorCategoria: boolean;

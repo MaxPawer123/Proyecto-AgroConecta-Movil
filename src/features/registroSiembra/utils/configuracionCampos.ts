@@ -24,6 +24,14 @@ const TIPOS_HORTALIZA = [
   'Otros'
 ];
 
+const TIPOS_PAPA = [
+  'Huaycha',
+  'Imilla',
+  'Desiree',
+  'Runa',
+  'Otros',
+];
+
 // Papa y haba es diferen
 
     {/*  'Papa',
@@ -148,6 +156,22 @@ export const configuracionCamposPorRubro: Record<RubroSiembra, ConfiguracionRubr
         placeholder: 'Seleccionar tipos de cultivo...',
         tituloSelector: 'Variedades de Hortaliza',
         opciones: TIPOS_HORTALIZA,
+      },
+      ubicacion: camposBase.ubicacionHortalizas,
+    }),
+  },
+  papa: {
+    tituloTipoCultivo: 'Variedades de Papa',
+    mensajeBotonGuardar: 'Crear parcela y Comenzar',
+    secciones: construirSecciones({
+      nombrePlaceholder: 'Parcela 1 - Papa Huaycha',
+      tipoCultivo: {
+        key: 'tipoCultivo',
+        tipo: 'select',
+        label: 'Variedades de Papa',
+        placeholder: 'Seleccionar tipos de cultivo...',
+        tituloSelector: 'Variedades de Papa',
+        opciones: TIPOS_PAPA,
       },
       ubicacion: camposBase.ubicacionHortalizas,
     }),
