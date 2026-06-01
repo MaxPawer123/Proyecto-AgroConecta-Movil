@@ -19,8 +19,7 @@ const TIPOS_HORTALIZA = [
   'Zanahoria', 
   'Cebolla',
   'Beterraga', 
-  'Nabo', 
-  'Haba',
+  'Nabo',
   'Otros'
 ];
 

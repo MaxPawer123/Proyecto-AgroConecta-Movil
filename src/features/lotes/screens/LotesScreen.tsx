@@ -106,12 +106,12 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
           <View style={styles.kpiGrid}>
             <View style={[styles.kpiCard, { backgroundColor: '#eefcf2', borderColor: '#dcfce7' }]}>
               <View style={styles.kpiHeader}>
-                <Text style={styles.kpiLabel}>Lotes Activos</Text>
+                <Text style={styles.kpiLabel}>Parcelas Activas</Text>
                 <View style={[styles.kpiIcon, { backgroundColor: '#dcfce7' }]}>
                   <MaterialCommunityIcons name="sprout" size={18} color="#2eaa51" />
                 </View>
               </View>
-              <Text style={[styles.kpiValue, { color: '#2eaa51' }]}>{stats.lotesActivos} Lotes</Text>
+              <Text style={[styles.kpiValue, { color: '#2eaa51' }]}>{stats.lotesActivos} Parcelas</Text>
               <View style={styles.kpiFooter}>
                 <Ionicons name="trending-up" size={12} color="#2eaa51" />
                 <Text style={[styles.kpiFooterText, { color: '#2eaa51' }]}>En produccion</Text>
@@ -207,7 +207,7 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
                   style={styles.modalInput}
                   value={formEdicion.tipoCultivo}
                   onChangeText={(t) => setFormEdicion({ ...formEdicion, tipoCultivo: t })}
-                  placeholder="Ej: Quinua Jacha Grano / Haba"
+                  placeholder="Ej: Quinua Jacha Grano"
                 />
 
                 <Text style={styles.modalLabel}>Superficie (ha)</Text>

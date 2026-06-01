@@ -126,7 +126,7 @@ export async function obtenerLotesPorProductoApi(idProducto: number): Promise<Lo
   const mapaTipoCultivo: Record<number, string> = {
     1: 'quinua',
     2: 'hortaliza',
-    3: 'haba',
+    3: 'papa',
   };
   const tipoCultivoCompat = mapaTipoCultivo[idProducto] ?? String(idProducto);
   const response = await fetchGetBackendConFallback<ListResponse<LoteApi>>(

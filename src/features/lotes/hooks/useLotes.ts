@@ -183,7 +183,12 @@ const esLoteDelRubro = (item: any, rubro: RubroType): boolean => {
     );
   }
 
-  return categorias.includes('hortaliza') || (!texto.includes('quinua') && !categorias.includes('quinua'));
+  if (rubro === 'hortalizas') {
+    const palabrasHortalizas = /cebolla|zanahoria|lechuga|tomate|pimiento|pepino|brocoli|brócoli|col|repollo|espinaca|betarraga|remolacha/i;
+    return categorias.includes('hortaliza') || palabrasHortalizas.test(texto) || texto.includes('hortaliza');
+  }
+
+  return false;
 };
 
 const esSinCultivo = (valor: string): boolean => {

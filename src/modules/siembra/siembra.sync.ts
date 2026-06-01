@@ -27,7 +27,7 @@ const MAX_ITEMS_PER_SYNC = 10;
 type EstadoCola = 'PENDIENTE' | 'COMPLETADO';
 
 export type RegistrarSiembraInput = {
-  rubro: 'QUINUA' | 'HORTALIZA';
+  rubro: 'QUINUA' | 'HORTALIZA' | 'PAPA';
   nombreLote: string;
   tipoCultivo: string;
   cultivos?: string[];

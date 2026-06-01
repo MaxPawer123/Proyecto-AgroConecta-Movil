@@ -99,11 +99,6 @@ Siembra: [
   ],
 };
 
-const CATEGORIAS_POR_FASE_PAPA: Record<Fase, string[]> = {
-  Siembra: ['Semilla', 'Preparacion de suelo', 'Fertilizante base', 'Mano de obra'],
-  Crecimiento: ['Riego', 'Control de plagas', 'Fertilizante foliar', 'Deshierbe'],
-  Cosecha: ['Cosecha', 'Transporte', 'Clasificacion', 'Almacenamiento'],
-};
 
 const UNIDAD_POR_CATEGORIA_HORTALIZAS: Record<string, UnidadCategoria> = {
   //siembra
@@ -142,20 +137,77 @@ const UNIDAD_POR_CATEGORIA_HORTALIZAS: Record<string, UnidadCategoria> = {
   'Otros': 'unidad',
 };
 
+
+
+const CATEGORIAS_POR_FASE_PAPA: Record<Fase, string[]> = {
+  Siembra: [
+    'Alquiler de Terreno',
+    'Maquinaria para roturar',
+    'Maquinaria para rastreo',
+    'Mano de obra para rastreo',
+     'Maquinaria para Siembra',
+    'Mano de obra para siembra',
+    'Mano de obra para Surcado manual',
+    'Abono',
+    'Mano de obra para el abono',
+    'Semillas',
+    'Refrigerio',
+    'Otros',
+  ],
+  Crecimiento: [
+    'Pesticidas',
+    'Mano de obra para persticidas',
+    'Herbicidas',
+    'Mano de obra para Herbicidas',
+    'Mano de obra para Deshierbe',
+    'Fertilizantes',
+    'Mano de obra para fertilizantes',
+    'Riego (cinta de lluvia)',
+    'Mano de obra para Riego',
+    'Mano de obra para carpida',
+    'Refrigerio',
+    'Otros',
+  ],
+  Cosecha: [
+    'Maquinaria para lavadora',
+    'Mano de obra para lavadora',
+    'Mano de obra para enbolsado',
+    'Transporte',
+    'Refrigerio',
+    'Otros',
+  ],
+};
+
 const UNIDAD_POR_CATEGORIA_PAPA: Record<string, UnidadCategoria> = {
-  Semilla: 'kg',
-  'Preparacion de suelo': 'ha',
-  'Fertilizante base': 'kg',
-  'Mano de obra': 'jornal',
-  Riego: 'hora',
-  'Control de plagas': 'litro',
-  'Fertilizante foliar': 'litro',
-  Deshierbe: 'jornal',
-  Cosecha: 'jornal',
-  Transporte: 'viaje',
-  Clasificacion: 'jornal',
-  Almacenamiento: 'unidad',
-  Otros: 'unidad',
+  'Alquiler de Terreno': 'hora',
+  'Maquinaria para roturar': 'ha',
+  'Mano de obra para aradura': 'jornal',
+  'Maquinaria para rastreo "barbecho"': 'ha',
+  'Mano de obra para rastreo': 'jornal',
+  'Mano de obra para Colocación de paja': 'jornal',
+  'Maquinaria para Siembra': 'ha',
+  'Mano de obra para siembra': 'jornal',
+  'Mano de obra para Surcado manual': 'ha',
+  'Abono': 'kg',
+  'Mano de obra para el abono': 'ha',
+  'Semillas': 'kg',
+  'Herbicidas': 'litro',
+  'Mano de obra para Herbicidas': 'jornal',
+  'Mano de obra para Deshierbe': 'jornal',
+  'Pesticidas': 'litro',
+  'Mano de obra para persticidas': 'jornal',
+  'Fertilizantes': 'litro',
+  'Mano de obra para fertilizantes': 'jornal',
+  'Riego (cinta de lluvia)': 'rollo',
+  'Mano de obra para Riego': 'jornal',
+  'Mano de obra para carpida': 'jornal',
+  'Maquinaria para lavadora': 'ha',
+  'Mano de obra para lavadora': 'jornal',
+  'Mano de obra para enbolsado': 'jornal',
+  'Transporte': 'viaje',
+  'Refrigerio': 'unidad',
+  'Herramientas': 'unidad',
+  'Otros': 'unidad',
 };
 
 const CATEGORIAS_CANTIDAD_ENTERA_QUINUA = new Set<string>(['Herramientas', 'Transporte', 'Otros']);

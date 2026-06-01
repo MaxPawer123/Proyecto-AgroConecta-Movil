@@ -4,10 +4,15 @@ import {
   Text, 
   StyleSheet, 
   TouchableOpacity, 
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
+
+const QUINUA_IMAGE = require('../assets/images/quinua_parcela.jpg');
+const HORTALIZAS_IMAGE = require('../assets/images/hortalizas_parcela.jpg');
+const PAPA_IMAGE = require('../assets/images/papa1.webp');
 
 export default function SeleccionarRubro() {
   const router = useRouter();
@@ -48,7 +53,7 @@ export default function SeleccionarRubro() {
             onPress={() => irALotes('Quinua')}
           >
             <View style={styles.iconContainerGreen}>
-              <MaterialCommunityIcons name="barley" size={40} color="#2eaa51" />
+              <Image source={QUINUA_IMAGE} style={styles.cropImage} />
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>Parcelas de Quinua</Text>
@@ -63,7 +68,7 @@ export default function SeleccionarRubro() {
             onPress={() => irALotes('Hortalizas')}
           >
             <View style={styles.iconContainerOrange}>
-              <MaterialCommunityIcons name="carrot" size={40} color="#f97316" />
+              <Image source={HORTALIZAS_IMAGE} style={styles.cropImage} />
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>Parcelas de Hortalizas</Text>
@@ -78,7 +83,7 @@ export default function SeleccionarRubro() {
             onPress={() => irALotes('Papa')}
           >
             <View style={styles.iconContainerWarm}>
-              <MaterialCommunityIcons name="food-variant" size={40} color="#D97706" />
+              <Image source={PAPA_IMAGE} style={styles.cropImage} />
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>Parcelas de Papa</Text>
@@ -104,9 +109,10 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: '#6b7280', marginBottom: 30 },
   cardsContainer: { gap: 16 },
   card: { flexDirection: 'row', alignItems: 'center', padding: 20, borderRadius: 20, borderWidth: 2 },
-  iconContainerGreen: { width: 64, height: 64, backgroundColor: '#dcfce7', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  iconContainerOrange: { width: 64, height: 64, backgroundColor: '#ffedd5', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  iconContainerWarm: { width: 64, height: 64, backgroundColor: '#fff3db', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  iconContainerGreen: { width: 64, height: 64, backgroundColor: '#dcfce7', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16, overflow: 'hidden' },
+  iconContainerOrange: { width: 64, height: 64, backgroundColor: '#ffedd5', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16, overflow: 'hidden' },
+  iconContainerWarm: { width: 64, height: 64, backgroundColor: '#fff3db', borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 16, overflow: 'hidden' },
+  cropImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   cardText: { flex: 1 },
   cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
   cardDesc: { fontSize: 13, color: '#4b5563', lineHeight: 18 },

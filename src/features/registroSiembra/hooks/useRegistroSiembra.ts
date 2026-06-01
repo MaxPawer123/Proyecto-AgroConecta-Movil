@@ -346,6 +346,20 @@ export function useRegistroSiembra({
           precioVentaEstimado: 12,
           fotoTerrenoUri: fotoTerreno,
         });
+      } else if (rubro === 'papa') {
+        await registrarSiembraOfflineFirst({
+          rubro: 'PAPA',
+          nombreLote: nombre,
+          tipoCultivo: cultivosString,
+          cultivos: cultivosArray,
+          ubicacion: form.ubicacion,
+          superficie,
+          fechaSiembraIso,
+          fechaCosechaIso,
+          rendimientoEstimado: Math.max(1, superficie * 400),
+          precioVentaEstimado: 10,
+          fotoTerrenoUri: fotoTerreno,
+        });
       } else {
         await registrarSiembraOfflineFirst({
           rubro: 'HORTALIZA',
