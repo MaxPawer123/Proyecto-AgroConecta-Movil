@@ -300,6 +300,7 @@ export function useRegistroSiembra({
   };
 
   const crearLote = async () => {
+    if (guardando) return;
     const nombre = form.nombre.trim();
     const superficie = normalizarSuperficie(form.superficie, superficieUnidad);
     const fechaSiembraIso = parsearFecha(form.fechaSiembra);

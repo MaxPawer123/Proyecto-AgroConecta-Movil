@@ -1,10 +1,12 @@
 import { AppState, type AppStateStatus } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { getDb } from '../../core/database/sqlite.config';
+import { verificarBackendActivo } from '../../core/network/apiClient';
 import {
   actualizarCostoLocal,
   marcarGastoComoSincronizado,
   obtenerGastosPendientesPorLoteLocal,
+  obtenerGastosHuérfanosPendientes,
 } from '../gastos/gastos.repository';
 import {
   crearLoteApi,
@@ -12,6 +14,12 @@ import {
   subirFotoSiembraApi,
 } from '../../core/network/api/lotes';
 import { crearGastoApi } from '../../core/network/api/gastos';
+import { registrarProduccionLoteApi } from '../../core/network/api/produccion';
+import {
+  obtenerBorradorProduccionLocal,
+  marcarProduccionComoSincronizada,
+  obtenerProduccionesHuerfanasPendientes,
+} from '../costos/costos.repository';
 import {
   dividirCultivosSeleccionados,
   insertarLoteLocal,
@@ -20,6 +28,7 @@ import {
   obtenerOInsertarProductoLocal,
   type LoteLocal,
 } from './siembra.repository';
+import { getCurrentProductorId, sincronizarUsuarioYProductorBackend } from '../auth/auth.repository';
 
 const SYNC_INTERVAL_MS = 30000;
 const MAX_ITEMS_PER_SYNC = 10;
@@ -75,35 +84,6 @@ export function suscribirEventosSincronizacionSiembras(
   };
 }
 
-async function verificarBackendDisponible(): Promise<boolean> {
-  try {
-    const state = await NetInfo.fetch();
-    if (!state.isConnected || state.isInternetReachable === false) {
-      return false;
-    }
-
-    const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-    if (!baseUrl) return false;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    try {
-      const response = await fetch(`${baseUrl}/health`, {
-        method: 'HEAD',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch {
-      clearTimeout(timeoutId);
-      return false;
-    }
-  } catch {
-    return false;
-  }
-}
-
 async function hayConexionDisponible(): Promise<boolean> {
   const netInfo = await NetInfo.fetch();
   return netInfo.isConnected === true && netInfo.isInternetReachable === true;
@@ -140,7 +120,7 @@ async function buscarLoteServidorExistente(item: LoteLocal): Promise<number | nu
   }
 }
 
-async function sincronizarLote(item: LoteLocal): Promise<number> {
+async function sincronizarLote(item: LoteLocal, idProductorRecuperado: number): Promise<number> {
   let fotoSiembraUrl = item.foto_siembra_uri_local;
   if (fotoSiembraUrl && !fotoSiembraUrl.startsWith('http')) {
     try {
@@ -155,8 +135,8 @@ async function sincronizarLote(item: LoteLocal): Promise<number> {
     return idExistente;
   }
 
-  const loteServidor = await crearLoteApi({
-    id_productor: item.id_productor,
+  const payload = {
+    id_productor: idProductorRecuperado,
     tipo_cultivo: item.tipo_cultivo,
     nombre_lote: item.nombre_lote,
     superficie: item.superficie ?? 0,
@@ -166,7 +146,11 @@ async function sincronizarLote(item: LoteLocal): Promise<number> {
     precio_venta_est: item.precio_venta_est ?? 0,
     foto_siembra_url: fotoSiembraUrl,
     ubicacion: item.ubicacion || 'No especificada',
-  });
+  };
+
+  console.log('[API Lotes] Payload a enviar...', JSON.stringify(payload, null, 2));
+
+  const loteServidor = await crearLoteApi(payload);
 
   const idServidor = Number(loteServidor.id_lote);
   if (!Number.isFinite(idServidor) || idServidor <= 0) {
@@ -210,75 +194,208 @@ async function sincronizarGastosLocales(idLocal: number, idServidor: number): Pr
   }
 }
 
+async function sincronizarProduccionLocal(idLoteLocal: number, idLoteServidor: number): Promise<void> {
+  const produccionLocal = await obtenerBorradorProduccionLocal({ idLoteLocal });
+  if (!produccionLocal) return;
+
+  if (produccionLocal.estado_sincronizacion === 'SINCRONIZADO' && produccionLocal.id_produccion) {
+    return;
+  }
+
+  console.log(`🌾 Sincronizando produccion del lote local ${idLoteLocal}...`);
+
+  const resultado = await registrarProduccionLoteApi({
+    id_lote: idLoteServidor,
+    fecha_registro: produccionLocal.fecha_registro,
+    cantidad_obtenida: produccionLocal.cantidad_obtenida,
+    precio_venta: produccionLocal.precio_venta,
+  });
+
+  const idProduccion = Number(resultado.id_produccion);
+  if (!Number.isFinite(idProduccion) || idProduccion <= 0) {
+    throw new Error('El backend devolvio un id_produccion invalido.');
+  }
+
+  await marcarProduccionComoSincronizada(produccionLocal.id_local, idProduccion);
+  console.log(`✅ Produccion del lote local ${idLoteLocal} sincronizada → ID servidor: ${idProduccion}`);
+}
+
+async function sincronizarGastosHuerfanosLocales(): Promise<void> {
+  const huerfanos = await obtenerGastosHuérfanosPendientes();
+  if (huerfanos.length === 0) return;
+
+  console.log(`💰 Sincronizando ${huerfanos.length} gastos huérfanos...`);
+
+  for (const { gasto, idLoteServidor } of huerfanos) {
+    if (!idLoteServidor) continue;
+    try {
+      const nuevoGasto = await crearGastoApi({
+        id_lote: idLoteServidor,
+        categoria: gasto.categoria,
+        descripcion: gasto.descripcion ?? undefined,
+        cantidad: gasto.cantidad,
+        costo_unitario: gasto.costo_unitario,
+        tipo_costo: gasto.tipo_costo,
+        modalidad_pago: gasto.modalidad_pago,
+      });
+
+      const idGasto = Number(nuevoGasto.id_gasto);
+      if (!Number.isFinite(idGasto) || idGasto <= 0) {
+        throw new Error('El backend devolvió un id_gasto inválido.');
+      }
+
+      await marcarGastoComoSincronizado(gasto.id_local, idGasto);
+      console.log(`✅ Gasto huérfano ${gasto.id_local} sincronizado → ID servidor: ${idGasto}`);
+    } catch (error) {
+      console.warn(`❌ Error sincronizando gasto huérfano ${gasto.id_local}:`, error);
+      await actualizarCostoLocal(gasto.id_local, {
+        ultimo_error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+async function sincronizarProduccionesHuerfanasLocales(): Promise<void> {
+  const huerfanas = await obtenerProduccionesHuerfanasPendientes();
+  if (huerfanas.length === 0) return;
+
+  console.log(`🌾 Sincronizando ${huerfanas.length} producciones huérfanas...`);
+
+  for (const { produccion, idLoteServidor } of huerfanas) {
+    if (!idLoteServidor) continue;
+    try {
+      const resultado = await registrarProduccionLoteApi({
+        id_lote: idLoteServidor,
+        fecha_registro: produccion.fecha_registro,
+        cantidad_obtenida: produccion.cantidad_obtenida,
+        precio_venta: produccion.precio_venta,
+      });
+
+      const idProduccion = Number(resultado.id_produccion);
+      if (!Number.isFinite(idProduccion) || idProduccion <= 0) {
+        throw new Error('El backend devolvió un id_produccion inválido.');
+      }
+
+      await marcarProduccionComoSincronizada(produccion.id_local, idProduccion);
+      console.log(`✅ Producción huérfana ${produccion.id_local} sincronizada → ID servidor: ${idProduccion}`);
+    } catch (error) {
+      console.warn(`❌ Error sincronizando producción huérfana ${produccion.id_local}:`, error);
+    }
+  }
+}
+
 export async function sincronizarSiembrasPendientes(): Promise<{
   procesados: number;
   sincronizados: number;
 }> {
-  const hayConexion = await hayConexionDisponible();
-  if (!hayConexion) {
-    if (!conexionEstablecida) {
-      console.log('📡 Sin conexión a internet. Los lotes se guardarán localmente y se sincronizarán cuando haya red.');
-    }
-    conexionEstablecida = false;
-    return { procesados: 0, sincronizados: 0 };
-  }
-
-  const backendActivo = await verificarBackendDisponible();
-  if (!backendActivo) {
-    console.log('🖥️ Backend no disponible. Los lotes se sincronizarán cuando el servidor esté activo.');
-    return { procesados: 0, sincronizados: 0 };
-  }
-
-  if (!conexionEstablecida) {
-    console.log('✅ Conexión a internet y backend detectados. Iniciando sincronización...');
-    conexionEstablecida = true;
-  }
-
   if (syncEnCurso) return { procesados: 0, sincronizados: 0 };
   syncEnCurso = true;
 
   try {
-    const pendientes = await obtenerLotesPendientes();
-    if (pendientes.length === 0) return { procesados: 0, sincronizados: 0 };
+    const hayConexion = await hayConexionDisponible();
+    if (!hayConexion) {
+      if (conexionEstablecida) {
+        console.log('📡 Sin conexión a internet. Los lotes se guardarán localmente y se sincronizarán cuando haya red.');
+      }
+      conexionEstablecida = false;
+      return { procesados: 0, sincronizados: 0 };
+    }
 
-    console.log(`🔄 Sincronizando ${pendientes.length} lotes pendientes...`);
+    const backendActivo = await verificarBackendActivo();
+    if (!backendActivo) {
+      console.log('🖥️ Backend no disponible. Los lotes se sincronizarán cuando el servidor esté activo.');
+      return { procesados: 0, sincronizados: 0 };
+    }
+
+    if (!conexionEstablecida) {
+      console.log('✅ Conexión a internet y backend detectados. Iniciando sincronización...');
+      conexionEstablecida = true;
+    }
+
+    // 1. Sincronizar usuario local si no está sincronizado
+    try {
+      await sincronizarUsuarioYProductorBackend();
+    } catch (error) {
+      console.warn('⚠️ Error intentando sincronizar usuario con el servidor:', error);
+    }
+
+    // RECUPERAR EL ID DEL PRODUCTOR / COMPROBAR SESION ACTIVA
+    let idProductorRecuperado: number | null = null;
+    try {
+      idProductorRecuperado = await getCurrentProductorId();
+    } catch (error) {
+      console.log('Sincronización abortada silenciosamente: no hay sesión activa');
+      return { procesados: 0, sincronizados: 0 };
+    }
+
+    if (!idProductorRecuperado) {
+      console.log('Sincronización abortada silenciosamente: id_productor es nulo');
+      return { procesados: 0, sincronizados: 0 };
+    }
+
+    const pendientes = await obtenerLotesPendientes();
     let sincronizados = 0;
 
-    for (const item of pendientes) {
-      try {
-        console.log(`📤 Subiendo lote ${item.id_local}...`);
-        const idServidor = await sincronizarLote(item);
-        await marcarLoteSincronizado(item.id_local, idServidor);
-
+    if (pendientes.length > 0) {
+      console.log(`🔄 Sincronizando ${pendientes.length} lotes pendientes...`);
+      for (const item of pendientes) {
         try {
-          await sincronizarGastosLocales(item.id_local, idServidor);
-        } catch (error) {
-          console.warn('Error al sincronizar gastos del lote:', error);
-        }
+          console.log(`📤 Subiendo lote ${item.id_local}...`);
+          const idServidor = await sincronizarLote(item, idProductorRecuperado);
+          await marcarLoteSincronizado(item.id_local, idServidor);
 
-        sincronizados++;
-        console.log(`✅ Lote ${item.id_local} sincronizado → ID servidor: ${idServidor}`);
-        emitirEventoSincronizacion({
-          tipo: 'LOTE_SINCRONIZADO',
-          idLocal: item.id_local,
-          idServidor,
-        });
-      } catch (error) {
-        console.warn(`⚠️ Error en lote ${item.id_local}:`, error);
+          try {
+            await sincronizarGastosLocales(item.id_local, idServidor);
+          } catch (error) {
+            console.warn('Error al sincronizar gastos del lote:', error);
+          }
+
+          try {
+            await sincronizarProduccionLocal(item.id_local, idServidor);
+          } catch (error) {
+            console.warn('Error al sincronizar produccion del lote:', error);
+          }
+
+          sincronizados++;
+          console.log(`✅ Lote ${item.id_local} sincronizado → ID servidor: ${idServidor}`);
+          emitirEventoSincronizacion({
+            tipo: 'LOTE_SINCRONIZADO',
+            idLocal: item.id_local,
+            idServidor,
+          });
+        } catch (error) {
+          console.warn(`⚠️ Error en lote ${item.id_local}:`, error);
+        }
       }
     }
 
-    emitirEventoSincronizacion({
-      tipo: 'SINCRONIZACION_COMPLETADA',
-      procesados: pendientes.length,
-      sincronizados,
-    });
+    // Sincronizar gastos y producciones huérfanas
+    try {
+      await sincronizarGastosHuerfanosLocales();
+    } catch (error) {
+      console.warn('Error al sincronizar gastos huérfanos:', error);
+    }
+
+    try {
+      await sincronizarProduccionesHuerfanasLocales();
+    } catch (error) {
+      console.warn('Error al sincronizar producciones huérfanas:', error);
+    }
+
+    if (pendientes.length > 0 || sincronizados > 0) {
+      emitirEventoSincronizacion({
+        tipo: 'SINCRONIZACION_COMPLETADA',
+        procesados: pendientes.length,
+        sincronizados,
+      });
+    }
 
     return { procesados: pendientes.length, sincronizados };
   } finally {
     syncEnCurso = false;
   }
 }
+
 
 export async function registrarSiembraOfflineFirst(
   input: RegistrarSiembraInput

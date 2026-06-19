@@ -200,3 +200,37 @@ export async function actualizarCostoLocal(
     idLocal
   );
 }
+
+export async function obtenerGastosHuérfanosPendientes(): Promise<{ gasto: GastoLocal; idLoteServidor: number }[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>(
+    `SELECT g.*, l.id_lote AS server_lote_id
+     FROM gasto_lote g
+     LEFT JOIN lote l ON g.id_lote_local = l.id_local
+     WHERE g.sincronizado = 0 AND (l.id_lote IS NOT NULL OR g.id_lote_servidor IS NOT NULL)
+     ORDER BY g.id_local ASC`
+  );
+
+  return rows.map((row) => ({
+    gasto: {
+      id_local: row.id_local,
+      id_gasto: row.id_gasto,
+      id_lote_local: row.id_lote_local,
+      id_lote_servidor: row.id_lote_servidor ?? row.server_lote_id,
+      categoria: row.categoria,
+      descripcion: row.descripcion,
+      cantidad: row.cantidad,
+      costo_unitario: row.costo_unitario,
+      monto_total: row.monto_total,
+      tipo_costo: row.tipo_costo,
+      modalidad_pago: row.modalidad_pago,
+      fecha_gasto: row.fecha_gasto,
+      sincronizado: row.sincronizado === 1,
+      ultimo_error: row.ultimo_error,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    },
+    idLoteServidor: row.id_lote_servidor ?? row.server_lote_id,
+  }));
+}
+

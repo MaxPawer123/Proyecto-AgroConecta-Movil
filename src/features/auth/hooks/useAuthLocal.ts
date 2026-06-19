@@ -243,7 +243,6 @@ async function limpiarDatosAuthLocal(db: Awaited<ReturnType<typeof getDb>>): Pro
 }
 
 async function abrirSesionLocal(db: Awaited<ReturnType<typeof getDb>>, idUsuario: number): Promise<void> {
-  await asegurarEsquemaAuth(db);
   await db.runAsync(
     `INSERT INTO auth_sesion (id, id_usuario, activa, updated_at)
      VALUES (1, ?, 1, datetime('now'))

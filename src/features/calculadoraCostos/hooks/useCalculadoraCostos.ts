@@ -10,6 +10,7 @@ import {
   obtenerCostosLocalesPorLote,
 } from '@/src/modules/costos/costos.repository';
 import { emitirEventoGastoActualizado } from '@/src/modules/gastos/gastos.events';
+import { sincronizarSiembrasPendientes } from '@/src/modules/siembra/siembra.sync';
 import {
   crearGastoApi,
   eliminarGastoApi,
@@ -65,6 +66,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
   const [modalUnidadCantidad, setModalUnidadCantidad] = useState(false);
   const [modalUnidadPrecio, setModalUnidadPrecio] = useState(false);
   const [guardandoProduccion, setGuardandoProduccion] = useState(false);
+  const [guardandoGasto, setGuardandoGasto] = useState(false);
 
   const [modalEdicion, setModalEdicion] = useState(false);
   const [gastoEnEdicion, setGastoEnEdicion] = useState<GastoEnEdicion | null>(null);
@@ -299,6 +301,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
   }, [produccion.cantidad, produccion.precio, unidadCantidad, unidadPrecio, idLoteLocal, idLoteServidor]);
 
   const guardarDatosProduccion = async () => {
+    if (guardandoProduccion) return;
     if (!idLoteServidor && !idLoteLocal) {
       Alert.alert('Lote inválido', 'No se encontró el lote para guardar los datos de producción.');
       return;
@@ -321,27 +324,14 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
 
     setGuardandoProduccion(true);
     try {
-      if (idLoteServidor) {
-        try {
-          await registrarProduccionLoteApi({
-            id_lote: idLoteServidor,
-            fecha_registro: new Date().toISOString().split('T')[0],
-            cantidad_obtenida: cantidad,
-            precio_venta: precio,
-          });
-          Alert.alert('Listo', 'Datos de producción subidos.');
-        } catch (apiError) {
-          console.warn('API error al guardar producción, guardando localmente...', apiError);
-          if (idLoteLocal || idLoteServidor) {
-            await exportarProduccionALoteLocal(cantidad, precio);
-            Alert.alert('Guardado localmente', 'Se guardará en el servidor al sincronizar.');
-          } else {
-            throw apiError;
-          }
-        }
-      } else if (idLoteLocal || idLoteServidor) {
+      if (idLoteLocal || idLoteServidor) {
         await exportarProduccionALoteLocal(cantidad, precio);
         Alert.alert('Listo', 'Datos de producción guardados.');
+        
+        // Ejecutar sincronización en background de forma centralizada y segura
+        setTimeout(() => {
+          sincronizarSiembrasPendientes().catch(() => {});
+        }, 500);
       }
     } catch (error) {
       const mensaje = error instanceof Error ? error.message : 'No se pudo guardar la producción';
@@ -375,6 +365,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
   };
 
   const agregarGasto = async () => {
+    if (guardandoGasto) return;
     if (!formGasto.categoria || !formGasto.monto) {
       Alert.alert('Datos incompletos', 'Por favor selecciona una categoría e ingresa un monto.');
       return;
@@ -392,104 +383,74 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
       Alert.alert('Datos inválidos', estrategia.usaValidacionCantidadPorCategoria ? 'El costo unitario debe ser mayor a cero.' : 'Cantidad y costo unitario deben ser mayores a cero.');
       return;
     }
-    const montoTotal = costoUnitario * cantidad;
-    const tipoCosto = fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
-    const tieneLoteLocal = typeof idLoteLocal === 'number' && idLoteLocal > 0;
-    const tieneLoteServidor = typeof idLoteServidor === 'number' && idLoteServidor > 0;
-    const tempId = `tmp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    const gastoOptimista = crearGastoUi({
-      id: tempId,
-      categoria: formGasto.categoria,
-      descripcion: formGasto.descripcion,
-      cantidad,
-      monto: montoTotal,
-      fase,
-      origen: 'LOCAL',
-      sincronizado: false,
-    });
 
-    setGastos((actuales) => [gastoOptimista, ...actuales]);
-    setFormGasto({ categoria: '', descripcion: '', cantidad: '', monto: '' });
-
+    setGuardandoGasto(true);
     try {
-      if (!tieneLoteLocal && !tieneLoteServidor) {
-        if (estrategia.mensajeNoLoteSinError) {
-          Alert.alert('Lote no disponible', 'Sin identificador del lote no se puede registrar el gasto.');
-          return;
-        }
-        throw new Error('No hay ID de lote válido para registrar el gasto.');
-      }
-
-      const idLocalCreado = await guardarCostoLocal({
-        id_lote_local: tieneLoteLocal ? idLoteLocal : null,
-        id_lote_servidor: tieneLoteServidor ? idLoteServidor : null,
-        categoria: gastoOptimista.categoria,
-        descripcion: gastoOptimista.descripcion || null,
+      const montoTotal = costoUnitario * cantidad;
+      const tipoCosto = fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
+      const tieneLoteLocal = typeof idLoteLocal === 'number' && idLoteLocal > 0;
+      const tieneLoteServidor = typeof idLoteServidor === 'number' && idLoteServidor > 0;
+      const tempId = `tmp-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      const gastoOptimista = crearGastoUi({
+        id: tempId,
+        categoria: formGasto.categoria,
+        descripcion: formGasto.descripcion,
         cantidad,
-        costo_unitario: costoUnitario,
-        tipo_costo: tipoCosto,
-        modalidad_pago: 'CICLO',
+        monto: montoTotal,
+        fase,
+        origen: 'LOCAL',
         sincronizado: false,
       });
 
-      setGastos((actuales) =>
-        actuales.map((item) =>
-          item.id === tempId
-            ? { ...item, id: `local-${idLocalCreado}`, idLocal: idLocalCreado, sincronizado: false, origen: 'LOCAL' }
-            : item
-        )
-      );
+      setGastos((actuales) => [gastoOptimista, ...actuales]);
+      setFormGasto({ categoria: '', descripcion: '', cantidad: '', monto: '' });
 
-      if (tieneLoteServidor) {
-        crearGastoApi({
-          id_lote: idLoteServidor,
+      try {
+        if (!tieneLoteLocal && !tieneLoteServidor) {
+          if (estrategia.mensajeNoLoteSinError) {
+            Alert.alert('Lote no disponible', 'Sin identificador del lote no se puede registrar el gasto.');
+            return;
+          }
+          throw new Error('No hay ID de lote válido para registrar el gasto.');
+        }
+
+        const idLocalCreado = await guardarCostoLocal({
+          id_lote_local: tieneLoteLocal ? idLoteLocal : null,
+          id_lote_servidor: tieneLoteServidor ? idLoteServidor : null,
           categoria: gastoOptimista.categoria,
-          descripcion: gastoOptimista.descripcion,
+          descripcion: gastoOptimista.descripcion || null,
           cantidad,
           costo_unitario: costoUnitario,
           tipo_costo: tipoCosto,
           modalidad_pago: 'CICLO',
-        })
-          .then((creado) => {
-            const montoApi = Number(creado.monto_total ?? cantidad * costoUnitario);
-            const faseApi = inferirFaseDesdeApi(creado);
+          sincronizado: false,
+        });
 
-            setGastos((actuales) =>
-              actuales.map((item) =>
-                item.id === `local-${idLocalCreado}`
-                  ? crearGastoUi({
-                      id: `local-${idLocalCreado}`,
-                      categoria: creado.categoria,
-                      descripcion: creado.descripcion || '',
-                      cantidad: Number(creado.cantidad ?? cantidad),
-                      monto: montoApi,
-                      fase: faseApi,
-                      origen: 'LOCAL',
-                      idLocal: idLocalCreado,
-                      sincronizado: true,
-                    })
-                  : item
-              )
-            );
+        setGastos((actuales) =>
+          actuales.map((item) =>
+            item.id === tempId
+              ? { ...item, id: `local-${idLocalCreado}`, idLocal: idLocalCreado, sincronizado: false, origen: 'LOCAL' }
+              : item
+          )
+        );
 
-            void marcarCostoComoSincronizado(idLocalCreado, Number(creado.id_gasto));
-            emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
-          })
-          .catch((apiError) => {
-            console.warn('Fallo API al agregar gasto, se mantiene pendiente localmente:', apiError);
-            emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
-          });
-      } else {
         emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
+
+        // Ejecutar sincronización en background de forma centralizada y segura
+        setTimeout(() => {
+          sincronizarSiembrasPendientes().catch(() => {});
+        }, 500);
+      } catch (error) {
+        if (estrategia.mensajeNoLoteSinError) {
+          console.warn('No se pudo registrar gasto:', error);
+        } else {
+          console.warn('Error al guardar el gasto:', error);
+        }
+        setGastos((actuales) => actuales.filter((item) => item.id !== tempId));
+        Alert.alert('Sin conexión', 'No se pudo guardar el gasto. Intenta nuevamente.');
       }
-    } catch (error) {
-      if (estrategia.mensajeNoLoteSinError) {
-        console.warn('No se pudo registrar gasto:', error);
-      } else {
-        console.warn('Error al guardar el gasto:', error);
-      }
-      setGastos((actuales) => actuales.filter((item) => item.id !== tempId));
-      Alert.alert('Sin conexión', 'No se pudo guardar el gasto. Intenta nuevamente.');
+    } finally {
+      setGuardandoGasto(false);
     }
   };
 
@@ -540,6 +501,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
   };
 
   const guardarEdicion = async () => {
+    if (guardandoGasto) return;
     if (!formEdicion.categoria || !formEdicion.monto || !gastoEnEdicion) {
       Alert.alert('Datos incompletos', 'Por favor completa todos los campos obligatorios.');
       return;
@@ -557,68 +519,74 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
       Alert.alert('Datos inválidos', estrategia.usaValidacionCantidadPorCategoria ? 'El costo unitario debe ser mayor a cero.' : 'Cantidad y costo unitario deben ser mayores a cero.');
       return;
     }
-    const montoTotal = costoUnitario * cantidad;
-    const tipoCosto = gastoEnEdicion.fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
-    const gastoId = gastoEnEdicion.id;
-    const snapshot = [...gastos];
-    const gastoEditadoUi = {
-      categoria: formEdicion.categoria,
-      descripcion: formEdicion.descripcion || '',
-      cantidad: String(cantidad),
-      monto: montoTotal.toFixed(2),
-    };
 
-    setModalEdicion(false);
-    setGastoEnEdicion(null);
-    setGastos((actuales) =>
-      actuales.map((item) =>
-        item.id === gastoId
-          ? {
-            ...item,
-            ...gastoEditadoUi,
-            sincronizado: item.origen === 'LOCAL' ? false : item.sincronizado,
-          }
-          : item
-      )
-    );
-
+    setGuardandoGasto(true);
     try {
+      const montoTotal = costoUnitario * cantidad;
+      const tipoCosto = gastoEnEdicion.fase === 'Siembra' ? 'FIJO' : 'VARIABLE';
+      const gastoId = gastoEnEdicion.id;
+      const snapshot = [...gastos];
+      const gastoEditadoUi = {
+        categoria: formEdicion.categoria,
+        descripcion: formEdicion.descripcion || '',
+        cantidad: String(cantidad),
+        monto: montoTotal.toFixed(2),
+      };
+
+      setModalEdicion(false);
+      setGastoEnEdicion(null);
+      setGastos((actuales) =>
+        actuales.map((item) =>
+          item.id === gastoId
+            ? {
+              ...item,
+              ...gastoEditadoUi,
+              sincronizado: item.origen === 'LOCAL' ? false : item.sincronizado,
+            }
+            : item
+        )
+      );
+
+      try {
         if (gastoEnEdicion.origen === 'LOCAL' && gastoEnEdicion.idLocal) {
-        await actualizarCostoLocal(gastoEnEdicion.idLocal, {
-          categoria: formEdicion.categoria,
-          descripcion: formEdicion.descripcion || null,
-          cantidad,
-          costo_unitario: costoUnitario,
-          monto_total: montoTotal,
-          tipo_costo: tipoCosto,
-          modalidad_pago: 'CICLO',
-          sincronizado: false,
-        });
-      } else {
-        const idGastoNum = parseInt(gastoEnEdicion.id, 10);
-        if (!Number.isNaN(idGastoNum)) {
-          await actualizarGastoApi(idGastoNum, {
+          await actualizarCostoLocal(gastoEnEdicion.idLocal, {
             categoria: formEdicion.categoria,
-            descripcion: formEdicion.descripcion,
+            descripcion: formEdicion.descripcion || null,
             cantidad,
             costo_unitario: costoUnitario,
+            monto_total: montoTotal,
             tipo_costo: tipoCosto,
             modalidad_pago: 'CICLO',
+            sincronizado: false,
           });
+        } else {
+          const idGastoNum = parseInt(gastoEnEdicion.id, 10);
+          if (!Number.isNaN(idGastoNum)) {
+            await actualizarGastoApi(idGastoNum, {
+              categoria: formEdicion.categoria,
+              descripcion: formEdicion.descripcion,
+              cantidad,
+              costo_unitario: costoUnitario,
+              tipo_costo: tipoCosto,
+              modalidad_pago: 'CICLO',
+            });
+          }
         }
-      }
 
-      void cargarGastosDelLote();
-      emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
-    } catch (error) {
-      console.warn('Error al actualizar gasto:', error);
-      setGastos(snapshot);
-      Alert.alert(
-        estrategia.rubro === 'quinua' ? 'Sin conexión' : 'Error',
-        estrategia.rubro === 'quinua'
-          ? 'No se pudo actualizar el gasto. Intenta nuevamente.'
-          : 'No se pudo actualizar el gasto. Intenta nuevamente.',
-      );
+        void cargarGastosDelLote();
+        emitirEventoGastoActualizado({ idLoteLocal, idLoteServidor });
+      } catch (error) {
+        console.warn('Error al actualizar gasto:', error);
+        setGastos(snapshot);
+        Alert.alert(
+          estrategia.rubro === 'quinua' ? 'Sin conexión' : 'Error',
+          estrategia.rubro === 'quinua'
+            ? 'No se pudo actualizar el gasto. Intenta nuevamente.'
+            : 'No se pudo actualizar el gasto. Intenta nuevamente.',
+        );
+      }
+    } finally {
+      setGuardandoGasto(false);
     }
   };
 
@@ -650,6 +618,7 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
     unidadCantidad,
     unidadPrecio,
     guardandoProduccion,
+    guardandoGasto,
     modalCategoria,
     modalUnidadCantidad,
     modalUnidadPrecio,

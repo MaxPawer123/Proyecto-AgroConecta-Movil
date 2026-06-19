@@ -342,3 +342,40 @@ export async function obtenerBorradorProduccionLocal(params: {
     estado_sincronizacion: String(row.estado_sincronizacion ?? 'PENDIENTE'),
   };
 }
+
+export async function marcarProduccionComoSincronizada(idLocal: number, idProduccion: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE produccion_lote 
+     SET id_produccion = ?, estado_sincronizacion = 'SINCRONIZADO', updated_at = ? 
+     WHERE id_local = ?`,
+    idProduccion,
+    new Date().toISOString(),
+    idLocal
+  );
+}
+
+export async function obtenerProduccionesHuerfanasPendientes(): Promise<{ produccion: ProduccionLocal; idLoteServidor: number }[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>(
+    `SELECT p.*, l.id_lote AS server_lote_id
+     FROM produccion_lote p
+     LEFT JOIN lote l ON p.id_lote_local = l.id_local
+     WHERE p.estado_sincronizacion = 'PENDIENTE' AND (l.id_lote IS NOT NULL OR p.id_lote IS NOT NULL)
+     ORDER BY p.id_local ASC`
+  );
+
+  return rows.map((row) => ({
+    produccion: {
+      id_local: row.id_local,
+      id_produccion: row.id_produccion,
+      id_lote_local: row.id_lote_local,
+      id_lote_servidor: row.id_lote ?? row.server_lote_id,
+      fecha_registro: row.fecha_registro,
+      cantidad_obtenida: row.cantidad_obtenida,
+      precio_venta: row.precio_venta,
+      estado_sincronizacion: row.estado_sincronizacion,
+    },
+    idLoteServidor: row.id_lote ?? row.server_lote_id,
+  }));
+}

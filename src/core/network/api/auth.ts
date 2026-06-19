@@ -7,6 +7,7 @@ export type AuthRegisterPayload = {
   departamento: string;
   municipio: string;
   comunidad: string;
+  pin?: string;
 };
 
 export type AuthUserApi = {
@@ -23,8 +24,13 @@ export type AuthUserApi = {
   fecha_registro: string;
 };
 
-export async function registrarProductorApi(payload: AuthRegisterPayload): Promise<AuthUserApi> {
-  const response = await requestJson<ApiResponse<AuthUserApi>>('/api/auth/register', {
+export type AuthLoginPayload = {
+  telefono: string;
+  pin: string;
+};
+
+export async function registrarProductorApi(payload: AuthRegisterPayload): Promise<{ token?: string; data: AuthUserApi }> {
+  const response = await requestJson<ApiResponse<AuthUserApi> & { token?: string }>('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -33,5 +39,24 @@ export async function registrarProductorApi(payload: AuthRegisterPayload): Promi
     throw new Error(response?.message || 'No se pudo registrar el productor en el servidor');
   }
 
-  return response.data;
+  return {
+    token: response.token,
+    data: response.data,
+  };
+}
+
+export async function iniciarSesionApi(payload: AuthLoginPayload): Promise<{ token: string; data: AuthUserApi }> {
+  const response = await requestJson<ApiResponse<AuthUserApi> & { token: string }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.token || !response.data) {
+    throw new Error(response?.message || 'Credenciales inválidas');
+  }
+
+  return {
+    token: response.token,
+    data: response.data,
+  };
 }

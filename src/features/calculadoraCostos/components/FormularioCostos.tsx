@@ -38,6 +38,7 @@ export function FormularioCostos({
     unidadCantidad,
     unidadPrecio,
     guardandoProduccion,
+    guardandoGasto,
     modalCategoria,
     modalUnidadCantidad,
     modalUnidadPrecio,
@@ -158,9 +159,19 @@ export function FormularioCostos({
             </View>
           </View>
 
-          <TouchableOpacity style={styles.primaryButton} onPress={agregarGasto}>
-            <Ionicons name="add" size={20} color="#fff" />
-            <Text style={styles.primaryButtonText}>Agregar Gasto</Text>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={agregarGasto}
+            disabled={guardandoGasto}
+          >
+            {guardandoGasto ? (
+              <Text style={styles.primaryButtonText}>Guardando...</Text>
+            ) : (
+              <>
+                <Ionicons name="add" size={20} color="#fff" />
+                <Text style={styles.primaryButtonText}>Agregar Gasto</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -403,9 +414,19 @@ export function FormularioCostos({
                     </View>
                   </View>
 
-                  <TouchableOpacity style={styles.primaryButton} onPress={guardarEdicion}>
-                    <Ionicons name="checkmark" size={20} color="#fff" />
-                    <Text style={styles.primaryButtonText}>Guardar Cambios</Text>
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={guardarEdicion}
+                    disabled={guardandoGasto}
+                  >
+                    {guardandoGasto ? (
+                      <Text style={styles.primaryButtonText}>Guardando...</Text>
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark" size={20} color="#fff" />
+                        <Text style={styles.primaryButtonText}>Guardar Cambios</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
               )}
