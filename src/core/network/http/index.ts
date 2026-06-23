@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ⚙️  CONFIGURACIÓN PRINCIPAL
 // ────────────────────────────────────────────────────────────────────────────────
 // 👇 IP LAN FIJA del backend — cámbiala si tu PC obtiene otra IP de tu router.
-const BACKEND_IP = '192.168.0.8';
+const BACKEND_IP = '192.168.0.10';
 const BACKEND_PORT = 3000;
 const BASE_URL_FIJA = `http://${BACKEND_IP}:${BACKEND_PORT}`;
 

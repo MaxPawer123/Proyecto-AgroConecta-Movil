@@ -82,10 +82,6 @@ export async function obtenerTotalGastosSubidosPorTipos(tiposCultivo: string[]):
 }
 
 export async function obtenerTotalGastosLotesQuinuaYHortalizas(): Promise<number> {
-  const [gastosLocales, gastosBackend] = await Promise.all([
-    obtenerTotalGastosLocales().catch(() => 0),
-    obtenerTotalGastosSubidosPorTipos(['quinua', 'hortaliza', 'hortalizas']).catch(() => 0),
-  ]);
-
-  return gastosLocales + gastosBackend;
+  // SQLite is the Single Source of Truth - all synchronized and unsynchronized expenses are stored locally.
+  return obtenerTotalGastosLocales().catch(() => 0);
 }

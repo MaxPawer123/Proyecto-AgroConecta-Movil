@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
+import { getDb } from '@/src/core/database/sqlite.config';
 import { obtenerCostosLocalesPorLote, obtenerBorradorProduccionLocal } from '@/src/modules/costos/costos.repository';
 import { obtenerGastosPorLoteApi } from '@/src/core/network/api/gastos';
 import { obtenerUltimaProduccionLoteApi } from '@/src/core/network/api/produccion';
@@ -17,35 +19,7 @@ function normalizarTexto(valor: unknown): string {
   return String(valor ?? '').trim().toLowerCase();
 }
 
-function firmaGasto(gasto: Pick<Gasto, 'categoria' | 'descripcion' | 'cantidad' | 'monto'>): string {
-  return [
-    normalizarTexto(gasto.categoria),
-    normalizarTexto(gasto.descripcion),
-    normalizarTexto(gasto.cantidad),
-    normalizarTexto(gasto.monto),
-  ].join('|');
-}
 
-function unirGastosSinDuplicar(gastosApi: Gasto[], gastosLocales: Gasto[]): Gasto[] {
-  const vistos = new Set<string>();
-  const resultado: Gasto[] = [];
-
-  for (const gasto of gastosApi) {
-    const firma = firmaGasto(gasto);
-    if (vistos.has(firma)) continue;
-    vistos.add(firma);
-    resultado.push(gasto);
-  }
-
-  for (const gasto of gastosLocales) {
-    const firma = firmaGasto(gasto);
-    if (vistos.has(firma)) continue;
-    vistos.add(firma);
-    resultado.push(gasto);
-  }
-
-  return resultado;
-}
 
 export function useResultados(
   idLote: number | undefined,
@@ -96,6 +70,7 @@ export function useResultados(
     setLoading(true);
 
     try {
+      // 1. Mostrar de inmediato los datos locales
       const gastosLocalesRaw = await withTimeout(
         obtenerCostosLocalesPorLote({
           idLoteLocal,
@@ -103,8 +78,8 @@ export function useResultados(
         }),
         []
       );
-      const gastosLocalesMapeados: Gasto[] = gastosLocalesRaw.map((gasto, idx) => ({
-        id: `local-${idx}`,
+      const gastosLocalesMapeados: Gasto[] = gastosLocalesRaw.map((gasto) => ({
+        id: `local-${gasto.id_local}`,
         fase: gasto.tipo_costo || 'Desconocida',
         categoria: gasto.categoria || 'Sin categoría',
         descripcion: gasto.descripcion || '',
@@ -137,29 +112,107 @@ export function useResultados(
         setProduccion({ cantidad: '', precio: '' });
       }
 
-      // En modo local mostramos resultados de inmediato, sin esperar llamadas remotas.
       setLoading(false);
 
+      // 2. Si hay idLoteServidor e internet, descargar gastos del servidor a SQLite y luego refrescar desde SQLite
       if (idLoteServidor) {
-        void (async () => {
-          try {
-            const [gastosRemote, produccionApi] = await Promise.all([
-              obtenerGastosPorLoteApi(idLoteServidor),
-              obtenerUltimaProduccionLoteApi(idLoteServidor),
-            ]);
+        try {
+          const netState = await NetInfo.fetch();
+          const hayInternet = Boolean(netState.isConnected) && netState.isInternetReachable !== false;
+          if (hayInternet) {
+            const serverGastos = await obtenerGastosPorLoteApi(idLoteServidor);
+            if (Array.isArray(serverGastos) && serverGastos.length > 0) {
+              const db = await getDb();
+              for (const sg of serverGastos) {
+                const idGastoServidor = Number(sg.id_gasto);
+                if (!idGastoServidor) continue;
 
-            const gastosApi: Gasto[] = gastosRemote.map((g: any, idx: number) => ({
-              id: `api-${idx}`,
-              fase: g.tipo_costo || 'Desconocida',
-              categoria: g.categoria || 'Sin categoría',
-              descripcion: g.descripcion || '',
-              cantidad: String(g.cantidad || 0),
-              monto: String(g.monto_total ?? ((g.cantidad * g.costo_unitario) || 0)),
-              origen: 'API',
-            }));
+                const gastoLocal = await db.getFirstAsync<any>(
+                  `SELECT id_local FROM gasto_lote WHERE id_gasto = ?`,
+                  idGastoServidor
+                );
 
-            setGastos(unirGastosSinDuplicar(gastosApi, gastosLocalesMapeados));
+                if (!gastoLocal) {
+                  const gastoEquivalente = await db.getFirstAsync<any>(
+                    `SELECT id_local FROM gasto_lote 
+                     WHERE (id_lote_local = ? OR id_lote_servidor = ?) 
+                       AND lower(categoria) = lower(?) 
+                       AND cantidad = ? 
+                       AND costo_unitario = ? 
+                       AND sincronizado = 0`,
+                    idLoteLocal ?? null,
+                    idLoteServidor,
+                    sg.categoria.trim(),
+                    Number(sg.cantidad),
+                    Number(sg.costo_unitario)
+                  );
 
+                  if (gastoEquivalente) {
+                    await db.runAsync(
+                      `UPDATE gasto_lote SET id_gasto = ?, sincronizado = 1, id_lote_servidor = ?, updated_at = ? WHERE id_local = ?`,
+                      idGastoServidor,
+                      idLoteServidor,
+                      new Date().toISOString(),
+                      gastoEquivalente.id_local
+                    );
+                  } else {
+                    const nowStr = new Date().toISOString();
+                    await db.runAsync(
+                      `INSERT INTO gasto_lote (
+                        id_gasto,
+                        id_lote_local,
+                        id_lote_servidor,
+                        categoria,
+                        descripcion,
+                        cantidad,
+                        costo_unitario,
+                        monto_total,
+                        tipo_costo,
+                        modalidad_pago,
+                        fecha_gasto,
+                        sincronizado,
+                        created_at,
+                        updated_at
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                      idGastoServidor,
+                      idLoteLocal ?? null,
+                      idLoteServidor,
+                      sg.categoria,
+                      sg.descripcion || null,
+                      Number(sg.cantidad),
+                      Number(sg.costo_unitario),
+                      Number(sg.monto_total || (Number(sg.cantidad) * Number(sg.costo_unitario))),
+                      sg.tipo_costo || 'VARIABLE',
+                      sg.modalidad_pago || 'NA',
+                      sg.fecha_gasto || nowStr.split('T')[0],
+                      1,
+                      nowStr,
+                      nowStr
+                    );
+                  }
+                }
+              }
+
+              // Refrescar desde SQLite (Single Source of Truth)
+              const gastosLocalesActualizados = await obtenerCostosLocalesPorLote({
+                idLoteLocal,
+                idLoteServidor,
+              }).catch(() => []);
+              
+              const gastosMapeadosActualizados: Gasto[] = gastosLocalesActualizados.map((gasto) => ({
+                id: `local-${gasto.id_local}`,
+                fase: gasto.tipo_costo || 'Desconocida',
+                categoria: gasto.categoria || 'Sin categoría',
+                descripcion: gasto.descripcion || '',
+                cantidad: String(gasto.cantidad),
+                monto: String(gasto.monto_total ?? (gasto.costo_unitario * gasto.cantidad)),
+                origen: 'LOCAL',
+              }));
+
+              setGastos(gastosMapeadosActualizados);
+            }
+
+            const produccionApi = await obtenerUltimaProduccionLoteApi(idLoteServidor).catch(() => null);
             if (produccionApi) {
               const cantidadKg = parseFloat(produccionApi.cantidad_obtenida) || 0;
               const precioKg = parseFloat(produccionApi.precio_venta) || 0;
@@ -171,10 +224,10 @@ export function useResultados(
                 precio: precioQq > 0 ? precioQq.toFixed(2) : '',
               });
             }
-          } catch (remoteError) {
-            console.warn('No se pudo cargar datos remotos, se usan datos locales:', remoteError);
           }
-        })();
+        } catch (remoteError) {
+          console.warn('No se pudo cargar datos remotos, se usan datos locales:', remoteError);
+        }
       }
     } catch (error) {
       console.warn('Error cargando datos:', error);

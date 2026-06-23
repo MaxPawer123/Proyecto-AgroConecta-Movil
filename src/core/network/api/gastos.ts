@@ -1,6 +1,7 @@
 import { requestJson, type ApiResponse, type ListResponse } from '../http';
 
 export type CrearGastoPayload = {
+  id_local?: number;
   id_lote: number;
   categoria: string;
   descripcion?: string;

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { obtenerCostosLocalesPorLote, obtenerLotesLocales } from '@/src/modules/costos/costos.repository';
-import { obtenerGastosPorLoteApi, type GastoApi } from '@/src/core/network/api/gastos';
-import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '@/src/core/network/api/lotes';
+import { descargarDatosServidorALocal } from '@/src/modules/siembra/siembra.sync';
 import { suscribirEventosGastos } from '@/src/modules/gastos/gastos.events';
 import { inferirFaseDesdeCategoria, obtenerEstrategiaCalculo, obtenerUnidadCategoria } from '../../calculadoraCostos/utils/estrategiasCalculo';
 
@@ -121,56 +120,6 @@ function mapearGastoLocal(item: Awaited<ReturnType<typeof obtenerCostosLocalesPo
   };
 }
 
-function mapearGastoBackend(item: GastoApi): ReporteGasto {
-  const cantidad = normalizarNumero(item.cantidad);
-  const precioUnitario = normalizarNumero(item.costo_unitario);
-  const total = normalizarNumero(item.monto_total || cantidad * precioUnitario);
-  const nombre = String(item.categoria ?? '').trim() || 'Gasto';
-  const estrategia = obtenerEstrategiaCalculo('quinua');
-  const fase = inferirFaseDesdeCategoria(item.categoria, undefined, estrategia.categoriasPorFase);
-
-  return {
-    id: `backend-${item.id_gasto}`,
-    nombre,
-    descripcion: String(item.descripcion ?? '').trim(),
-    fase,
-    unidad: obtenerUnidadCategoria(item.categoria),
-    cantidad,
-    precioUnitario,
-    total,
-    fechaGasto: String(item.fecha_gasto ?? ''),
-    origen: 'BACKEND',
-  };
-}
-
-function firmaGasto(gasto: Pick<ReporteGasto, 'nombre' | 'unidad' | 'cantidad' | 'precioUnitario' | 'fechaGasto'>): string {
-  return [
-    normalizarTexto(gasto.nombre),
-    normalizarTexto(gasto.unidad),
-    gasto.cantidad.toFixed(4),
-    gasto.precioUnitario.toFixed(4),
-    normalizarTexto(gasto.fechaGasto),
-  ].join('|');
-}
-
-function unirGastos(locales: ReporteGasto[], backend: ReporteGasto[]): ReporteGasto[] {
-  const vistos = new Set<string>();
-  const resultado: ReporteGasto[] = [];
-
-  for (const gasto of backend) {
-    const firma = firmaGasto(gasto);
-    vistos.add(firma);
-    resultado.push(gasto);
-  }
-
-  for (const gasto of locales) {
-    const firma = firmaGasto(gasto);
-    if (vistos.has(firma)) continue;
-    resultado.push(gasto);
-  }
-
-  return resultado.sort((a, b) => obtenerTimestamp(b.fechaGasto) - obtenerTimestamp(a.fechaGasto));
-}
 
 function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[number]): ReporteLoteBase {
   const idServidor = item.id_servidor ?? null;
@@ -192,91 +141,9 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
   };
 }
 
-function mapearLoteBackend(item: LoteApi): ReporteLoteBase {
-  const idServidor = Number(item.id_lote);
-  const createdAtIso = String(item.created_at ?? item.fecha_siembra ?? '');
-
-  return {
-    id: `server-${idServidor}`,
-    idLocal: null,
-    idServidor: Number.isFinite(idServidor) && idServidor > 0 ? idServidor : null,
-    createdAtIso,
-    tipoCultivo: String(item.tipo_cultivo ?? item.variedad ?? ''),
-    nombre: String(item.nombre_lote ?? '').trim() || `Lote ${item.id_lote}`,
-    variedad: String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad',
-    fechaSiembra: String(item.fecha_siembra ?? ''),
-    fechaCosechaEst: String(item.fecha_cosecha_est ?? ''),
-    superficie: Number(item.superficie ?? 0),
-    origen: 'BACKEND',
-    gastos: [],
-  };
-}
-
-async function conTimeout<T>(promesa: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timeoutId = setTimeout(() => resolve(fallback), timeoutMs);
-  });
-
-  const resultado = await Promise.race([promesa, timeoutPromise]);
-  if (timeoutId) clearTimeout(timeoutId);
-  return resultado;
-}
-
-function unirLotes(
-  localesMapeados: ReporteLoteBase[],
-  backendMapeados: ReporteLoteBase[]
-): ReporteLoteBase[] {
-  const indicesPorServidor = new Map<number, number>();
-  const combinados: ReporteLoteBase[] = [];
-
-  for (const lote of localesMapeados) {
-    const indice = combinados.push(lote) - 1;
-    if (lote.idServidor !== null) {
-      indicesPorServidor.set(lote.idServidor, indice);
-    }
-  }
-
-  for (const loteBackend of backendMapeados) {
-    const indiceCoincidencia =
-      loteBackend.idServidor !== null ? indicesPorServidor.get(loteBackend.idServidor) : undefined;
-
-    if (indiceCoincidencia !== undefined) {
-      const coincidencia = combinados[indiceCoincidencia];
-      const actualizado: ReporteLoteBase = {
-        ...coincidencia,
-        id: loteBackend.idServidor ? `server-${loteBackend.idServidor}` : coincidencia.id,
-        idServidor: loteBackend.idServidor ?? coincidencia.idServidor,
-        createdAtIso: elegirCreatedAtMasReciente(coincidencia.createdAtIso, loteBackend.createdAtIso),
-        tipoCultivo: coincidencia.tipoCultivo || loteBackend.tipoCultivo,
-        nombre: coincidencia.nombre || loteBackend.nombre,
-        variedad: coincidencia.variedad || loteBackend.variedad,
-        fechaSiembra: coincidencia.fechaSiembra || loteBackend.fechaSiembra,
-        fechaCosechaEst: coincidencia.fechaCosechaEst || loteBackend.fechaCosechaEst,
-        superficie: coincidencia.superficie ?? loteBackend.superficie,
-        origen: coincidencia.idServidor || loteBackend.idServidor ? 'MIXTO' : 'LOCAL',
-        gastos: coincidencia.gastos.length > 0 ? coincidencia.gastos : loteBackend.gastos,
-      };
-
-      combinados[indiceCoincidencia] = actualizado;
-      if (actualizado.idServidor !== null) {
-        indicesPorServidor.set(actualizado.idServidor, indiceCoincidencia);
-      }
-    } else {
-      const nuevoIndice = combinados.push(loteBackend) - 1;
-      if (loteBackend.idServidor !== null) {
-        indicesPorServidor.set(loteBackend.idServidor, nuevoIndice);
-      }
-    }
-  }
-
-  return combinados;
-}
 
 async function calcularInversionPorLotes(
-  lotesBase: ReporteLoteBase[],
-  incluirGastosBackend: boolean
+  lotesBase: ReporteLoteBase[]
 ): Promise<ReporteLote[]> {
   const lotesConInversion = await Promise.all(
     lotesBase.map(async (lote) => {
@@ -285,29 +152,13 @@ async function calcularInversionPorLotes(
         idLoteServidor: lote.idServidor ?? undefined,
       }).catch(() => [] as CostosLocalesLote);
 
-      let gastosBackend: GastoApi[] = [];
-      let remotoDisponible = false;
-
-      if (incluirGastosBackend && lote.idServidor) {
-        gastosBackend = await conTimeout(
-          obtenerGastosPorLoteApi(lote.idServidor).catch(() => []),
-          BACKEND_TIMEOUT_MS,
-          []
-        );
-        remotoDisponible = gastosBackend.length > 0;
-      }
-
       const gastosLocalesMapeados = gastosLocales.map(mapearGastoLocal);
-      const gastosBackendMapeados = gastosBackend.map(mapearGastoBackend);
-      const gastosUnificados = remotoDisponible
-        ? unirGastos(gastosLocalesMapeados, gastosBackendMapeados)
-        : gastosLocalesMapeados;
-      const totalInvertido = gastosUnificados.reduce((acc, gasto) => acc + Number(gasto.total || 0), 0);
+      const totalInvertido = gastosLocalesMapeados.reduce((acc, gasto) => acc + Number(gasto.total || 0), 0);
 
       return {
         ...lote,
         totalInvertido,
-        gastos: gastosUnificados,
+        gastos: gastosLocalesMapeados,
       };
     })
   );
@@ -342,9 +193,20 @@ export function useReportes() {
       setEstado((actual) => ({ ...actual, loading: true, error: null }));
 
       try {
+        const netState = await NetInfo.fetch();
+        const hayInternet = Boolean(netState.isConnected) && netState.isInternetReachable !== false;
+
+        if (hayInternet) {
+          try {
+            await descargarDatosServidorALocal();
+          } catch (e) {
+            console.warn('Error al descargar datos del servidor:', e);
+          }
+        }
+
         const lotesLocalesRaw = await obtenerLotesLocales().catch(() => [] as Awaited<ReturnType<typeof obtenerLotesLocales>>);
         const localesMapeados = lotesLocalesRaw.map(mapearLoteLocal);
-        const lotesLocalesConInversion = await calcularInversionPorLotes(localesMapeados, false);
+        const lotesLocalesConInversion = await calcularInversionPorLotes(localesMapeados);
         const inversionLocal = lotesLocalesConInversion.reduce(
           (total, lote) => total + Number(lote.totalInvertido || 0),
           0
@@ -360,60 +222,8 @@ export function useReportes() {
           lotes: lotesLocalesConInversion,
           loading: false,
           error: null,
-          estaEnLinea: false,
+          estaEnLinea: hayInternet,
           origenDatos: [`SQLite: ${lotesLocalesConInversion.length}`],
-        });
-
-        const netState = await NetInfo.fetch();
-        const hayInternet = Boolean(netState.isConnected) && netState.isInternetReachable !== false;
-
-        if (!hayInternet || !activo) {
-          setEstado((actual) => ({ ...actual, estaEnLinea: false }));
-          return;
-        }
-
-        const tiposCultivo = new Set<string>([
-          ...TIPOS_CULTIVO_BASE,
-          ...lotesLocalesRaw
-            .map((item) => String(item.tipo_cultivo ?? item.variedad ?? '').trim().toLowerCase())
-            .filter(Boolean),
-        ]);
-
-        const lotesBackendResultados = await Promise.allSettled(
-          [...tiposCultivo].map((tipo) => conTimeout(obtenerLotesPorTipoCultivoApi(tipo), BACKEND_TIMEOUT_MS, []))
-        );
-        const lotesBackend = lotesBackendResultados.flatMap((resultado) =>
-          resultado.status === 'fulfilled' ? resultado.value : []
-        );
-
-        const backendMapeados = lotesBackend.map(mapearLoteBackend);
-        const lotesCombinados = unirLotes(localesMapeados, backendMapeados);
-        const lotesMixtosConInversion = await calcularInversionPorLotes(lotesCombinados, true);
-        const inversionTotalAcumulada = lotesMixtosConInversion.reduce(
-          (total, lote) => total + Number(lote.totalInvertido || 0),
-          0
-        );
-        const costosLocales = lotesMixtosConInversion.reduce(
-          (total, lote) => total + lote.gastos.reduce((acc, gasto) => acc + (gasto.origen === 'LOCAL' ? Number(gasto.total || 0) : 0), 0),
-          0
-        );
-        const costosSubidos = lotesMixtosConInversion.reduce(
-          (total, lote) => total + lote.gastos.reduce((acc, gasto) => acc + (gasto.origen === 'BACKEND' ? Number(gasto.total || 0) : 0), 0),
-          0
-        );
-
-        if (!activo) return;
-
-        setEstado({
-          inversionTotalAcumulada,
-          costosLocales,
-          costosSubidos,
-          cantidadLotes: lotesMixtosConInversion.length,
-          lotes: lotesMixtosConInversion,
-          loading: false,
-          error: null,
-          estaEnLinea: true,
-          origenDatos: [`SQLite: ${localesMapeados.length}`, `Backend: ${backendMapeados.length}`],
         });
       } catch (error) {
         if (!activo) return;

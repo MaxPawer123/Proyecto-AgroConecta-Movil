@@ -173,14 +173,26 @@ export async function obtenerGastosPendientesPorLoteLocal(idLoteLocal: number): 
   }));
 }
 
-export async function marcarGastoComoSincronizado(idLocal: number, idGasto: number): Promise<void> {
+export async function marcarGastoComoSincronizado(idLocal: number, idGasto: number, idLoteServidor?: number | null): Promise<void> {
   const db = await getDb();
-  await db.runAsync(
-    `UPDATE gasto_lote SET id_gasto = ?, sincronizado = 1, updated_at = ? WHERE id_local = ?`,
-    idGasto,
-    new Date().toISOString(),
-    idLocal
-  );
+  await db.withTransactionAsync(async () => {
+    if (idLoteServidor) {
+      await db.runAsync(
+        `UPDATE gasto_lote SET id_gasto = ?, sincronizado = 1, id_lote_servidor = ?, updated_at = ? WHERE id_local = ?`,
+        idGasto,
+        idLoteServidor,
+        new Date().toISOString(),
+        idLocal
+      );
+    } else {
+      await db.runAsync(
+        `UPDATE gasto_lote SET id_gasto = ?, sincronizado = 1, updated_at = ? WHERE id_local = ?`,
+        idGasto,
+        new Date().toISOString(),
+        idLocal
+      );
+    }
+  });
 }
 
 export async function eliminarGastoLocal(idLocal: number): Promise<void> {

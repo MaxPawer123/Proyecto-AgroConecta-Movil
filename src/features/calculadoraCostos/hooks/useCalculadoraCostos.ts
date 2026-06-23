@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
+import { getDb } from '@/src/core/database/sqlite.config';
 import {
   actualizarCostoLocal,
   eliminarCostoLocal,
@@ -217,36 +219,97 @@ export function useCalculadoraCostos({ rubro, idLoteServidor, idLoteLocal }: Use
   };
 
   const cargarGastosDelLote = async () => {
+    // Si hay internet y idLoteServidor, jalamos los gastos del servidor y los escribimos en SQLite
+    if (idLoteServidor) {
+      try {
+        const netState = await NetInfo.fetch();
+        const hayInternet = Boolean(netState.isConnected) && netState.isInternetReachable !== false;
+        if (hayInternet) {
+          const serverGastos = await obtenerGastosPorLoteApi(idLoteServidor);
+          if (Array.isArray(serverGastos)) {
+            const db = await getDb();
+            for (const sg of serverGastos) {
+              const idGastoServidor = Number(sg.id_gasto);
+              if (!idGastoServidor) continue;
+
+              const gastoLocal = await db.getFirstAsync<any>(
+                `SELECT id_local FROM gasto_lote WHERE id_gasto = ?`,
+                idGastoServidor
+              );
+
+              if (!gastoLocal) {
+                // Intentar asociar con un gasto local pendiente idéntico
+                const gastoEquivalente = await db.getFirstAsync<any>(
+                  `SELECT id_local FROM gasto_lote 
+                   WHERE (id_lote_local = ? OR id_lote_servidor = ?) 
+                     AND lower(categoria) = lower(?) 
+                     AND cantidad = ? 
+                     AND costo_unitario = ? 
+                     AND sincronizado = 0`,
+                  idLoteLocal ?? null,
+                  idLoteServidor,
+                  sg.categoria.trim(),
+                  Number(sg.cantidad),
+                  Number(sg.costo_unitario)
+                );
+
+                if (gastoEquivalente) {
+                  await db.runAsync(
+                    `UPDATE gasto_lote SET id_gasto = ?, sincronizado = 1, id_lote_servidor = ?, updated_at = ? WHERE id_local = ?`,
+                    idGastoServidor,
+                    idLoteServidor,
+                    new Date().toISOString(),
+                    gastoEquivalente.id_local
+                  );
+                } else {
+                  // Si no existe localmente, insertarlo como sincronizado
+                  const nowStr = new Date().toISOString();
+                  await db.runAsync(
+                    `INSERT INTO gasto_lote (
+                      id_gasto,
+                      id_lote_local,
+                      id_lote_servidor,
+                      categoria,
+                      descripcion,
+                      cantidad,
+                      costo_unitario,
+                      monto_total,
+                      tipo_costo,
+                      modalidad_pago,
+                      fecha_gasto,
+                      sincronizado,
+                      created_at,
+                      updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    idGastoServidor,
+                    idLoteLocal ?? null,
+                    idLoteServidor,
+                    sg.categoria,
+                    sg.descripcion || null,
+                    Number(sg.cantidad),
+                    Number(sg.costo_unitario),
+                    Number(sg.monto_total || (Number(sg.cantidad) * Number(sg.costo_unitario))),
+                    sg.tipo_costo || 'VARIABLE',
+                    sg.modalidad_pago || 'NA',
+                    sg.fecha_gasto || nowStr.split('T')[0],
+                    1,
+                    nowStr,
+                    nowStr
+                  );
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Error sincronizando gastos al cargar:', error);
+      }
+    }
+
+    // Single Source of Truth: Leer todo estrictamente desde la base de datos SQLite
     const gastosLocales = await obtenerCostosLocalesPorLote({ idLoteLocal, idLoteServidor }).catch(() => []);
     const gastosLocalesMapeados: Gasto[] = gastosLocales.map(mapearGastoLocal);
-    const gastosLocalesPendientes: Gasto[] = gastosLocales
-      .filter((gasto) => !gasto.sincronizado)
-      .map(mapearGastoLocal);
-
-    // Primero pintamos todo lo local para no bloquear la UI en modo offline.
     setGastos(gastosLocalesMapeados);
-
-    if (!idLoteServidor) {
-      return;
-    }
-
-    try {
-      const gastosRemote = await obtenerGastosPorLoteApi(idLoteServidor);
-      const gastosApi: Gasto[] = gastosRemote.map((gasto) => ({
-        id: String(gasto.id_gasto),
-        fase: inferirFaseDesdeApi(gasto),
-        categoria: gasto.categoria,
-        descripcion: gasto.descripcion || '',
-        cantidad: String(gasto.cantidad ?? ''),
-        monto: String(gasto.monto_total ?? 0),
-        origen: 'API',
-      }));
-
-      setGastos([...gastosApi, ...gastosLocalesPendientes]);
-    } catch (error) {
-      setGastos(gastosLocalesMapeados);
-      console.warn('No se pudieron cargar gastos remotos, se muestran locales:', error);
-    }
   };
 
   const cargarUltimaProduccionDelLote = async () => {

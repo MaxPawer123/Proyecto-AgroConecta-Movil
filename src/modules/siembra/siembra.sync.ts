@@ -13,7 +13,7 @@ import {
   obtenerLotesPorTipoCultivoApi,
   subirFotoSiembraApi,
 } from '../../core/network/api/lotes';
-import { crearGastoApi } from '../../core/network/api/gastos';
+import { crearGastoApi, obtenerGastosPorLoteApi } from '../../core/network/api/gastos';
 import { registrarProduccionLoteApi } from '../../core/network/api/produccion';
 import {
   obtenerBorradorProduccionLocal,
@@ -22,6 +22,7 @@ import {
 } from '../costos/costos.repository';
 import {
   dividirCultivosSeleccionados,
+  getLoteServerColumn,
   insertarLoteLocal,
   marcarLoteComoSincronizado,
   obtenerLotesPendientesLocales,
@@ -169,6 +170,7 @@ async function sincronizarGastosLocales(idLocal: number, idServidor: number): Pr
   for (const gasto of gastosPendientes) {
     try {
       const nuevoGasto = await crearGastoApi({
+        id_local: gasto.id_local,
         id_lote: idServidor,
         categoria: gasto.categoria,
         descripcion: gasto.descripcion ?? undefined,
@@ -183,7 +185,7 @@ async function sincronizarGastosLocales(idLocal: number, idServidor: number): Pr
         throw new Error('El backend devolvió un id_gasto inválido.');
       }
 
-      await marcarGastoComoSincronizado(gasto.id_local, idGasto);
+      await marcarGastoComoSincronizado(gasto.id_local, idGasto, idServidor);
       console.log(`✅ Gasto ${gasto.id_local} sincronizado → ID servidor: ${idGasto}`);
     } catch (error) {
       console.warn(`❌ Error sincronizando gasto ${gasto.id_local}:`, error);
@@ -230,6 +232,7 @@ async function sincronizarGastosHuerfanosLocales(): Promise<void> {
     if (!idLoteServidor) continue;
     try {
       const nuevoGasto = await crearGastoApi({
+        id_local: gasto.id_local,
         id_lote: idLoteServidor,
         categoria: gasto.categoria,
         descripcion: gasto.descripcion ?? undefined,
@@ -244,7 +247,7 @@ async function sincronizarGastosHuerfanosLocales(): Promise<void> {
         throw new Error('El backend devolvió un id_gasto inválido.');
       }
 
-      await marcarGastoComoSincronizado(gasto.id_local, idGasto);
+      await marcarGastoComoSincronizado(gasto.id_local, idGasto, idLoteServidor);
       console.log(`✅ Gasto huérfano ${gasto.id_local} sincronizado → ID servidor: ${idGasto}`);
     } catch (error) {
       console.warn(`❌ Error sincronizando gasto huérfano ${gasto.id_local}:`, error);
@@ -488,5 +491,180 @@ export function detenerSincronizacionAutomaticaSiembras(): void {
   if (netInfoUnsubscribe) {
     netInfoUnsubscribe();
     netInfoUnsubscribe = null;
+  }
+}
+
+export async function descargarDatosServidorALocal(): Promise<void> {
+  const hayConexion = await hayConexionDisponible();
+  if (!hayConexion) return;
+
+  const backendActivo = await verificarBackendActivo();
+  if (!backendActivo) return;
+
+  const db = await getDb();
+  let idProductor: number | null = null;
+  try {
+    idProductor = await getCurrentProductorId();
+  } catch {
+    return;
+  }
+  if (!idProductor) return;
+
+  const tiposCultivo = ['QUINUA', 'PAPA', 'HORTALIZA'];
+  const serverLotes: any[] = [];
+  
+  for (const tipo of tiposCultivo) {
+    try {
+      const lotes = await obtenerLotesPorTipoCultivoApi(tipo);
+      if (Array.isArray(lotes)) {
+        serverLotes.push(...lotes);
+      }
+    } catch (e) {
+      console.warn(`No se pudieron obtener lotes para el tipo ${tipo}:`, e);
+    }
+  }
+
+  const serverColumn = await getLoteServerColumn();
+
+  for (const sl of serverLotes) {
+    const idLoteServidor = Number(sl.id_lote);
+    if (!idLoteServidor) continue;
+
+    const loteLocalExistente = await db.getFirstAsync<any>(
+      `SELECT id_local FROM lote WHERE ${serverColumn} = ?`,
+      idLoteServidor
+    );
+
+    let idLoteLocal = loteLocalExistente?.id_local;
+
+    if (!idLoteLocal) {
+      const lotePorNombre = await db.getFirstAsync<any>(
+        `SELECT id_local FROM lote WHERE lower(nombre_lote) = lower(?) AND id_productor = ? AND ${serverColumn} IS NULL`,
+        sl.nombre_lote.trim(),
+        idProductor
+      );
+
+      if (lotePorNombre) {
+        idLoteLocal = lotePorNombre.id_local;
+        await db.runAsync(
+          `UPDATE lote SET ${serverColumn} = ?, estado_sincronizacion = 'SINCRONIZADO' WHERE id_local = ?`,
+          idLoteServidor,
+          idLoteLocal
+        );
+      } else {
+        const resultInsert = await db.runAsync(
+          `INSERT INTO lote (
+            ${serverColumn},
+            id_productor,
+            nombre_lote,
+            ubicacion,
+            superficie,
+            fecha_siembra,
+            fecha_cosecha_est,
+            estado_sincronizacion,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          idLoteServidor,
+          idProductor,
+          sl.nombre_lote,
+          sl.ubicacion || null,
+          sl.superficie || null,
+          sl.fecha_siembra || new Date().toISOString(),
+          sl.fecha_cosecha_est || null,
+          'SINCRONIZADO',
+          sl.created_at || new Date().toISOString(),
+          sl.updated_at || new Date().toISOString()
+        );
+        idLoteLocal = Number(resultInsert.lastInsertRowId);
+
+        const cultivos = dividirCultivosSeleccionados(sl.tipo_cultivo || '');
+        for (const cultivo of cultivos) {
+          const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', 'General');
+          await db.runAsync(
+            'INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)',
+            idLoteLocal,
+            idProducto
+          );
+        }
+      }
+    }
+
+    try {
+      const serverGastos = await obtenerGastosPorLoteApi(idLoteServidor);
+      if (Array.isArray(serverGastos)) {
+        for (const sg of serverGastos) {
+          const idGastoServidor = Number(sg.id_gasto);
+          if (!idGastoServidor) continue;
+
+          const gastoLocal = await db.getFirstAsync<any>(
+            `SELECT id_local FROM gasto_lote WHERE id_gasto = ?`,
+            idGastoServidor
+          );
+
+          if (!gastoLocal) {
+            const gastoEquivalente = await db.getFirstAsync<any>(
+              `SELECT id_local FROM gasto_lote 
+               WHERE (id_lote_local = ? OR id_lote_servidor = ?) 
+                 AND lower(categoria) = lower(?) 
+                 AND cantidad = ? 
+                 AND costo_unitario = ? 
+                 AND sincronizado = 0`,
+              idLoteLocal,
+              idLoteServidor,
+              sg.categoria.trim(),
+              Number(sg.cantidad),
+              Number(sg.costo_unitario)
+            );
+
+            if (gastoEquivalente) {
+              await db.runAsync(
+                `UPDATE gasto_lote SET id_gasto = ?, sincronizado = 1, id_lote_servidor = ?, updated_at = ? WHERE id_local = ?`,
+                idGastoServidor,
+                idLoteServidor,
+                new Date().toISOString(),
+                gastoEquivalente.id_local
+              );
+            } else {
+              const nowStr = new Date().toISOString();
+              await db.runAsync(
+                `INSERT INTO gasto_lote (
+                  id_gasto,
+                  id_lote_local,
+                  id_lote_servidor,
+                  categoria,
+                  descripcion,
+                  cantidad,
+                  costo_unitario,
+                  monto_total,
+                  tipo_costo,
+                  modalidad_pago,
+                  fecha_gasto,
+                  sincronizado,
+                  created_at,
+                  updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                idGastoServidor,
+                idLoteLocal,
+                idLoteServidor,
+                sg.categoria,
+                sg.descripcion || null,
+                Number(sg.cantidad),
+                Number(sg.costo_unitario),
+                Number(sg.monto_total || (Number(sg.cantidad) * Number(sg.costo_unitario))),
+                sg.tipo_costo || 'VARIABLE',
+                sg.modalidad_pago || 'NA',
+                sg.fecha_gasto || nowStr.split('T')[0],
+                1,
+                nowStr,
+                nowStr
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`No se pudieron obtener gastos para el lote ${idLoteServidor}:`, e);
+    }
   }
 }
