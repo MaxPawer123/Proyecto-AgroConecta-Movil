@@ -8,7 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // 👇 IP LAN FIJA del backend — cámbiala si tu PC obtiene otra IP de tu router.
 const BACKEND_IP = '192.168.0.8';
 const BACKEND_PORT = 3000;
-const BASE_URL_FIJA = `http://${BACKEND_IP}:${BACKEND_PORT}`;
+const BASE_URL_FIJA = process.env.EXPO_PUBLIC_API_URL || process.env.EXPO_PUBLIC_API_BASE_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
 
 const REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -65,23 +65,23 @@ function interceptarErrorDeRed(error: unknown, urlIntentada: string): void {
     if (esErrorDeRed) {
       console.error(
         '\n' +
-          '╔══════════════════════════════════════════════════════════════════╗\n' +
-          '║  ❌ Error Crítico de Red                                        ║\n' +
-          '╠══════════════════════════════════════════════════════════════════╣\n' +
-          '║  El celular NO alcanza al servidor backend.                     ║\n' +
-          '║                                                                 ║\n' +
-          `║  URL intentada: ${urlIntentada.padEnd(46)}║\n` +
-          '║                                                                 ║\n' +
-          '║  🔎 Checklist de diagnóstico:                                   ║\n' +
-          '║  1. ¿El celular y la PC están en el MISMO Wi-Fi?                ║\n' +
-          '║  2. ¿El backend está corriendo? (npm start en Backend/)         ║\n' +
-          '║  3. ¿El Firewall de Windows bloquea el puerto 3000?             ║\n' +
-          '║     → Panel de control > Firewall > Permitir app >              ║\n' +
-          '║       Agregar regla de entrada TCP puerto 3000                  ║\n' +
-          '║  4. ¿La IP configurada (192.168.0.8) sigue siendo correcta?    ║\n' +
-          '║     → En CMD ejecuta: ipconfig | findstr IPv4                   ║\n' +
-          '╚══════════════════════════════════════════════════════════════════╝\n' +
-          `  Error original: ${error.message}\n`
+        '╔══════════════════════════════════════════════════════════════════╗\n' +
+        '║  ❌ Error Crítico de Red                                        ║\n' +
+        '╠══════════════════════════════════════════════════════════════════╣\n' +
+        '║  El celular NO alcanza al servidor backend.                     ║\n' +
+        '║                                                                 ║\n' +
+        `║  URL intentada: ${urlIntentada.padEnd(46)}║\n` +
+        '║                                                                 ║\n' +
+        '║  🔎 Checklist de diagnóstico:                                   ║\n' +
+        '║  1. ¿El celular y la PC están en el MISMO Wi-Fi?                ║\n' +
+        '║  2. ¿El backend está corriendo? (npm start en Backend/)         ║\n' +
+        '║  3. ¿El Firewall de Windows bloquea el puerto 3000?             ║\n' +
+        '║     → Panel de control > Firewall > Permitir app >              ║\n' +
+        '║       Agregar regla de entrada TCP puerto 3000                  ║\n' +
+        '║  4. ¿La IP configurada (192.168.0.8) sigue siendo correcta?    ║\n' +
+        '║     → En CMD ejecuta: ipconfig | findstr IPv4                   ║\n' +
+        '╚══════════════════════════════════════════════════════════════════╝\n' +
+        `  Error original: ${error.message}\n`
       );
     }
   }
@@ -144,6 +144,7 @@ function obtenerHostUriExpo(): string | null {
 
 function extraerUrlsConfiguradasDesdeEnv(): string[] {
   const valores = [
+    process.env.EXPO_PUBLIC_API_URL,
     process.env.EXPO_PUBLIC_API_BASE_URL,
     process.env.EXPO_PUBLIC_API_BASE_URLS,
     process.env.EXPO_PUBLIC_API_BASE_URL_LAN,
@@ -294,8 +295,7 @@ export async function ejecutarConBaseUrls<T>(
 
   // Si todas fallaron, emitir un error final con el interceptor
   const errorFinal = new Error(
-    `No se pudo conectar con el backend. URLs probadas: ${orden.join(', ')}. Ultimo error: ${
-      ultimoError?.message || 'sin detalle'
+    `No se pudo conectar con el backend. URLs probadas: ${orden.join(', ')}. Ultimo error: ${ultimoError?.message || 'sin detalle'
     }`
   );
   interceptarErrorDeRed(errorFinal, orden[0] || BASE_URL_FIJA);
