@@ -10,6 +10,7 @@ export type CrearLotePayload = {
   superficie: number;
   fecha_siembra: string;
   fecha_cosecha_est: string;
+  fecha_cosecha_real?: string | null;
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
   productos_ids?: number[];
@@ -32,6 +33,7 @@ export type LoteApi = {
   superficie: string;
   fecha_siembra: string;
   fecha_cosecha_est: string;
+  fecha_cosecha_real?: string | null;
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
   estado: string;

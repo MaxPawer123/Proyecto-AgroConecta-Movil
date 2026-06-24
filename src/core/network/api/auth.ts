@@ -60,3 +60,26 @@ export async function iniciarSesionApi(payload: AuthLoginPayload): Promise<{ tok
     data: response.data,
   };
 }
+
+export type AuthPerfilUpdatePayload = {
+  nombre: string;
+  apellido: string;
+  telefono: string;
+  departamento: string;
+  municipio: string;
+  comunidad: string;
+};
+
+export async function actualizarPerfilApi(payload: AuthPerfilUpdatePayload): Promise<AuthUserApi> {
+  const response = await requestJson<ApiResponse<AuthUserApi>>('/api/usuario/perfil', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+
+  if (!response?.success || !response.data) {
+    throw new Error(response?.message || 'No se pudo actualizar el perfil en el servidor');
+  }
+
+  return response.data;
+}
+

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from '../../core/database/sqlite.config';
-import { registrarProductorApi } from '../../core/network/api/auth';
+import { registrarProductorApi, actualizarPerfilApi } from '../../core/network/api/auth';
 
 export async function getCurrentProductorId(): Promise<number> {
   try {
@@ -135,7 +135,7 @@ export async function registrarUsuarioYProductor(
         nombre,
         apellido,
         nombreCompleto,
-        tokenLocal,
+        pin,
         telefono
       );
 
@@ -143,11 +143,10 @@ export async function registrarUsuarioYProductor(
 
       // Registrar productor localmente con sincronizado = 0
       const resultProductor = await db.runAsync(
-        `INSERT INTO productor (id_usuario, credencial_hash, credencial, departamento, municipio, comunidad, telefono, sincronizado)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        `INSERT INTO productor (id_usuario, pin, departamento, municipio, comunidad, telefono, sincronizado)
+         VALUES (?, ?, ?, ?, ?, ?, 0)`,
         idUsuarioLocal,
-        tokenLocal,
-        tokenLocal,
+        pin,
         departamento,
         municipio,
         comunidad,
@@ -253,74 +252,105 @@ export async function sincronizarUsuarioYProductorBackend(): Promise<boolean> {
     return false;
   }
 
-  console.log(`🔄 Sincronizando usuario local "${unsynced.nombre} ${unsynced.apellido}" con el servidor...`);
+  // Verificar si hay token JWT (si hay token, significa que ya está registrado/autenticado en el servidor)
+  let token = await AsyncStorage.getItem('@jwt_token').catch(() => null);
+  if (!token) {
+    token = await AsyncStorage.getItem('jwt_token').catch(() => null);
+  }
 
-  try {
-    const resServer = await registrarProductorApi({
-      nombre: unsynced.nombre,
-      apellido: unsynced.apellido,
-      telefono: unsynced.telefono,
-      departamento: unsynced.departamento,
-      municipio: unsynced.municipio,
-      comunidad: unsynced.comunidad,
-    });
+  if (token) {
+    console.log(`🔄 Sincronizando actualización de perfil local de "${unsynced.nombre} ${unsynced.apellido}" con el servidor...`);
+    try {
+      await actualizarPerfilApi({
+        nombre: unsynced.nombre,
+        apellido: unsynced.apellido,
+        telefono: unsynced.telefono,
+        departamento: unsynced.departamento,
+        municipio: unsynced.municipio,
+        comunidad: unsynced.comunidad,
+      });
 
-    if (resServer && resServer.data && resServer.token) {
-      const serverIdUsuario = Number(resServer.data.id_usuario);
-      const serverIdProductor = Number(resServer.data.id_productor);
-      const token = resServer.token;
+      // Actualizar a sincronizado = 1 en SQLite
+      await db.withTransactionAsync(async () => {
+        await db.runAsync('UPDATE usuario SET sincronizado = 1 WHERE id_usuario = ?', unsynced.id_usuario);
+        await db.runAsync('UPDATE productor SET sincronizado = 1 WHERE id_productor = ?', unsynced.id_productor);
+      });
 
-      console.log('📡 Usuario registrado con éxito en el servidor. Nuevos IDs:', { serverIdUsuario, serverIdProductor });
-
-      // Desactivar temporalmente las llaves foráneas para poder hacer la actualización en cascada manual de las llaves primarias
-      await db.execAsync('PRAGMA foreign_keys = OFF');
-
-      try {
-        // Actualizar usuario
-        await db.runAsync(
-          'UPDATE usuario SET id_usuario = ?, sincronizado = 1 WHERE id_usuario = ?',
-          serverIdUsuario,
-          unsynced.id_usuario
-        );
-
-        // Actualizar productor (actualizando también id_usuario para enlazarlo con el nuevo ID de usuario)
-        await db.runAsync(
-          'UPDATE productor SET id_productor = ?, id_usuario = ?, sincronizado = 1 WHERE id_productor = ?',
-          serverIdProductor,
-          serverIdUsuario,
-          unsynced.id_productor
-        );
-
-        // Actualizar lotes asociados
-        await db.runAsync(
-          'UPDATE lote SET id_productor = ? WHERE id_productor = ?',
-          serverIdProductor,
-          unsynced.id_productor
-        );
-
-        // Actualizar sesión activa
-        await db.runAsync(
-          'UPDATE auth_sesion SET id_usuario = ? WHERE id_usuario = ?',
-          serverIdUsuario,
-          unsynced.id_usuario
-        );
-      } finally {
-        await db.execAsync('PRAGMA foreign_keys = ON');
-      }
-
-      // Guardar nueva sesión con los datos y el token del servidor en AsyncStorage y SQLite
-      await guardarSesion(
-        serverIdUsuario,
-        serverIdProductor,
-        `${unsynced.nombre} ${unsynced.apellido}`.trim(),
-        token
-      );
-
-      console.log('✅ Base de datos local y sesión de almacenamiento actualizadas con el token del servidor.');
+      console.log('✅ Perfil actualizado y sincronizado en el servidor.');
       return true;
+    } catch (error) {
+      console.warn('⚠️ Error al intentar sincronizar la actualización de perfil con el servidor:', error);
+      return false;
     }
-  } catch (error) {
-    console.warn('⚠️ Error al intentar sincronizar el usuario con el servidor:', error);
+  } else {
+    console.log(`🔄 Sincronizando registro de usuario local "${unsynced.nombre} ${unsynced.apellido}" con el servidor...`);
+    try {
+      const resServer = await registrarProductorApi({
+        nombre: unsynced.nombre,
+        apellido: unsynced.apellido,
+        telefono: unsynced.telefono,
+        departamento: unsynced.departamento,
+        municipio: unsynced.municipio,
+        comunidad: unsynced.comunidad,
+      });
+
+      if (resServer && resServer.data && resServer.token) {
+        const serverIdUsuario = Number(resServer.data.id_usuario);
+        const serverIdProductor = Number(resServer.data.id_productor);
+        const token = resServer.token;
+
+        console.log('📡 Usuario registrado con éxito en el servidor. Nuevos IDs:', { serverIdUsuario, serverIdProductor });
+
+        // Desactivar temporalmente las llaves foráneas para poder hacer la actualización en cascada manual de las llaves primarias
+        await db.execAsync('PRAGMA foreign_keys = OFF');
+
+        try {
+          // Actualizar usuario
+          await db.runAsync(
+            'UPDATE usuario SET id_usuario = ?, sincronizado = 1 WHERE id_usuario = ?',
+            serverIdUsuario,
+            unsynced.id_usuario
+          );
+
+          // Actualizar productor (actualizando también id_usuario para enlazarlo con el nuevo ID de usuario)
+          await db.runAsync(
+            'UPDATE productor SET id_productor = ?, id_usuario = ?, sincronizado = 1 WHERE id_productor = ?',
+            serverIdProductor,
+            serverIdUsuario,
+            unsynced.id_productor
+          );
+
+          // Actualizar lotes asociados
+          await db.runAsync(
+            'UPDATE lote SET id_productor = ? WHERE id_productor = ?',
+            serverIdProductor,
+            unsynced.id_productor
+          );
+
+          // Actualizar sesión activa
+          await db.runAsync(
+            'UPDATE auth_sesion SET id_usuario = ? WHERE id_usuario = ?',
+            serverIdUsuario,
+            unsynced.id_usuario
+          );
+        } finally {
+          await db.execAsync('PRAGMA foreign_keys = ON');
+        }
+
+        // Guardar nueva sesión con los datos y el token del servidor en AsyncStorage y SQLite
+        await guardarSesion(
+          serverIdUsuario,
+          serverIdProductor,
+          `${unsynced.nombre} ${unsynced.apellido}`.trim(),
+          token
+        );
+
+        console.log('✅ Base de datos local y sesión de almacenamiento actualizadas con el token del servidor.');
+        return true;
+      }
+    } catch (error) {
+      console.warn('⚠️ Error al intentar sincronizar el usuario con el servidor:', error);
+    }
   }
 
   return false;

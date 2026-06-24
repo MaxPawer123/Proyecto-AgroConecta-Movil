@@ -77,7 +77,7 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
       rol TEXT NOT NULL DEFAULT 'productor',
       estado TEXT DEFAULT 'activo',
       telefono TEXT UNIQUE NOT NULL,
-      contrasena TEXT,
+      password_hash TEXT,
       fecha_registro TEXT NOT NULL DEFAULT (datetime('now')),
       sincronizado INTEGER NOT NULL DEFAULT 0
     );
@@ -85,8 +85,7 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
     CREATE TABLE IF NOT EXISTS productor (
       id_productor INTEGER PRIMARY KEY AUTOINCREMENT,
       id_usuario INTEGER UNIQUE NOT NULL,
-      credencial_hash TEXT NOT NULL,
-      credencial TEXT,
+      pin TEXT,
       departamento TEXT NOT NULL,
       municipio TEXT NOT NULL,
       comunidad TEXT NOT NULL,
@@ -111,14 +110,13 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
     `ALTER TABLE ${tablaUsuario} ADD COLUMN rol TEXT NOT NULL DEFAULT 'productor'`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN estado TEXT DEFAULT 'activo'`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN telefono TEXT`,
-    `ALTER TABLE ${tablaUsuario} ADD COLUMN contrasena TEXT`,
+    `ALTER TABLE ${tablaUsuario} ADD COLUMN password_hash TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN fecha_registro TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN sincronizado INTEGER NOT NULL DEFAULT 0`,
   ];
 
   const migracionesProductor = [
-    `ALTER TABLE ${tablaProductor} ADD COLUMN credencial_hash TEXT`,
-    `ALTER TABLE ${tablaProductor} ADD COLUMN credencial TEXT`,
+    `ALTER TABLE ${tablaProductor} ADD COLUMN pin TEXT`,
     `ALTER TABLE ${tablaProductor} ADD COLUMN departamento TEXT`,
     `ALTER TABLE ${tablaProductor} ADD COLUMN municipio TEXT`,
     `ALTER TABLE ${tablaProductor} ADD COLUMN comunidad TEXT`,
@@ -167,7 +165,6 @@ function valorRequeridoUsuario(columna: string, input: RegistroProductorInput, t
       return 'activo';
     case 'telefono':
       return input.telefono.trim();
-    case 'contrasena':
     case 'password_hash':
       return tokenLocal;
     case 'fecha_registro':
@@ -183,8 +180,7 @@ function valorRequeridoProductor(columna: string, input: RegistroProductorInput,
   switch (columna) {
     case 'id_usuario':
       return idUsuario;
-    case 'credencial_hash':
-    case 'credencial':
+    case 'pin':
       return tokenLocal;
     case 'departamento':
       return input.departamento.trim();

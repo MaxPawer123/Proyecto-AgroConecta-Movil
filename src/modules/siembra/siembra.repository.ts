@@ -195,6 +195,7 @@ export type LoteLocal = {
   superficie: number | null;
   fecha_siembra: string;
   fecha_cosecha_est: string;
+  fecha_cosecha_real?: string | null;
   foto_siembra_uri_local: string | null;
   sincronizado: number;
   created_at?: string;
@@ -210,7 +211,7 @@ const LOTE_SELECT_FIELDS = `
   l.superficie,
   l.fecha_siembra,
   l.fecha_cosecha_est,
-  l.fecha_cierre_real,
+  l.fecha_cosecha_real,
   l.foto_siembra_url,
   l.estado,
   l.sincronizado,
@@ -245,6 +246,7 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     superficie: row.superficie === null || row.superficie === undefined ? null : Number(row.superficie),
     fecha_siembra: String(row.fecha_siembra ?? ''),
     fecha_cosecha_est: String(row.fecha_cosecha_est ?? ''),
+    fecha_cosecha_real: row.fecha_cosecha_real === null || row.fecha_cosecha_real === undefined ? null : String(row.fecha_cosecha_real),
     foto_siembra_uri_local: row.foto_siembra_url === null || row.foto_siembra_url === undefined ? null : String(row.foto_siembra_url),
     sincronizado: Number(row.sincronizado ?? 0),
     created_at: row.created_at === null || row.created_at === undefined ? undefined : String(row.created_at),

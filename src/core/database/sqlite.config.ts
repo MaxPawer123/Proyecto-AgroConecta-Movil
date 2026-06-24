@@ -53,8 +53,7 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       CREATE TABLE IF NOT EXISTS productor (
         id_productor INTEGER PRIMARY KEY AUTOINCREMENT,
         id_usuario INTEGER NOT NULL,
-        credencial_hash TEXT,
-        credencial TEXT,
+        pin TEXT,
         departamento TEXT NOT NULL,
         municipio TEXT NOT NULL,
         comunidad TEXT NOT NULL,
@@ -73,7 +72,7 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         superficie REAL,
         fecha_siembra TEXT NOT NULL,
         fecha_cosecha_est TEXT NOT NULL,
-        fecha_cierre_real TEXT,
+        fecha_cosecha_real TEXT,
         foto_siembra_url TEXT,
         estado TEXT NOT NULL DEFAULT 'ACTIVO',
         sincronizado INTEGER NOT NULL DEFAULT 0,
@@ -223,7 +222,28 @@ async function asegurarColumnasProducto(db: SQLite.SQLiteDatabase): Promise<void
   }
 }
 
+async function asegurarColumnasUsuarioYProductor(db: SQLite.SQLiteDatabase): Promise<void> {
+  const colUsuario = await getTableColumns(db, 'usuario');
+  if (!colUsuario.has('password_hash')) {
+    await runSafe(db, 'ALTER TABLE usuario ADD COLUMN password_hash TEXT');
+  }
+
+  const colProductor = await getTableColumns(db, 'productor');
+  if (!colProductor.has('pin')) {
+    await runSafe(db, 'ALTER TABLE productor ADD COLUMN pin TEXT');
+  }
+}
+
+async function asegurarColumnasLote(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = await getTableColumns(db, 'lote');
+  if (!columns.has('fecha_cosecha_real')) {
+    await runSafe(db, 'ALTER TABLE lote ADD COLUMN fecha_cosecha_real TEXT');
+  }
+}
+
 async function aplicarMigraciones(db: SQLite.SQLiteDatabase): Promise<void> {
+  await asegurarColumnasUsuarioYProductor(db);
+  await asegurarColumnasLote(db);
   await asegurarColumnasGastoLote(db);
   await asegurarColumnasProduccionLote(db);
   await asegurarColumnasProducto(db);

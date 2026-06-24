@@ -168,6 +168,7 @@ async function sincronizarLote(item: LoteLocal, idProductorRecuperado: number): 
     superficie: item.superficie ?? 0,
     fecha_siembra: item.fecha_siembra,
     fecha_cosecha_est: item.fecha_cosecha_est,
+    fecha_cosecha_real: item.fecha_cosecha_real,
     foto_siembra_url: fotoSiembraUrl,
     ubicacion: item.ubicacion || 'No especificada',
     productos_ids,
@@ -662,10 +663,11 @@ export async function descargarDatosServidorALocal(): Promise<void> {
             superficie,
             fecha_siembra,
             fecha_cosecha_est,
+            fecha_cosecha_real,
             sincronizado,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           idLoteServidor,
           idProductor,
           sl.nombre_lote,
@@ -673,6 +675,7 @@ export async function descargarDatosServidorALocal(): Promise<void> {
           sl.superficie || null,
           sl.fecha_siembra || new Date().toISOString(),
           sl.fecha_cosecha_est || null,
+          sl.fecha_cosecha_real || null,
           1,
           sl.created_at || new Date().toISOString(),
           sl.updated_at || new Date().toISOString()

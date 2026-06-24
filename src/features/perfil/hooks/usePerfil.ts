@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuthLocal } from '@/src/features/auth/hooks/useAuthLocal';
 import { getDb } from '@/src/core/database/sqlite.config';
 import { sincronizarSiembrasPendientes } from '@/src/modules/siembra/siembra.sync';
+import { actualizarPerfilApi } from '@/src/core/network/api/auth';
 
 export type PerfilProductor = {
   idUsuario: number;
@@ -256,6 +257,8 @@ export function usePerfil() {
 
     try {
       setGuardandoPerfil(true);
+      
+      // 1. Guardar localmente primero (Offline-First) con sincronizado = 0
       await db.withTransactionAsync(async () => {
         await db.runAsync(
           `UPDATE usuario
@@ -280,8 +283,57 @@ export function usePerfil() {
         );
       });
 
-      await cargarPerfil();
-      Alert.alert('Perfil actualizado', 'Tus datos se guardaron en este dispositivo.');
+      // 2. Intentar actualizar en el servidor (sincronización inmediata)
+      try {
+        await actualizarPerfilApi({
+          nombre,
+          apellido,
+          telefono,
+          departamento,
+          municipio,
+          comunidad,
+        });
+
+        // Si se pudo actualizar, marcar como sincronizado = 1 en SQLite
+        await db.withTransactionAsync(async () => {
+          await db.runAsync(
+            `UPDATE usuario SET sincronizado = 1 WHERE id_usuario = ?`,
+            perfil.idUsuario
+          );
+          await db.runAsync(
+            `UPDATE productor SET sincronizado = 1 WHERE id_productor = ?`,
+            perfil.idProductor
+          );
+        });
+
+        await cargarPerfil();
+        Alert.alert('Perfil actualizado', 'Tus datos se actualizaron correctamente en el servidor.');
+      } catch (apiError: any) {
+        console.warn('Error al sincronizar perfil con el servidor:', apiError);
+        await cargarPerfil();
+
+        const msg = String(apiError?.message || '').toLowerCase();
+        const esErrorDeRed =
+          msg.includes('network') ||
+          msg.includes('fetch') ||
+          msg.includes('timeout') ||
+          msg.includes('connect') ||
+          msg.includes('abort') ||
+          msg.includes('host') ||
+          msg.includes('no se pudo conectar');
+
+        if (esErrorDeRed) {
+          Alert.alert(
+            'Perfil guardado localmente',
+            'Tus datos se guardaron en el dispositivo. Se sincronizarán automáticamente con el servidor cuando recuperes la conexión.'
+          );
+        } else {
+          Alert.alert(
+            'Error al sincronizar',
+            apiError?.message || 'Ocurrió un error al actualizar el perfil en el servidor.'
+          );
+        }
+      }
     } catch (error) {
       console.warn('No se pudo guardar el perfil local:', error);
       Alert.alert('Error', 'No se pudo guardar el perfil local. Intenta nuevamente.');
