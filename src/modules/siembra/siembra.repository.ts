@@ -86,6 +86,25 @@ export function dividirCultivosSeleccionados(valor: string): string[] {
   return cultivos;
 }
 
+export function determinarCategoriaCultivo(cultivo: string): 'QUINUA' | 'PAPA' | 'HORTALIZA' | 'General' {
+  const nombre = String(cultivo ?? '').toLowerCase().trim();
+  if (nombre.includes('quinua')) return 'QUINUA';
+  if (
+    nombre.includes('papa') ||
+    nombre.includes('huaycha') ||
+    nombre.includes('imilla') ||
+    nombre.includes('desiree') ||
+    nombre.includes('runa')
+  ) {
+    return 'PAPA';
+  }
+  const palabrasHortalizas = /cebolla|zanahoria|lechuga|tomate|pimiento|pepino|brocoli|brócoli|col|repollo|espinaca|betarraga|remolacha/i;
+  if (palabrasHortalizas.test(nombre) || nombre.includes('hortaliza')) {
+    return 'HORTALIZA';
+  }
+  return 'General';
+}
+
 export async function obtenerOInsertarProductoLocal(
   db: Db,
   nombre: string,
@@ -109,6 +128,13 @@ export async function obtenerOInsertarProductoLocal(
   );
 
   if (existente?.id_producto) {
+    if (categoria && categoria !== 'General') {
+      await db.runAsync(
+        `UPDATE PRODUCTO SET categoria = ? WHERE id_producto = ? AND (categoria = 'General' OR categoria IS NULL)`,
+        categoria,
+        existente.id_producto
+      );
+    }
     return Number(existente.id_producto);
   }
 
@@ -152,10 +178,8 @@ export type LoteInsertInput = {
   superficie: number | null;
   fecha_siembra: string;
   fecha_cosecha_est: string;
-  rendimiento_estimado: number | null;
-  precio_venta_est: number | null;
   foto_siembra_uri_local?: string | null;
-  estado_sincronizacion?: 'PENDIENTE' | 'SINCRONIZADO';
+  sincronizado?: number;
 };
 
 export type LoteLocal = {
@@ -163,7 +187,6 @@ export type LoteLocal = {
   id_productor: number;
   id_servidor: number | null;
   tipo_cultivo: string;
-  variedad?: string;
   cultivos_mostrados: string;
   categorias_mostradas: string;
   id_productos: number[];
@@ -172,10 +195,8 @@ export type LoteLocal = {
   superficie: number | null;
   fecha_siembra: string;
   fecha_cosecha_est: string;
-  rendimiento_estimado: number | null;
-  precio_venta_est: number | null;
   foto_siembra_uri_local: string | null;
-  estado_sincronizacion: string;
+  sincronizado: number;
   created_at?: string;
   updated_at?: string;
 };
@@ -190,13 +211,9 @@ const LOTE_SELECT_FIELDS = `
   l.fecha_siembra,
   l.fecha_cosecha_est,
   l.fecha_cierre_real,
-  l.rendimiento_estimado,
-  l.precio_venta_est,
-  l.rendimiento_real,
   l.foto_siembra_url,
-  l.foto_cosecha_url,
   l.estado,
-  l.estado_sincronizacion,
+  l.sincronizado,
   l.created_at,
   l.updated_at
 `;
@@ -220,7 +237,6 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     id_productor: Number(row.id_productor ?? 0),
     id_servidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
     tipo_cultivo: cultivosVisuales,
-    variedad: cultivosVisuales,
     cultivos_mostrados: cultivosVisuales,
     categorias_mostradas: categoriasMostradas,
     id_productos: idProductos,
@@ -229,10 +245,8 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     superficie: row.superficie === null || row.superficie === undefined ? null : Number(row.superficie),
     fecha_siembra: String(row.fecha_siembra ?? ''),
     fecha_cosecha_est: String(row.fecha_cosecha_est ?? ''),
-    rendimiento_estimado: row.rendimiento_estimado === null || row.rendimiento_estimado === undefined ? null : Number(row.rendimiento_estimado),
-    precio_venta_est: row.precio_venta_est === null || row.precio_venta_est === undefined ? null : Number(row.precio_venta_est),
     foto_siembra_uri_local: row.foto_siembra_url === null || row.foto_siembra_url === undefined ? null : String(row.foto_siembra_url),
-    estado_sincronizacion: String(row.estado_sincronizacion ?? 'PENDIENTE'),
+    sincronizado: Number(row.sincronizado ?? 0),
     created_at: row.created_at === null || row.created_at === undefined ? undefined : String(row.created_at),
     updated_at: row.updated_at === null || row.updated_at === undefined ? undefined : String(row.updated_at),
   };
@@ -252,7 +266,7 @@ export async function obtenerLotesPendientesLocales(): Promise<LoteLocal[]> {
       FROM lote l
       LEFT JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
       LEFT JOIN PRODUCTO p ON p.id_producto = lp.id_producto
-      WHERE (l.estado_sincronizacion <> 'SINCRONIZADO' OR l.${serverColumn} IS NULL)
+      WHERE (l.sincronizado = 0 OR l.${serverColumn} IS NULL)
         AND l.id_productor = ?
       GROUP BY l.id_local
       ORDER BY l.id_local DESC
@@ -269,7 +283,7 @@ export async function marcarLoteComoSincronizado(idLocal: number, idServidor: nu
   await db.runAsync(
     `
       UPDATE lote
-      SET ${serverColumn} = ?, estado_sincronizacion = 'SINCRONIZADO', updated_at = ?
+      SET ${serverColumn} = ?, sincronizado = 1, updated_at = ?
       WHERE id_local = ?
     `,
     idServidor,
@@ -295,7 +309,8 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
     idProductos.push(...idProductosDirectos);
   } else if (nombresCultivoCompat.length > 0) {
     for (const cultivo of nombresCultivoCompat) {
-      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', 'General');
+      const categoriaResuelta = determinarCategoriaCultivo(cultivo);
+      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', categoriaResuelta);
       idProductos.push(idProducto);
     }
   }
@@ -313,13 +328,11 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
         superficie,
         fecha_siembra,
         fecha_cosecha_est,
-        rendimiento_estimado,
-        precio_venta_est,
         foto_siembra_url,
-        estado_sincronizacion,
+        sincronizado,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       loteData.id_servidor ?? null,
       idProductorActual,
       loteData.nombre_lote,
@@ -327,10 +340,8 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
       loteData.superficie ?? null,
       loteData.fecha_siembra,
       loteData.fecha_cosecha_est,
-      loteData.rendimiento_estimado ?? null,
-      loteData.precio_venta_est ?? null,
       loteData.foto_siembra_uri_local ?? null,
-      loteData.estado_sincronizacion ?? 'PENDIENTE',
+      loteData.sincronizado ?? 0,
       now,
       now
     );
@@ -349,12 +360,32 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
   return idLoteLocalCreado;
 }
 
-export async function obtenerLotesLocales(): Promise<LoteLocal[]> {
+export async function obtenerLotesLocales(categoria?: string): Promise<LoteLocal[]> {
   const db = await getDb();
   const idProductorActual = await getCurrentProductorId();
 
-  const rows = await db.getAllAsync<Record<string, unknown>>(
-    `
+  let query: string;
+  const params: (string | number)[] = [idProductorActual];
+
+  if (categoria) {
+    const catUpper = categoria.toUpperCase().trim();
+    const catSingular = catUpper.endsWith('S') ? catUpper.slice(0, -1) : catUpper;
+    const catPlural = catUpper.endsWith('S') ? catUpper : catUpper + 'S';
+
+    query = `
+      SELECT
+        ${LOTE_SELECT_FIELDS},
+        COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
+        COALESCE(GROUP_CONCAT(p.categoria, ', '), '') AS categorias_mostradas,
+        COALESCE(GROUP_CONCAT(lp.id_producto, ','), '') AS ids_productos_concat
+      FROM lote l
+      INNER JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
+      INNER JOIN PRODUCTO p ON p.id_producto = lp.id_producto
+      WHERE l.id_productor = ? AND (upper(p.categoria) = ? OR upper(p.categoria) = ?)
+    `;
+    params.push(catSingular, catPlural);
+  } else {
+    query = `
       SELECT
         ${LOTE_SELECT_FIELDS},
         COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
@@ -364,12 +395,15 @@ export async function obtenerLotesLocales(): Promise<LoteLocal[]> {
       LEFT JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
       LEFT JOIN PRODUCTO p ON p.id_producto = lp.id_producto
       WHERE l.id_productor = ?
-      GROUP BY l.id_local
-      ORDER BY l.id_local DESC
-    `,
-    idProductorActual
-  );
+    `;
+  }
 
+  query += `
+    GROUP BY l.id_local
+    ORDER BY l.id_local DESC
+  `;
+
+  const rows = await db.getAllAsync<Record<string, unknown>>(query, ...params);
   return rows.map(mapRowToLote);
 }
 
@@ -380,7 +414,8 @@ export async function actualizarCultivosDeLote(idLoteLocal: number, nuevosCultiv
     await db.runAsync('DELETE FROM LOTE_PRODUCTO WHERE id_lote = ?', idLoteLocal);
 
     for (const cultivo of nuevosCultivos) {
-      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', 'General');
+      const categoriaResuelta = determinarCategoriaCultivo(cultivo);
+      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', categoriaResuelta);
       await db.runAsync('INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)', idLoteLocal, idProducto);
     }
 
@@ -407,7 +442,7 @@ export async function actualizarLoteLocalPorServidor(
   const serverColumn = await getLoteServerColumn();
 
   await db.runAsync(
-    `UPDATE lote SET nombre_lote = ?, ubicacion = ?, superficie = ?, estado_sincronizacion = 'SINCRONIZADO', updated_at = ? WHERE ${serverColumn} = ?`,
+    `UPDATE lote SET nombre_lote = ?, ubicacion = ?, superficie = ?, sincronizado = 1, updated_at = ? WHERE ${serverColumn} = ?`,
     cambios.nombre_lote ?? null,
     cambios.ubicacion ?? null,
     cambios.superficie ?? null,
