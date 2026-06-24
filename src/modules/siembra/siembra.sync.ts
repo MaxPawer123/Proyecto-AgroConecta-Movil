@@ -13,6 +13,7 @@ import {
   obtenerLotesPorTipoCultivoApi,
   subirFotoSiembraApi,
 } from '../../core/network/api/lotes';
+import { sincronizarProductosApi } from '../../core/network/api/productos';
 import { crearGastoApi, obtenerGastosPorLoteApi } from '../../core/network/api/gastos';
 import { registrarProduccionLoteApi } from '../../core/network/api/produccion';
 import {
@@ -21,6 +22,7 @@ import {
   obtenerProduccionesHuerfanasPendientes,
 } from '../costos/costos.repository';
 import {
+  determinarCategoriaCultivo,
   dividirCultivosSeleccionados,
   getLoteServerColumn,
   insertarLoteLocal,
@@ -45,8 +47,6 @@ export type RegistrarSiembraInput = {
   superficie: number;
   fechaSiembraIso: string;
   fechaCosechaIso: string;
-  rendimientoEstimado: number;
-  precioVentaEstimado: number;
   fotoTerrenoUri?: string | null;
 };
 
@@ -65,6 +65,7 @@ let netInfoUnsubscribe: (() => void) | null = null;
 let syncEnCurso = false;
 let conexionEstablecida = false;
 const listenersSincronizacion = new Set<(evento: EventoSincronizacionSiembra) => void>();
+const produccionesEnSync = new Set<number>();
 
 function emitirEventoSincronizacion(evento: EventoSincronizacionSiembra): void {
   for (const listener of listenersSincronizacion) {
@@ -136,6 +137,30 @@ async function sincronizarLote(item: LoteLocal, idProductorRecuperado: number): 
     return idExistente;
   }
 
+  // Consulta adicional a SQLite para obtener los productos_ids
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id_producto: number; nombre: string; rubro: string }>(
+    `SELECT p.id_producto, p.nombre, p.rubro 
+     FROM LOTE_PRODUCTO lp 
+     JOIN PRODUCTO p ON lp.id_producto = p.id_producto 
+     WHERE lp.id_lote = ?`,
+    item.id_local
+  );
+  const productos_ids = rows.map((row) => Number(row.id_producto));
+  const productos = rows.map((row) => {
+    let rubroFinal = row.rubro;
+    if (!rubroFinal || rubroFinal === 'General' || rubroFinal === '') {
+      const resolved = determinarCategoriaCultivo(item.tipo_cultivo) || determinarCategoriaCultivo(row.nombre);
+      if (resolved) {
+        rubroFinal = resolved;
+      }
+    }
+    return {
+      nombre: row.nombre,
+      rubro: rubroFinal || 'QUINUA',
+    };
+  });
+
   const payload = {
     id_productor: idProductorRecuperado,
     tipo_cultivo: item.tipo_cultivo,
@@ -143,10 +168,10 @@ async function sincronizarLote(item: LoteLocal, idProductorRecuperado: number): 
     superficie: item.superficie ?? 0,
     fecha_siembra: item.fecha_siembra,
     fecha_cosecha_est: item.fecha_cosecha_est,
-    rendimiento_estimado: item.rendimiento_estimado ?? 0,
-    precio_venta_est: item.precio_venta_est ?? 0,
     foto_siembra_url: fotoSiembraUrl,
     ubicacion: item.ubicacion || 'No especificada',
+    productos_ids,
+    productos,
   };
 
   console.log('[API Lotes] Payload a enviar...', JSON.stringify(payload, null, 2));
@@ -200,26 +225,42 @@ async function sincronizarProduccionLocal(idLoteLocal: number, idLoteServidor: n
   const produccionLocal = await obtenerBorradorProduccionLocal({ idLoteLocal });
   if (!produccionLocal) return;
 
-  if (produccionLocal.estado_sincronizacion === 'SINCRONIZADO' && produccionLocal.id_produccion) {
+  if (produccionLocal.sincronizado || produccionLocal.id_produccion) {
     return;
   }
 
-  console.log(`🌾 Sincronizando produccion del lote local ${idLoteLocal}...`);
-
-  const resultado = await registrarProduccionLoteApi({
-    id_lote: idLoteServidor,
-    fecha_registro: produccionLocal.fecha_registro,
-    cantidad_obtenida: produccionLocal.cantidad_obtenida,
-    precio_venta: produccionLocal.precio_venta,
-  });
-
-  const idProduccion = Number(resultado.id_produccion);
-  if (!Number.isFinite(idProduccion) || idProduccion <= 0) {
-    throw new Error('El backend devolvio un id_produccion invalido.');
+  // Prevenir envío doble si ya está en vuelo
+  if (produccionesEnSync.has(produccionLocal.id_local)) {
+    console.log(`⚠️ Producción local ${produccionLocal.id_local} ya está en sincronización.`);
+    return;
   }
 
-  await marcarProduccionComoSincronizada(produccionLocal.id_local, idProduccion);
-  console.log(`✅ Produccion del lote local ${idLoteLocal} sincronizada → ID servidor: ${idProduccion}`);
+  produccionesEnSync.add(produccionLocal.id_local);
+
+  try {
+    console.log(`🌾 Sincronizando produccion del lote local ${idLoteLocal}...`);
+
+    const resultado = await registrarProduccionLoteApi({
+      id_local: produccionLocal.id_local,
+      id_lote: idLoteServidor,
+      fecha_registro: produccionLocal.fecha_registro,
+      cantidad_obtenida: produccionLocal.cantidad_obtenida,
+      precio_venta: produccionLocal.precio_venta,
+    });
+
+    const idProduccion = Number(resultado.id_produccion);
+    if (!Number.isFinite(idProduccion) || idProduccion <= 0) {
+      throw new Error('El backend devolvio un id_produccion invalido.');
+    }
+
+    await marcarProduccionComoSincronizada(produccionLocal.id_local, idProduccion);
+    console.log(`✅ Produccion del lote local ${idLoteLocal} sincronizada → ID servidor: ${idProduccion}`);
+  } catch (error) {
+    console.error(`❌ Error al sincronizar producción local ${produccionLocal.id_local}:`, error);
+    throw error;
+  } finally {
+    produccionesEnSync.delete(produccionLocal.id_local);
+  }
 }
 
 async function sincronizarGastosHuerfanosLocales(): Promise<void> {
@@ -266,8 +307,19 @@ async function sincronizarProduccionesHuerfanasLocales(): Promise<void> {
 
   for (const { produccion, idLoteServidor } of huerfanas) {
     if (!idLoteServidor) continue;
+    if (produccion.sincronizado || produccion.id_produccion) continue;
+
+    // Prevenir envío doble si ya está en vuelo
+    if (produccionesEnSync.has(produccion.id_local)) {
+      console.log(`⚠️ Producción huérfana ${produccion.id_local} ya está en sincronización.`);
+      continue;
+    }
+
+    produccionesEnSync.add(produccion.id_local);
+
     try {
       const resultado = await registrarProduccionLoteApi({
+        id_local: produccion.id_local,
         id_lote: idLoteServidor,
         fecha_registro: produccion.fecha_registro,
         cantidad_obtenida: produccion.cantidad_obtenida,
@@ -283,7 +335,50 @@ async function sincronizarProduccionesHuerfanasLocales(): Promise<void> {
       console.log(`✅ Producción huérfana ${produccion.id_local} sincronizada → ID servidor: ${idProduccion}`);
     } catch (error) {
       console.warn(`❌ Error sincronizando producción huérfana ${produccion.id_local}:`, error);
+    } finally {
+      produccionesEnSync.delete(produccion.id_local);
     }
+  }
+}
+
+export async function sincronizarCatálogoProductos(): Promise<void> {
+  try {
+    const db = await getDb();
+    // Leer TODOS los registros de la tabla local PRODUCTO en SQLite
+    const localProductos = await db.getAllAsync<{
+      id_producto: number;
+      nombre: string;
+      rubro: string;
+      sincronizado: number;
+    }>('SELECT id_producto, nombre, rubro, sincronizado FROM PRODUCTO');
+
+    if (localProductos.length === 0) {
+      console.log('📦 El catálogo de productos local está vacío. No hay nada que sincronizar.');
+      return;
+    }
+
+    const productosParaSincronizar = localProductos.map((p) => {
+      let rubroFinal = p.rubro;
+      if (!rubroFinal || rubroFinal === 'General' || rubroFinal === '') {
+        const resolved = determinarCategoriaCultivo(p.nombre);
+        if (resolved) {
+          rubroFinal = resolved;
+        }
+      }
+      return {
+        id_producto: Number(p.id_producto),
+        nombre: p.nombre,
+        rubro: rubroFinal || '',
+        sincronizado: p.sincronizado === 1,
+      };
+    });
+
+    console.log(`📤 Sincronizando catálogo local de ${productosParaSincronizar.length} productos con el servidor...`);
+    await sincronizarProductosApi(productosParaSincronizar);
+    console.log('✅ Catálogo de productos sincronizado exitosamente.');
+  } catch (error) {
+    console.error('❌ Error al sincronizar el catálogo de productos:', error);
+    throw error;
   }
 }
 
@@ -313,6 +408,14 @@ export async function sincronizarSiembrasPendientes(): Promise<{
     if (!conexionEstablecida) {
       console.log('✅ Conexión a internet y backend detectados. Iniciando sincronización...');
       conexionEstablecida = true;
+    }
+
+    // 0. Sincronizar catálogo de productos ANTES de lotes, gastos o producciones
+    try {
+      await sincronizarCatálogoProductos();
+    } catch (error) {
+      console.warn('⚠️ Sincronización de catálogo falló. Abortando sincronización de siembras para evitar errores de llave foránea.');
+      return { procesados: 0, sincronizados: 0 };
     }
 
     // 1. Sincronizar usuario local si no está sincronizado
@@ -410,7 +513,7 @@ export async function registrarSiembraOfflineFirst(
 
   const idProductos: number[] = [];
   for (const cultivo of cultivos) {
-    const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', input.rubro);
+    const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, input.rubro);
     idProductos.push(idProducto);
   }
 
@@ -423,10 +526,8 @@ export async function registrarSiembraOfflineFirst(
     superficie: input.superficie,
     fecha_siembra: input.fechaSiembraIso,
     fecha_cosecha_est: input.fechaCosechaIso,
-    rendimiento_estimado: input.rendimientoEstimado,
-    precio_venta_est: input.precioVentaEstimado,
     foto_siembra_uri_local: input.fotoTerrenoUri ?? null,
-    estado_sincronizacion: 'PENDIENTE',
+    sincronizado: 0,
   });
 
   console.log(`💾 Lote guardado LOCALMENTE con ID: ${idLocal}`);
@@ -517,7 +618,7 @@ export async function descargarDatosServidorALocal(): Promise<void> {
     try {
       const lotes = await obtenerLotesPorTipoCultivoApi(tipo);
       if (Array.isArray(lotes)) {
-        serverLotes.push(...lotes);
+        serverLotes.push(...lotes.map((l: any) => ({ ...l, rubro_categoria: tipo })));
       }
     } catch (e) {
       console.warn(`No se pudieron obtener lotes para el tipo ${tipo}:`, e);
@@ -547,7 +648,7 @@ export async function descargarDatosServidorALocal(): Promise<void> {
       if (lotePorNombre) {
         idLoteLocal = lotePorNombre.id_local;
         await db.runAsync(
-          `UPDATE lote SET ${serverColumn} = ?, estado_sincronizacion = 'SINCRONIZADO' WHERE id_local = ?`,
+          `UPDATE lote SET ${serverColumn} = ?, sincronizado = 1 WHERE id_local = ?`,
           idLoteServidor,
           idLoteLocal
         );
@@ -561,7 +662,7 @@ export async function descargarDatosServidorALocal(): Promise<void> {
             superficie,
             fecha_siembra,
             fecha_cosecha_est,
-            estado_sincronizacion,
+            sincronizado,
             created_at,
             updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -572,7 +673,7 @@ export async function descargarDatosServidorALocal(): Promise<void> {
           sl.superficie || null,
           sl.fecha_siembra || new Date().toISOString(),
           sl.fecha_cosecha_est || null,
-          'SINCRONIZADO',
+          1,
           sl.created_at || new Date().toISOString(),
           sl.updated_at || new Date().toISOString()
         );
@@ -580,7 +681,8 @@ export async function descargarDatosServidorALocal(): Promise<void> {
 
         const cultivos = dividirCultivosSeleccionados(sl.tipo_cultivo || '');
         for (const cultivo of cultivos) {
-          const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', 'General');
+          const categoriaResuelta = sl.rubro_categoria || determinarCategoriaCultivo(cultivo);
+          const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, categoriaResuelta);
           await db.runAsync(
             'INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)',
             idLoteLocal,

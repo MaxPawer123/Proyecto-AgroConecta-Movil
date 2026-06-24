@@ -86,7 +86,7 @@ export function dividirCultivosSeleccionados(valor: string): string[] {
   return cultivos;
 }
 
-export function determinarCategoriaCultivo(cultivo: string): 'QUINUA' | 'PAPA' | 'HORTALIZA' | 'General' {
+export function determinarCategoriaCultivo(cultivo: string): 'QUINUA' | 'PAPA' | 'HORTALIZA' | '' {
   const nombre = String(cultivo ?? '').toLowerCase().trim();
   if (nombre.includes('quinua')) return 'QUINUA';
   if (
@@ -102,36 +102,37 @@ export function determinarCategoriaCultivo(cultivo: string): 'QUINUA' | 'PAPA' |
   if (palabrasHortalizas.test(nombre) || nombre.includes('hortaliza')) {
     return 'HORTALIZA';
   }
-  return 'General';
+  return '';
 }
 
 export async function obtenerOInsertarProductoLocal(
   db: Db,
   nombre: string,
-  variedad = 'General',
-  categoria = 'General'
+  rubro?: string
 ): Promise<number> {
   const nombreNormalizado = nombre.trim();
   if (!nombreNormalizado) {
     throw new Error('El nombre del producto no puede estar vacio.');
   }
 
-  const existente = await db.getFirstAsync<{ id_producto: number }>(
+  const rubroFinal = rubro && rubro !== 'General' ? rubro : determinarCategoriaCultivo(nombreNormalizado);
+
+  const existente = await db.getFirstAsync<{ id_producto: number; rubro: string }>(
     `
-      SELECT id_producto
+      SELECT id_producto, rubro
       FROM PRODUCTO
-      WHERE lower(nombre) = lower(?) AND lower(COALESCE(variedad, '')) = lower(?)
+      WHERE lower(nombre) = lower(?)
       LIMIT 1
     `,
-    nombreNormalizado,
-    variedad || ''
+    nombreNormalizado
   );
 
   if (existente?.id_producto) {
-    if (categoria && categoria !== 'General') {
+    const rubroActual = existente.rubro;
+    if (rubroFinal && (!rubroActual || rubroActual === 'General' || rubroActual === '')) {
       await db.runAsync(
-        `UPDATE PRODUCTO SET categoria = ? WHERE id_producto = ? AND (categoria = 'General' OR categoria IS NULL)`,
-        categoria,
+        `UPDATE PRODUCTO SET rubro = ?, sincronizado = 0 WHERE id_producto = ?`,
+        rubroFinal,
         existente.id_producto
       );
     }
@@ -139,10 +140,9 @@ export async function obtenerOInsertarProductoLocal(
   }
 
   const result = await db.runAsync(
-    'INSERT INTO PRODUCTO (nombre, variedad, categoria) VALUES (?, ?, ?)',
+    'INSERT INTO PRODUCTO (nombre, rubro, sincronizado) VALUES (?, ?, 0)',
     nombreNormalizado,
-    variedad || 'General',
-    categoria || 'General'
+    rubroFinal || ''
   );
 
   return Number(result.lastInsertRowId);
@@ -188,7 +188,7 @@ export type LoteLocal = {
   id_servidor: number | null;
   tipo_cultivo: string;
   cultivos_mostrados: string;
-  categorias_mostradas: string;
+  rubros_mostrados: string;
   id_productos: number[];
   nombre_lote: string;
   ubicacion: string | null;
@@ -221,7 +221,7 @@ const LOTE_SELECT_FIELDS = `
 function mapRowToLote(row: Record<string, unknown>): LoteLocal {
   const idServidorRaw = row.id_lote ?? row.id_servidor;
   const cultivosMostrados = String(row.cultivos_mostrados ?? '').trim();
-  const categoriasMostradas = String(row.categorias_mostradas ?? '').trim();
+  const rubrosMostrados = String(row.rubros_mostrados ?? '').trim();
   const cultivosVisuales = cultivosMostrados || 'Sin cultivo';
   const idsProductosConcat = String(row.ids_productos_concat ?? '').trim();
 
@@ -238,7 +238,7 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     id_servidor: idServidorRaw === null || idServidorRaw === undefined ? null : Number(idServidorRaw),
     tipo_cultivo: cultivosVisuales,
     cultivos_mostrados: cultivosVisuales,
-    categorias_mostradas: categoriasMostradas,
+    rubros_mostrados: rubrosMostrados,
     id_productos: idProductos,
     nombre_lote: String(row.nombre_lote ?? ''),
     ubicacion: row.ubicacion === null || row.ubicacion === undefined ? null : String(row.ubicacion),
@@ -261,7 +261,7 @@ export async function obtenerLotesPendientesLocales(): Promise<LoteLocal[]> {
       SELECT
         ${LOTE_SELECT_FIELDS},
         COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
-        COALESCE(GROUP_CONCAT(p.categoria, ', '), '') AS categorias_mostradas,
+        COALESCE(GROUP_CONCAT(p.rubro, ', '), '') AS rubros_mostrados,
         COALESCE(GROUP_CONCAT(lp.id_producto, ','), '') AS ids_productos_concat
       FROM lote l
       LEFT JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
@@ -310,7 +310,7 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
   } else if (nombresCultivoCompat.length > 0) {
     for (const cultivo of nombresCultivoCompat) {
       const categoriaResuelta = determinarCategoriaCultivo(cultivo);
-      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', categoriaResuelta);
+      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, categoriaResuelta);
       idProductos.push(idProducto);
     }
   }
@@ -360,41 +360,41 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
   return idLoteLocalCreado;
 }
 
-export async function obtenerLotesLocales(categoria?: string): Promise<LoteLocal[]> {
+export async function obtenerLotesLocales(rubro?: string): Promise<LoteLocal[]> {
   const db = await getDb();
   const idProductorActual = await getCurrentProductorId();
 
   let query: string;
   const params: (string | number)[] = [idProductorActual];
 
-  if (categoria) {
-    const catUpper = categoria.toUpperCase().trim();
-    const catSingular = catUpper.endsWith('S') ? catUpper.slice(0, -1) : catUpper;
-    const catPlural = catUpper.endsWith('S') ? catUpper : catUpper + 'S';
+  if (rubro) {
+    const rubroUpper = rubro.toUpperCase().trim();
+    const rubroSingular = rubroUpper.endsWith('S') ? rubroUpper.slice(0, -1) : rubroUpper;
+    const rubroPlural = rubroUpper.endsWith('S') ? rubroUpper : rubroUpper + 'S';
 
     query = `
       SELECT
         ${LOTE_SELECT_FIELDS},
         COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
-        COALESCE(GROUP_CONCAT(p.categoria, ', '), '') AS categorias_mostradas,
+        COALESCE(GROUP_CONCAT(p.rubro, ', '), '') AS rubros_mostrados,
         COALESCE(GROUP_CONCAT(lp.id_producto, ','), '') AS ids_productos_concat
       FROM lote l
       INNER JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
       INNER JOIN PRODUCTO p ON p.id_producto = lp.id_producto
-      WHERE l.id_productor = ? AND (upper(p.categoria) = ? OR upper(p.categoria) = ?)
+      WHERE l.id_productor = ? AND l.estado = 'ACTIVO' AND (upper(p.rubro) = ? OR upper(p.rubro) = ?)
     `;
-    params.push(catSingular, catPlural);
+    params.push(rubroSingular, rubroPlural);
   } else {
     query = `
       SELECT
         ${LOTE_SELECT_FIELDS},
         COALESCE(GROUP_CONCAT(p.nombre, ', '), '') AS cultivos_mostrados,
-        COALESCE(GROUP_CONCAT(p.categoria, ', '), '') AS categorias_mostradas,
+        COALESCE(GROUP_CONCAT(p.rubro, ', '), '') AS rubros_mostrados,
         COALESCE(GROUP_CONCAT(lp.id_producto, ','), '') AS ids_productos_concat
       FROM lote l
       LEFT JOIN LOTE_PRODUCTO lp ON lp.id_lote = l.id_local
       LEFT JOIN PRODUCTO p ON p.id_producto = lp.id_producto
-      WHERE l.id_productor = ?
+      WHERE l.id_productor = ? AND l.estado = 'ACTIVO'
     `;
   }
 
@@ -407,15 +407,19 @@ export async function obtenerLotesLocales(categoria?: string): Promise<LoteLocal
   return rows.map(mapRowToLote);
 }
 
-export async function actualizarCultivosDeLote(idLoteLocal: number, nuevosCultivos: string[]): Promise<void> {
+export async function actualizarCultivosDeLote(
+  idLoteLocal: number,
+  nuevosCultivos: string[],
+  rubro?: string
+): Promise<void> {
   const db = await getDb();
 
   await db.withTransactionAsync(async () => {
     await db.runAsync('DELETE FROM LOTE_PRODUCTO WHERE id_lote = ?', idLoteLocal);
 
     for (const cultivo of nuevosCultivos) {
-      const categoriaResuelta = determinarCategoriaCultivo(cultivo);
-      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, 'General', categoriaResuelta);
+      const categoriaResuelta = rubro || determinarCategoriaCultivo(cultivo);
+      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, categoriaResuelta);
       await db.runAsync('INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)', idLoteLocal, idProducto);
     }
 
@@ -425,9 +429,9 @@ export async function actualizarCultivosDeLote(idLoteLocal: number, nuevosCultiv
 
 export async function eliminarLoteLocal(idLocal: number): Promise<void> {
   const db = await getDb();
-  await deleteFromTableWithAvailableColumns(db, 'gasto_lote', ['id_lote_local', 'id_lote_servidor', 'id_lote'], idLocal);
-  await deleteFromTableWithAvailableColumns(db, 'produccion_lote', ['id_lote_local', 'id_lote'], idLocal);
-  await db.runAsync('DELETE FROM lote WHERE id_local = ?', idLocal);
+  await db.runAsync("UPDATE gasto_lote SET estado = 'INACTIVO' WHERE id_lote_local = ? OR id_lote_servidor = ?", idLocal, idLocal);
+  await db.runAsync("UPDATE produccion_lote SET estado = 'INACTIVO' WHERE id_lote_local = ? OR id_lote = ?", idLocal, idLocal);
+  await db.runAsync("UPDATE lote SET estado = 'INACTIVO' WHERE id_local = ?", idLocal);
 }
 
 export async function guardarLoteLocal(datos: LoteInsertInput): Promise<number> {
@@ -479,7 +483,7 @@ export async function actualizarLoteLocal(
 export async function eliminarLoteLocalPorServidor(idServidor: number): Promise<void> {
   const db = await getDb();
   const serverColumn = await getLoteServerColumn();
-  await deleteFromTableWithAvailableColumns(db, 'gasto_lote', ['id_lote_servidor', 'id_lote'], idServidor);
-  await deleteFromTableWithAvailableColumns(db, 'produccion_lote', ['id_lote'], idServidor);
-  await db.runAsync(`DELETE FROM lote WHERE ${serverColumn} = ?`, idServidor);
+  await db.runAsync("UPDATE gasto_lote SET estado = 'INACTIVO' WHERE id_lote_servidor = ?", idServidor);
+  await db.runAsync("UPDATE produccion_lote SET estado = 'INACTIVO' WHERE id_lote = ?", idServidor);
+  await db.runAsync(`UPDATE lote SET estado = 'INACTIVO' WHERE ${serverColumn} = ?`, idServidor);
 }

@@ -117,7 +117,7 @@ export async function obtenerGastosPorLoteLocal(idLoteLocal: number): Promise<Ga
   const db = await getDb();
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM gasto_lote
-     WHERE id_lote_local = ? OR id_lote_servidor = ?
+     WHERE (id_lote_local = ? OR id_lote_servidor = ?) AND estado = 'ACTIVO'
      ORDER BY fecha_gasto DESC`,
     idLoteLocal,
     idLoteLocal
@@ -197,7 +197,7 @@ export async function marcarGastoComoSincronizado(idLocal: number, idGasto: numb
 
 export async function eliminarGastoLocal(idLocal: number): Promise<void> {
   const db = await getDb();
-  await db.runAsync('DELETE FROM gasto_lote WHERE id_local = ?', idLocal);
+  await db.runAsync("UPDATE gasto_lote SET estado = 'INACTIVO' WHERE id_local = ?", idLocal);
 }
 
 export async function actualizarCostoLocal(

@@ -1,4 +1,4 @@
-import { getDb } from '../../core/database/sqlite.config';
+   import { getDb } from '../../core/database/sqlite.config';
 import { obtenerGastosPorLoteApi, type GastoApi } from '../../core/network/api/gastos';
 import { obtenerLotesPorTipoCultivoApi, type LoteApi } from '../../core/network/api/lotes';
 

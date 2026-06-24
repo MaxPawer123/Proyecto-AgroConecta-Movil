@@ -47,7 +47,7 @@ type ProduccionLocal = {
   fecha_registro: string;
   cantidad_obtenida: number;
   precio_venta: number;
-  estado_sincronizacion: string;
+  sincronizado: boolean;
 };
 
 async function getTableColumns(db: Awaited<ReturnType<typeof getDb>>, tableName: string): Promise<Set<string>> {
@@ -84,7 +84,7 @@ function mapRowToProduccionLocal(row: Record<string, unknown>): ProduccionLocal 
     fecha_registro: String(row.fecha_registro ?? ''),
     cantidad_obtenida: Number(row.cantidad_obtenida ?? 0),
     precio_venta: Number(row.precio_venta ?? 0),
-    estado_sincronizacion: String(row.estado_sincronizacion ?? 'PENDIENTE'),
+    sincronizado: Number(row.sincronizado ?? 0) === 1,
   };
 }
 
@@ -152,7 +152,7 @@ export async function obtenerCostosLocalesPorLote(params: {
     values.push(params.idLoteServidor);
   }
 
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' OR ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE (${where.join(' OR ')}) AND estado = 'ACTIVO'` : "WHERE estado = 'ACTIVO'";
   const rows = await db.getAllAsync<Record<string, unknown>>(
     `SELECT * FROM gasto_lote ${whereSql} ORDER BY id_local DESC`,
     ...values
@@ -218,7 +218,7 @@ export async function obtenerGastosPendientesPorLoteLocal(idLoteLocal: number): 
 
 export async function eliminarCostoLocal(idLocal: number): Promise<void> {
   const db = await getDb();
-  await db.runAsync('DELETE FROM gasto_lote WHERE id_local = ?', idLocal);
+  await db.runAsync("UPDATE gasto_lote SET estado = 'INACTIVO' WHERE id_local = ?", idLocal);
 }
 
 export async function guardarBorradorProduccionLocal(input: {
@@ -248,7 +248,7 @@ export async function guardarBorradorProduccionLocal(input: {
     values.push(input.idLoteServidor);
   }
 
-  const whereSql = where.length > 0 ? `WHERE ${where.join(' OR ')}` : '';
+  const whereSql = where.length > 0 ? `WHERE (${where.join(' OR ')}) AND estado = 'ACTIVO'` : "WHERE estado = 'ACTIVO'";
   const existente = await db.getFirstAsync<Record<string, unknown>>(
     `SELECT id_local FROM produccion_lote ${whereSql} ORDER BY id_local DESC LIMIT 1`,
     ...values
@@ -264,7 +264,7 @@ export async function guardarBorradorProduccionLocal(input: {
           fecha_registro = ?,
           cantidad_obtenida = ?,
           precio_venta = ?,
-          estado_sincronizacion = 'PENDIENTE',
+          sincronizado = 0,
           updated_at = ?
         WHERE id_local = ?
       `,
@@ -288,7 +288,7 @@ export async function guardarBorradorProduccionLocal(input: {
         fecha_registro,
         cantidad_obtenida,
         precio_venta,
-        estado_sincronizacion,
+        sincronizado,
         created_at,
         updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -299,7 +299,7 @@ export async function guardarBorradorProduccionLocal(input: {
     fechaRegistro,
     input.cantidadObtenida,
     input.precioVenta,
-    'PENDIENTE',
+    0,
     now,
     now
   );
@@ -326,7 +326,7 @@ export async function obtenerBorradorProduccionLocal(params: {
   if (where.length === 0) return null;
 
   const row = await db.getFirstAsync<Record<string, unknown>>(
-    `SELECT * FROM produccion_lote WHERE ${where.join(' OR ')} ORDER BY id_local DESC LIMIT 1`,
+    `SELECT * FROM produccion_lote WHERE (${where.join(' OR ')}) AND estado = 'ACTIVO' ORDER BY id_local DESC LIMIT 1`,
     ...values
   );
 
@@ -339,7 +339,7 @@ export async function obtenerBorradorProduccionLocal(params: {
     fecha_registro: String(row.fecha_registro ?? ''),
     cantidad_obtenida: Number(row.cantidad_obtenida ?? 0),
     precio_venta: Number(row.precio_venta ?? 0),
-    estado_sincronizacion: String(row.estado_sincronizacion ?? 'PENDIENTE'),
+    sincronizado: Number(row.sincronizado ?? 0) === 1,
   };
 }
 
@@ -347,7 +347,7 @@ export async function marcarProduccionComoSincronizada(idLocal: number, idProduc
   const db = await getDb();
   await db.runAsync(
     `UPDATE produccion_lote 
-     SET id_produccion = ?, estado_sincronizacion = 'SINCRONIZADO', updated_at = ? 
+     SET id_produccion = ?, sincronizado = 1, updated_at = ? 
      WHERE id_local = ?`,
     idProduccion,
     new Date().toISOString(),
@@ -361,7 +361,7 @@ export async function obtenerProduccionesHuerfanasPendientes(): Promise<{ produc
     `SELECT p.*, l.id_lote AS server_lote_id
      FROM produccion_lote p
      LEFT JOIN lote l ON p.id_lote_local = l.id_local
-     WHERE p.estado_sincronizacion = 'PENDIENTE' AND (l.id_lote IS NOT NULL OR p.id_lote IS NOT NULL)
+     WHERE p.sincronizado = 0 AND (l.id_lote IS NOT NULL OR p.id_lote IS NOT NULL)
      ORDER BY p.id_local ASC`
   );
 
@@ -374,7 +374,7 @@ export async function obtenerProduccionesHuerfanasPendientes(): Promise<{ produc
       fecha_registro: row.fecha_registro,
       cantidad_obtenida: row.cantidad_obtenida,
       precio_venta: row.precio_venta,
-      estado_sincronizacion: row.estado_sincronizacion,
+      sincronizado: Number(row.sincronizado ?? 0) === 1,
     },
     idLoteServidor: row.id_lote ?? row.server_lote_id,
   }));

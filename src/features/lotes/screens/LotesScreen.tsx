@@ -202,7 +202,7 @@ export function LotesScreen({ rubro }: LotesScreenProps) {
                   placeholder="Nombre"
                 />
 
-                <Text style={styles.modalLabel}>Tipo / Variedad</Text>
+                <Text style={styles.modalLabel}>Cultivo</Text>
                 <TextInput
                   style={styles.modalInput}
                   value={formEdicion.tipoCultivo}

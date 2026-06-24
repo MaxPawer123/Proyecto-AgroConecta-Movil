@@ -76,7 +76,6 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
       apellido TEXT NOT NULL,
       rol TEXT NOT NULL DEFAULT 'productor',
       estado TEXT DEFAULT 'activo',
-      correo TEXT UNIQUE,
       telefono TEXT UNIQUE NOT NULL,
       contrasena TEXT,
       fecha_registro TEXT NOT NULL DEFAULT (datetime('now')),
@@ -111,7 +110,6 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
     `ALTER TABLE ${tablaUsuario} ADD COLUMN apellido TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN rol TEXT NOT NULL DEFAULT 'productor'`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN estado TEXT DEFAULT 'activo'`,
-    `ALTER TABLE ${tablaUsuario} ADD COLUMN correo TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN telefono TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN contrasena TEXT`,
     `ALTER TABLE ${tablaUsuario} ADD COLUMN fecha_registro TEXT`,
@@ -136,7 +134,6 @@ async function asegurarEsquemaAuth(db: Awaited<ReturnType<typeof getDb>>): Promi
   }
 
   for (const indice of [
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_usuario_correo ON ${tablaUsuario}(correo)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_usuario_telefono ON ${tablaUsuario}(telefono)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_productor_id_usuario ON ${tablaProductor}(id_usuario)`,
   ]) {
@@ -170,9 +167,6 @@ function valorRequeridoUsuario(columna: string, input: RegistroProductorInput, t
       return 'activo';
     case 'telefono':
       return input.telefono.trim();
-    case 'correo':
-    case 'email':
-      return `${input.telefono.trim()}@agro.local`;
     case 'contrasena':
     case 'password_hash':
       return tokenLocal;

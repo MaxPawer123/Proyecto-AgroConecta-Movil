@@ -6,16 +6,16 @@ export type ProduccionApi = {
   fecha_registro: string;
   cantidad_obtenida: string;
   precio_venta: string;
-  estado_sincronizacion: string;
+  sincronizado: boolean;
   created_at: string;
 };
 
 export async function registrarProduccionLoteApi(payload: {
+  id_local?: number;
   id_lote: number;
   fecha_registro: string;
   cantidad_obtenida: number;
   precio_venta: number;
-  estado_sincronizacion?: string;
 }): Promise<ProduccionApi> {
   const response = await requestJson<ApiResponse<ProduccionApi>>('/api/produccion', {
     method: 'POST',

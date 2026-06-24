@@ -18,16 +18,12 @@ export interface LoteViewModel {
 	cosechaEstimada: string;
 	fechaSiembraIso: string;
 	fechaCosechaIso: string;
-	rendimientoEstimado: number;
-	precioVentaEst: number;
 	progreso: number;
 	estado: string;
 	estadoColor: string;
 	faseActual: string;
 	estadoRaw: string;
 	inversion: number;
-	ingresoEstimado: number;
-	proyeccion: number;
 	mostrarCosecha: boolean;
 }
 
@@ -55,7 +51,6 @@ export interface RubroConfig {
 	subtitle: string;
 	productLabel: string;
 	defaultProductName: string;
-	defaultVariedad: string;
 	defaultImage: string;
 	fallbackProductoId: number;
 	quickSyncedLabel: string;

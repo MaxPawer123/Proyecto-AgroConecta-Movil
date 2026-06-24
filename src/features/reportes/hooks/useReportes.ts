@@ -14,7 +14,6 @@ type ReporteLoteBase = {
   createdAtIso: string;
   tipoCultivo: string;
   nombre: string;
-  variedad: string;
   fechaSiembra: string;
   fechaCosechaEst: string;
   superficie: number | null;
@@ -130,9 +129,8 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
     idLocal: item.id_local,
     idServidor,
     createdAtIso,
-    tipoCultivo: String(item.tipo_cultivo ?? item.variedad ?? ''),
+    tipoCultivo: String(item.tipo_cultivo ?? ''),
     nombre: String(item.nombre_lote ?? '').trim() || `Lote ${item.id_local}`,
-    variedad: String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad',
     fechaSiembra: String(item.fecha_siembra ?? ''),
     fechaCosechaEst: String(item.fecha_cosecha_est ?? ''),
     superficie: item.superficie,

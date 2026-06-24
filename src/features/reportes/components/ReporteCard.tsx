@@ -106,7 +106,7 @@ function construirHtmlPdf(lote: ReporteLote) {
       </head>
       <body>
         <h1>Reporte de Lote</h1>
-        <div class="meta">${escaparHtml(lote.nombre)} | ${escaparHtml(lote.variedad)} | ${escaparHtml(formatearFecha(lote.createdAtIso))}</div>
+        <div class="meta">${escaparHtml(lote.nombre)} | ${escaparHtml(lote.tipoCultivo)} | ${escaparHtml(formatearFecha(lote.createdAtIso))}</div>
         <div class="summary">
           <div><strong>Total invertido:</strong> ${escaparHtml(formatearMoneda(lote.totalInvertido))}</div>
           <div><strong>Gastos registrados:</strong> ${lote.gastos.length}</div>
@@ -160,7 +160,7 @@ export function ReporteCard({ lote }: ReporteCardProps) {
     <View style={styles.card}>
       <View>
         <Text style={styles.nombreLote}>{lote.nombre}</Text>
-        <Text style={styles.variedad}>{lote.variedad}</Text>
+        <Text style={styles.variedad}>{lote.tipoCultivo}</Text>
       </View>
 
       <View style={styles.bloqueMonto}>

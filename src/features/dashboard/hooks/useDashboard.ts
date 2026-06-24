@@ -17,10 +17,9 @@ export type EstadisticasDashboard = {
 export type LoteRecienteDashboard = {
   id: number;
   nombre: string;
-  variedad: string;
   estado: string;
   area?: number;
-  tipoCultivo?: string;
+  tipoCultivo: string;
 };
 
 export type DashboardData = {
@@ -41,11 +40,10 @@ type LoteResumido = {
   id: string;
   idServidor: number | null;
   nombre: string;
-  variedad: string;
   estado: string;
   area: number;
   orderKey: number;
-  tipoCultivo?: string;
+  tipoCultivo: string;
 };
 
 const estadoInicial: Omit<DashboardData, 'actualizar'> = {
@@ -149,15 +147,13 @@ async function obtenerUsuarioLocal(): Promise<UsuarioResumen> {
 
 function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[number]): LoteResumido {
   const nombre = String(item.nombre_lote ?? '').trim() || `Lote ${item.id_local}`;
-  const variedad = String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad';
-  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || undefined;
+  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || 'Sin cultivo';
 
   return {
     id: `local-${item.id_local}`,
     idServidor: item.id_servidor ?? null,
     nombre,
-    variedad,
-    estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'S' : 'P',
+    estado: item.sincronizado === 1 ? 'S' : 'P',
     area: Number(item.superficie ?? 0),
     orderKey: item.id_local,
     tipoCultivo,
@@ -166,14 +162,12 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
 
 function mapearLoteBackend(item: LoteApi): LoteResumido {
   const nombre = String(item.nombre_lote ?? '').trim() || `Lote ${item.id_lote}`;
-  const variedad = String(item.tipo_cultivo ?? item.variedad ?? '').trim() || 'Sin variedad';
-  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || undefined;
+  const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || 'Sin cultivo';
 
   return {
     id: `server-${item.id_lote}`,
     idServidor: item.id_lote,
     nombre,
-    variedad,
     estado: String(item.estado ?? 'Activo'),
     area: Number(item.superficie ?? 0),
     orderKey: item.id_lote,
@@ -186,7 +180,7 @@ function deduplicarLotes(lotes: LoteResumido[]): LoteResumido[] {
   const resultado: LoteResumido[] = [];
 
   for (const lote of lotes) {
-    const firma = `${lote.idServidor ?? lote.id}|${lote.nombre.trim().toLowerCase()}|${lote.variedad.trim().toLowerCase()}`;
+    const firma = `${lote.idServidor ?? lote.id}|${lote.nombre.trim().toLowerCase()}|${lote.tipoCultivo.trim().toLowerCase()}`;
     if (vistos.has(firma)) continue;
     vistos.add(firma);
     resultado.push(lote);
@@ -206,7 +200,7 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
   const lotesCombinados = deduplicarLotes(lotesLocales.map(mapearLoteLocal));
 
   const pendientesSync = lotesLocales.filter(
-    (item) => String(item.estado_sincronizacion ?? '').toUpperCase() !== 'SINCRONIZADO'
+    (item) => item.sincronizado !== 1
   ).length;
 
   const areaTotal = lotesCombinados.reduce(
@@ -229,7 +223,6 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
     lotesRecientes: lotesCombinados.slice(0, 5).map((item) => ({
       id: Number(item.idServidor ?? item.orderKey),
       nombre: item.nombre,
-      variedad: item.variedad,
       estado: item.estado,
       area: item.area,
       tipoCultivo: item.tipoCultivo,
@@ -267,7 +260,7 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
       const costosSubidos = await obtenerTotalGastosSubidosDesdeLotes(lotesBackendApi).catch(() => 0);
 
       const pendientesSync = lotesLocales.filter(
-        (item) => String(item.estado_sincronizacion ?? '').toUpperCase() !== 'SINCRONIZADO'
+        (item) => item.sincronizado !== 1
       ).length;
 
       const areaTotal = lotesCombinados.reduce(
@@ -291,7 +284,6 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
         lotesRecientes: lotesCombinados.slice(0, 5).map((item) => ({
           id: Number(item.idServidor ?? item.orderKey),
           nombre: item.nombre,
-          variedad: item.variedad,
           estado: item.estado,
           area: item.area,
           tipoCultivo: item.tipoCultivo,

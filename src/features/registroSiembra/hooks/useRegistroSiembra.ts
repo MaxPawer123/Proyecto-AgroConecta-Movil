@@ -343,8 +343,6 @@ export function useRegistroSiembra({
           superficie,
           fechaSiembraIso,
           fechaCosechaIso,
-          rendimientoEstimado: Math.max(1, superficie * 300),
-          precioVentaEstimado: 12,
           fotoTerrenoUri: fotoTerreno,
         });
       } else if (rubro === 'papa') {
@@ -357,8 +355,6 @@ export function useRegistroSiembra({
           superficie,
           fechaSiembraIso,
           fechaCosechaIso,
-          rendimientoEstimado: Math.max(1, superficie * 400),
-          precioVentaEstimado: 10,
           fotoTerrenoUri: fotoTerreno,
         });
       } else {
@@ -371,8 +367,6 @@ export function useRegistroSiembra({
           superficie,
           fechaSiembraIso,
           fechaCosechaIso,
-          rendimientoEstimado: Math.max(1, superficie * 500),
-          precioVentaEstimado: 8,
           fotoTerrenoUri: fotoTerreno,
         });
       }

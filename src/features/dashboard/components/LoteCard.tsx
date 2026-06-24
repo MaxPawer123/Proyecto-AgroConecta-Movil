@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface LoteCardProps {
   nombre: string;
-  variedad: string;
+  tipoCultivo: string;
   estado: string;
   area: number;
   onPress?: () => void;
@@ -34,7 +34,7 @@ function getEstadoColor(estado: string): string {
   return '#64748B'; // Gris por defecto
 }
 
-export function LoteCard({ nombre, variedad, estado, area, onPress }: LoteCardProps) {
+export function LoteCard({ nombre, tipoCultivo, estado, area, onPress }: LoteCardProps) {
   const estadoColor = getEstadoColor(estado);
   
   return (
@@ -46,7 +46,7 @@ export function LoteCard({ nombre, variedad, estado, area, onPress }: LoteCardPr
       <View style={styles.headerRow}>
         <View style={styles.nameContainer}>
           <Text style={styles.nombre} numberOfLines={1}>{nombre}</Text>
-          <Text style={styles.variedad} numberOfLines={1}>{variedad}</Text>
+          <Text style={styles.tipoCultivo} numberOfLines={1}>{tipoCultivo}</Text>
         </View>
       </View>
 
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 18,
   },
-  variedad: {
+  tipoCultivo: {
     color: '#64748B',
     fontSize: 12,
     marginTop: 3,

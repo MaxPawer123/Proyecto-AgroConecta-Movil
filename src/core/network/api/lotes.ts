@@ -10,10 +10,13 @@ export type CrearLotePayload = {
   superficie: number;
   fecha_siembra: string;
   fecha_cosecha_est: string;
-  rendimiento_estimado: number;
-  precio_venta_est: number;
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
+  productos_ids?: number[];
+  productos?: Array<{
+    nombre: string;
+    rubro: string;
+  }>;
 };
 
 export type ActualizarLotePayload = Partial<CrearLotePayload> & {
@@ -24,14 +27,11 @@ export type LoteApi = {
   id_lote: number;
   id_productor: number;
   tipo_cultivo: string;
-  variedad?: string;
   nombre_producto?: string;
   nombre_lote: string;
   superficie: string;
   fecha_siembra: string;
   fecha_cosecha_est: string;
-  rendimiento_estimado: string;
-  precio_venta_est: string;
   foto_siembra_url?: string | null;
   ubicacion?: string | null;
   estado: string;

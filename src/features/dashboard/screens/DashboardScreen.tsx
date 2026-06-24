@@ -123,7 +123,7 @@ export function DashboardScreen() {
             <View key={lote.id} style={styles.loteCardWrapper}>
               <LoteCard
                 nombre={lote.nombre}
-                variedad={lote.variedad}
+                tipoCultivo={lote.tipoCultivo}
                 estado={lote.estado}
                 area={lote.area ?? 0}
                 onPress={() => {

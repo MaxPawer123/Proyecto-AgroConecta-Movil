@@ -91,11 +91,10 @@ const normalizarSuperficieFirma = (valor: unknown): string => {
 
 const construirFirmaLoteRaw = (item: any): string => {
   const nombre = normalizarTextoFirma(item?.nombre_lote);
-  const variedad = normalizarTextoFirma(item?.variedad);
   const fechaSiembra = normalizarTextoFirma(item?.fecha_siembra);
   const fechaCosecha = normalizarTextoFirma(item?.fecha_cosecha_est);
   const superficie = normalizarSuperficieFirma(item?.superficie);
-  return `${nombre}|${variedad}|${fechaSiembra}|${fechaCosecha}|${superficie}`;
+  return `${nombre}|${fechaSiembra}|${fechaCosecha}|${superficie}`;
 };
 
 const deduplicarRemotosPorId = (remotos: any[]): any[] => {
@@ -156,26 +155,26 @@ const dividirCultivos = (valor: unknown): string[] => {
 };
 
 const obtenerTextoCultivo = (item: any, fallback = ''): string => {
-  const valor = String(item?.cultivos_mostrados ?? item?.categorias_mostradas ?? item?.tipo_cultivo ?? item?.variedad ?? '').trim();
+  const valor = String(item?.cultivos_mostrados ?? item?.rubros_mostrados ?? item?.tipo_cultivo ?? '').trim();
   return valor || fallback;
 };
 
-const obtenerCategoriasCultivo = (item: any): string => {
-  return String(item?.categorias_mostradas ?? item?.categoria ?? '').trim().toLowerCase();
+const obtenerRubrosCultivo = (item: any): string => {
+  return String(item?.rubros_mostrados ?? item?.rubro ?? '').trim().toLowerCase();
 };
 
 const esLoteDelRubro = (item: any, rubro: RubroType): boolean => {
   const texto = obtenerTextoCultivo(item).toLowerCase();
-  const categorias = obtenerCategoriasCultivo(item);
+  const rubros = obtenerRubrosCultivo(item);
 
   if (rubro === 'quinua') {
-    return texto.includes('quinua') || categorias.includes('quinua');
+    return texto.includes('quinua') || rubros.includes('quinua');
   }
 
   if (rubro === 'papa') {
     return (
       texto.includes('papa') ||
-      categorias.includes('papa') ||
+      rubros.includes('papa') ||
       texto.includes('huaycha') ||
       texto.includes('imilla') ||
       texto.includes('desiree') ||
@@ -185,7 +184,7 @@ const esLoteDelRubro = (item: any, rubro: RubroType): boolean => {
 
   if (rubro === 'hortalizas') {
     const palabrasHortalizas = /cebolla|zanahoria|lechuga|tomate|pimiento|pepino|brocoli|brócoli|col|repollo|espinaca|betarraga|remolacha/i;
-    return categorias.includes('hortaliza') || palabrasHortalizas.test(texto) || texto.includes('hortaliza');
+    return rubros.includes('hortaliza') || palabrasHortalizas.test(texto) || texto.includes('hortaliza');
   }
 
   return false;
@@ -274,12 +273,9 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
   const cargarLotesLocalesInmediato = useCallback(async () => {
     const mapearRapido = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
-      const rendimiento = Number(item.rendimiento_estimado || 0);
-      const precio = Number(item.precio_venta_est || 0);
-      const ingresoEstimado = rendimiento * precio;
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
-      const tipoProducto = obtenerTextoCultivo(item, rubroConfig.defaultVariedad);
+      const tipoProducto = obtenerTextoCultivo(item, rubroConfig.defaultProductName);
 
       return {
         key: `local-${item.id_local}`,
@@ -299,35 +295,31 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
         fechaCosechaIso: item.fecha_cosecha_est,
-        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
-        precioVentaEst: precio > 0 ? precio : 1,
         progreso,
-        estado: item.estado_sincronizacion === 'SINCRONIZADO' ? rubroConfig.quickSyncedLabel : rubroConfig.quickPendingLabel,
-        estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
+        estado: item.sincronizado === 1 ? rubroConfig.quickSyncedLabel : rubroConfig.quickPendingLabel,
+        estadoColor: item.sincronizado === 1 ? '#2eaa51' : '#f59e0b',
         faseActual,
-        estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
+        estadoRaw: item.sincronizado === 1 ? 'ACTIVO' : 'ACTIVO',
         inversion: 0,
-        ingresoEstimado,
-        proyeccion: ingresoEstimado,
         mostrarCosecha: false,
       };
     };
 
-    const datosLocales = await obtenerLotesLocales();
-    const cultivoFallback = rubro === 'quinua' ? 'Quinua' : 'Hortaliza';
+    const datosLocalesTodos = await obtenerLotesLocales();
+    const cultivoFallback = rubro === 'quinua' ? 'Quinua' : rubro === 'papa' ? 'Papa' : 'Hortaliza';
+    const rubroNormalizado = rubro === 'quinua' ? 'QUINUA' : rubro === 'papa' ? 'PAPA' : 'HORTALIZA';
 
-    const lotesSinCultivo = (Array.isArray(datosLocales) ? datosLocales : []).filter((item: any) => {
+    const lotesSinCultivo = (Array.isArray(datosLocalesTodos) ? datosLocalesTodos : []).filter((item: any) => {
       const texto = obtenerTextoCultivo(item);
       return Number(item?.id_local) > 0 && esSinCultivo(texto);
     });
 
     for (const item of lotesSinCultivo) {
-      await actualizarCultivosDeLote(Number(item.id_local), [cultivoFallback]);
+      await actualizarCultivosDeLote(Number(item.id_local), [cultivoFallback], rubroNormalizado);
     }
 
-    const datosLocalesFinales = lotesSinCultivo.length > 0 ? await obtenerLotesLocales() : datosLocales;
-    const filtro = (item: any) => esLoteDelRubro(item, rubro);
-    const filtrados = Array.isArray(datosLocalesFinales) ? datosLocalesFinales.filter(filtro) : [];
+    const datosLocalesFinales = await obtenerLotesLocales(rubro);
+    const filtrados = (Array.isArray(datosLocalesFinales) ? datosLocalesFinales : []).filter((item: any) => esLoteDelRubro(item, rubro));
     const mapeados = filtrados.map(mapearRapido);
     setLotesOrdenados(mapeados);
     setDiagnosticoCarga(`Carga rapida local: ${mapeados.length}`);
@@ -335,6 +327,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
   const cargarLotesLocales = useCallback(async () => {
     const sincronizarCacheLocalConRemotos = async (remotos: any[], localesActuales: any[]) => {
+      const rubroNormalizado = rubro === 'quinua' ? 'QUINUA' : rubro === 'papa' ? 'PAPA' : 'HORTALIZA';
       const localesPorServidor = new Map<number, any>();
       for (const item of Array.isArray(localesActuales) ? localesActuales : []) {
         const idServidorLocal = normalizarIdServidor(item?.id_servidor);
@@ -361,21 +354,18 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           tipo_cultivo: tipoCultivo,
           nombre_lote: String(remoto?.nombre_lote ?? `Lote ${idServidor}`),
           ubicacion: remoto?.ubicacion ? String(remoto.ubicacion) : null,
-          variedad: remoto?.variedad ? String(remoto.variedad) : undefined,
           superficie: normalizarNumero(remoto?.superficie),
           fecha_siembra: String(remoto?.fecha_siembra ?? ''),
           fecha_cosecha_est: String(remoto?.fecha_cosecha_est ?? ''),
-          rendimiento_estimado: normalizarNumero(remoto?.rendimiento_estimado),
-          precio_venta_est: normalizarNumero(remoto?.precio_venta_est),
           foto_siembra_uri_local: remoto?.foto_siembra_url ? String(remoto.foto_siembra_url) : null,
-          estado_sincronizacion: 'SINCRONIZADO' as const,
+          sincronizado: 1,
         };
 
         if (idsLocalesServidor.has(idServidor)) {
           await actualizarLoteLocalPorServidor(idServidor, payload);
           const loteLocal = localesPorServidor.get(idServidor);
           if (loteLocal?.id_local && cultivosRemotos.length > 0) {
-            await actualizarCultivosDeLote(Number(loteLocal.id_local), cultivosRemotos);
+            await actualizarCultivosDeLote(Number(loteLocal.id_local), cultivosRemotos, rubroNormalizado);
           }
           continue;
         }
@@ -383,7 +373,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         try {
           const idLocalNuevo = await insertarLoteLocal(payload);
           if (cultivosRemotos.length > 0) {
-            await actualizarCultivosDeLote(idLocalNuevo, cultivosRemotos);
+            await actualizarCultivosDeLote(idLocalNuevo, cultivosRemotos, rubroNormalizado);
           }
           idsLocalesServidor.add(idServidor);
         } catch (error) {
@@ -391,7 +381,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
             await actualizarLoteLocalPorServidor(idServidor, payload);
             const loteLocal = localesPorServidor.get(idServidor);
             if (loteLocal?.id_local && cultivosRemotos.length > 0) {
-              await actualizarCultivosDeLote(Number(loteLocal.id_local), cultivosRemotos);
+              await actualizarCultivosDeLote(Number(loteLocal.id_local), cultivosRemotos, rubroNormalizado);
             }
             idsLocalesServidor.add(idServidor);
             continue;
@@ -412,7 +402,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
             return {
               ...lote,
               inversion,
-              proyeccion: (lote.ingresoEstimado || 0) - inversion,
             };
           } catch (error) {
             if (rubro === 'quinua') {
@@ -427,9 +416,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     if (rubro === 'hortalizas') {
       const mapearLoteLocal = (item: any): LoteViewModel => {
         const superficie = Number(item.superficie || 0);
-        const rendimiento = Number(item.rendimiento_estimado || 0);
-        const precio = Number(item.precio_venta_est || 0);
-        const ingresoEstimado = rendimiento * precio;
         const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
         return {
@@ -448,26 +434,18 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
           fechaSiembraIso: item.fecha_siembra,
           fechaCosechaIso: item.fecha_cosecha_est,
-          rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
-          precioVentaEst: precio > 0 ? precio : 1,
           progreso,
-          estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'SUBIENDO' : 'P',
-          estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
+          estado: item.sincronizado === 1 ? 'SUBIENDO' : 'P',
+          estadoColor: item.sincronizado === 1 ? '#2eaa51' : '#f59e0b',
           faseActual,
-          estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
+          estadoRaw: item.sincronizado === 1 ? 'ACTIVO' : 'ACTIVO',
           inversion: 0,
-          
-          ingresoEstimado,
-          proyeccion: ingresoEstimado,
           mostrarCosecha: false,
         };
       };
 
       const mapearLoteBackend = (item: any): LoteViewModel => {
         const superficie = Number(item.superficie || 0);
-        const rendimiento = Number(item.rendimiento_estimado || 0);
-        const precio = Number(item.precio_venta_est || 0);
-        const ingresoEstimado = rendimiento * precio;
         const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
         return {
@@ -486,23 +464,19 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
           fechaSiembraIso: item.fecha_siembra,
           fechaCosechaIso: item.fecha_cosecha_est,
-          rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
-          precioVentaEst: precio > 0 ? precio : 1,
           progreso,
           estado: item.estado || 'En Crecimiento',
           estadoColor: '#2eaa51',
           faseActual,
           estadoRaw: item.estado || 'ACTIVO',
           inversion: 0,
-          ingresoEstimado,
-          proyeccion: ingresoEstimado,
           mostrarCosecha: false,
         };
       };
 
       const cargarVistaLocalRapida = async () => {
         try {
-          const datosLocales = await obtenerLotesLocales();
+          const datosLocales = await obtenerLotesLocales(rubro);
           const locales = Array.isArray(datosLocales)
             ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
             : [];
@@ -523,7 +497,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       }
 
       try {
-        const datosLocales = await obtenerLotesLocales();
+        const datosLocales = await obtenerLotesLocales(rubro);
 
         const tiposCultivo = new Set(
           (Array.isArray(datosLocales) ? datosLocales : [])
@@ -537,7 +511,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
           : [];
 
-        const remotos = deduplicarRemotosPorId(lotesPorTipo.flat());
+        const remotos = deduplicarRemotosPorId(lotesPorTipo.flat()).filter((item: any) => esLoteDelRubro(item, rubro));
         await sincronizarCacheLocalConRemotos(remotos, Array.isArray(datosLocales) ? datosLocales : []);
 
         const combinados = [...remotos.map(mapearLoteBackend)];
@@ -550,7 +524,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         console.warn('No se pudieron cargar lotes de hortalizas desde backend, usando local:', error);
 
         try {
-          const datosLocales = await obtenerLotesLocales();
+          const datosLocales = await obtenerLotesLocales(rubro);
           const locales = Array.isArray(datosLocales)
             ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
             : [];
@@ -568,9 +542,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
     const mapearLoteLocal = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
-      const rendimiento = Number(item.rendimiento_estimado || 0);
-      const precio = Number(item.precio_venta_est || 0);
-      const ingresoEstimado = rendimiento * precio;
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
       return {
@@ -578,9 +549,11 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         id: item.id_servidor || item.id_local,
         idLocal: item.id_local,
         idServidor: item.id_servidor,
-        codigo: item.id_servidor ? `Q-B${item.id_servidor}` : `Q-L-${item.id_local}`,
+        codigo: item.id_servidor
+          ? `${rubroConfig.codePrefix}-B-${item.id_servidor}`
+          : `${rubroConfig.codePrefix}-L-${item.id_local}`,
         nombre: item.nombre_lote || `Lote ${item.id_local}`,
-        tipoProducto: obtenerTextoCultivo(item, 'Quinua'),
+        tipoProducto: obtenerTextoCultivo(item, rubroConfig.defaultProductName),
         imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
@@ -589,25 +562,18 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
         fechaCosechaIso: item.fecha_cosecha_est,
-        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
-        precioVentaEst: precio > 0 ? precio : 1,
         progreso,
-        estado: item.estado_sincronizacion === 'SINCRONIZADO' ? 'S' : 'P',
-        estadoColor: item.estado_sincronizacion === 'SINCRONIZADO' ? '#2eaa51' : '#f59e0b',
+        estado: item.sincronizado === 1 ? rubroConfig.quickSyncedLabel : rubroConfig.quickPendingLabel,
+        estadoColor: item.sincronizado === 1 ? '#2eaa51' : '#f59e0b',
         faseActual,
-        estadoRaw: item.estado_sincronizacion === 'SINCRONIZADO' ? 'ACTIVO' : 'ACTIVO',
+        estadoRaw: item.sincronizado === 1 ? 'ACTIVO' : 'ACTIVO',
         inversion: 0,
-        ingresoEstimado,
-        proyeccion: ingresoEstimado,
         mostrarCosecha: false,
       };
     };
 
     const mapearLoteBackend = (item: any): LoteViewModel => {
       const superficie = Number(item.superficie || 0);
-      const rendimiento = Number(item.rendimiento_estimado || 0);
-      const precio = Number(item.precio_venta_est || 0);
-      const ingresoEstimado = rendimiento * precio;
       const { progreso, faseActual } = calcularProgresoYCiclo(item.fecha_siembra, item.fecha_cosecha_est);
 
       return {
@@ -615,9 +581,9 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         id: item.id_lote,
         idLocal: null,
         idServidor: item.id_lote,
-        codigo: `Q-B-${item.id_lote}`,
+        codigo: `${rubroConfig.codePrefix}-B-${item.id_lote}`,
         nombre: item.nombre_lote || `Lote ${item.id_lote}`,
-        tipoProducto: obtenerTextoCultivo(item, 'Quinua'),
+        tipoProducto: obtenerTextoCultivo(item, rubroConfig.defaultProductName),
         imagen: resolverUriImagen(item.foto_siembra_url, rubroConfig.defaultImage),
         imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
         area: superficie,
@@ -626,22 +592,18 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
         fechaCosechaIso: item.fecha_cosecha_est,
-        rendimientoEstimado: rendimiento > 0 ? rendimiento : 1,
-        precioVentaEst: precio > 0 ? precio : 1,
         progreso,
         estado: item.estado || 'En Crecimiento',
         estadoColor: '#2eaa51',
         faseActual,
         estadoRaw: item.estado || 'ACTIVO',
         inversion: 0,
-        ingresoEstimado,
-        proyeccion: ingresoEstimado,
         mostrarCosecha: false,
       };
     };
 
     const cargarSoloLocales = async () => {
-      const datosLocales = await obtenerLotesLocales();
+      const datosLocales = await obtenerLotesLocales(rubro);
       const localesFiltrados = Array.isArray(datosLocales)
         ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
         : [];
@@ -651,7 +613,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
 
     const cargarVistaLocalRapida = async () => {
       try {
-        const datosLocales = await obtenerLotesLocales();
+        const datosLocales = await obtenerLotesLocales(rubro);
         const locales = Array.isArray(datosLocales)
           ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
           : [];
@@ -680,13 +642,14 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     }
 
     try {
-      const datosLocales = await obtenerLotesLocales();
+      const datosLocales = await obtenerLotesLocales(rubro);
 
+      const defaultTipo = rubro === 'quinua' ? 'quinua' : 'papa';
       const tiposCultivo = new Set([
-        'quinua',
+        defaultTipo,
         ...(Array.isArray(datosLocales) ? datosLocales : [])
           .map((item: any) => obtenerTextoCultivo(item).trim().toLowerCase())
-          .filter((tipo) => tipo && esLoteDelRubro({ cultivos_mostrados: tipo, categorias_mostradas: 'quinua' }, 'quinua')),
+          .filter((tipo) => tipo && esLoteDelRubro({ cultivos_mostrados: tipo, categorias_mostradas: defaultTipo }, rubro)),
       ]);
 
       const lotesPorTipo = await Promise.all([...tiposCultivo].map((tipo) => obtenerLotesPorTipoCultivoApi(tipo)));
@@ -699,7 +662,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
         : [];
 
-      const remotos = deduplicarRemotosPorId(Array.isArray(datosBackend) ? datosBackend : []);
+      const remotos = deduplicarRemotosPorId(Array.isArray(datosBackend) ? datosBackend : []).filter((item: any) => esLoteDelRubro(item, rubro));
       await sincronizarCacheLocalConRemotos(remotos, Array.isArray(datosLocales) ? datosLocales : []);
 
       const combinados = [...remotos.map((item: any) => mapearLoteBackend(item))];
@@ -713,7 +676,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       console.warn('No se pudieron cargar lotes de quinua desde backend, usando local:', error);
 
       try {
-        const datosLocales = await obtenerLotesLocales();
+        const datosLocales = await obtenerLotesLocales(rubro);
 
         const locales = Array.isArray(datosLocales)
           ? datosLocales.filter((item: any) => esLoteDelRubro(item, rubro))
@@ -822,7 +785,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
       if (loteEditando.idLocal) {
         await actualizarLoteLocal(loteEditando.idLocal, {
           nombre_lote: nombre,
-          variedad: tipoCultivo,
           ubicacion,
           superficie,
           fecha_siembra: fechaSiembraIso,
@@ -831,12 +793,12 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         });
 
         if (cultivosEditados.length > 0) {
-          await actualizarCultivosDeLote(loteEditando.idLocal, cultivosEditados);
+          const rubroNormalizado = rubro === 'quinua' ? 'QUINUA' : rubro === 'papa' ? 'PAPA' : 'HORTALIZA';
+          await actualizarCultivosDeLote(loteEditando.idLocal, cultivosEditados, rubroNormalizado);
         }
       } else if (loteEditando.idServidor) {
         await actualizarLoteLocalPorServidor(loteEditando.idServidor, {
           nombre_lote: nombre,
-          variedad: tipoCultivo,
           ubicacion,
           superficie,
           fecha_siembra: fechaSiembraIso,
@@ -877,8 +839,6 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           superficie,
           fecha_siembra: fechaSiembraIso,
           fecha_cosecha_est: fechaCosechaIso,
-          rendimiento_estimado: loteEditando.rendimientoEstimado,
-          precio_venta_est: loteEditando.precioVentaEst,
           estado: loteEditando.estadoRaw || 'ACTIVO',
           foto_siembra_url: fotoSiembra || null,
           ubicacion: ubicacion || null,

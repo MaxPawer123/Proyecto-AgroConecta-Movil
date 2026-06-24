@@ -63,7 +63,7 @@ export async function isUserLoggedIn(): Promise<boolean> {
   return loggedOld === 'true';
 }
 
-export async function guardarSesion(idUsuario: number, idProductor: number, nombre: string, email: string, token?: string): Promise<void> {
+export async function guardarSesion(idUsuario: number, idProductor: number, nombre: string, token?: string): Promise<void> {
   await AsyncStorage.setItem('@id_usuario', String(idUsuario));
   await AsyncStorage.setItem('id_usuario', String(idUsuario));
   await AsyncStorage.setItem('@id_productor', String(idProductor));
@@ -71,7 +71,6 @@ export async function guardarSesion(idUsuario: number, idProductor: number, nomb
   await AsyncStorage.setItem('@isLoggedIn', 'true');
   await AsyncStorage.setItem('sesion_activa', 'true');
   await AsyncStorage.setItem('@user_name', nombre);
-  await AsyncStorage.setItem('@user_email', email);
   if (token) {
     await AsyncStorage.setItem('@jwt_token', token);
     await AsyncStorage.setItem('jwt_token', token);
@@ -102,7 +101,6 @@ export async function cerrarSesionCompleta(): Promise<void> {
     '@isLoggedIn',
     'sesion_activa',
     '@user_name',
-    '@user_email',
     '@jwt_token',
     'jwt_token',
   ]);
@@ -123,7 +121,6 @@ export async function registrarUsuarioYProductor(
   const db = await getDb();
   const tokenLocal = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const nombreCompleto = `${nombre} ${apellido}`.trim();
-  const email = `${telefono}@agro.local`;
 
   let idUsuarioLocal = 0;
   let idProductorLocal = 0;
@@ -133,12 +130,11 @@ export async function registrarUsuarioYProductor(
     await db.withTransactionAsync(async () => {
       // Registrar usuario localmente con sincronizado = 0
       const resultUsuario = await db.runAsync(
-        `INSERT INTO usuario (nombre, apellido, nombre_completo, email, password_hash, rol, telefono, fecha_registro, sincronizado)
-         VALUES (?, ?, ?, ?, ?, 'PRODUCTOR', ?, datetime('now'), 0)`,
+        `INSERT INTO usuario (nombre, apellido, nombre_completo, password_hash, rol, telefono, fecha_registro, sincronizado)
+         VALUES (?, ?, ?, ?, 'PRODUCTOR', ?, datetime('now'), 0)`,
         nombre,
         apellido,
         nombreCompleto,
-        email,
         tokenLocal,
         telefono
       );
@@ -162,7 +158,7 @@ export async function registrarUsuarioYProductor(
     });
 
     // Guardar sesión local por defecto
-    await guardarSesion(idUsuarioLocal, idProductorLocal, nombreCompleto, email);
+    await guardarSesion(idUsuarioLocal, idProductorLocal, nombreCompleto);
     console.log('💾 Registro guardado localmente en SQLite:', { idUsuarioLocal, idProductorLocal });
   } catch (error) {
     console.error('❌ Error en el registro local:', error);
@@ -220,7 +216,7 @@ export async function registrarUsuarioYProductor(
       }
 
       // Guardar sesión actualizada con el Token del servidor
-      await guardarSesion(serverIdUsuario, serverIdProductor, nombreCompleto, email, token);
+      await guardarSesion(serverIdUsuario, serverIdProductor, nombreCompleto, token);
       console.log('✅ Sesión actualizada con Token JWT e IDs reales del servidor.');
       
       return { id_usuario: serverIdUsuario, id_productor: serverIdProductor };
@@ -317,7 +313,6 @@ export async function sincronizarUsuarioYProductorBackend(): Promise<boolean> {
         serverIdUsuario,
         serverIdProductor,
         `${unsynced.nombre} ${unsynced.apellido}`.trim(),
-        `${unsynced.telefono}@agro.local`,
         token
       );
 
