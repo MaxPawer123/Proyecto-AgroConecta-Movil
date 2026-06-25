@@ -312,6 +312,13 @@ export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs
       token = await AsyncStorage.getItem('jwt_token').catch(() => null);
     }
 
+    // Leer el id_usuario guardado localmente para inyectarlo en los headers
+    // y que el backend pueda filtrar los datos del usuario correcto.
+    let idUsuario = await AsyncStorage.getItem('@id_usuario').catch(() => null);
+    if (!idUsuario) {
+      idUsuario = await AsyncStorage.getItem('id_usuario').catch(() => null);
+    }
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(init?.headers as Record<string, string> || {}),
@@ -319,6 +326,12 @@ export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Inyectar id_usuario para el aislamiento de datos por usuario
+    if (idUsuario) {
+      headers['id_usuario'] = idUsuario;
+      headers['x-user-id'] = idUsuario;
     }
 
     const response = await fetch(`${baseUrl}${path}`, {
