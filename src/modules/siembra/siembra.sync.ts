@@ -32,6 +32,7 @@ import {
   type LoteLocal,
 } from './siembra.repository';
 import { getCurrentProductorId, sincronizarUsuarioYProductorBackend } from '../auth/auth.repository';
+import { syncLocalDataToCloud } from '../../services/syncService';
 
 const SYNC_INTERVAL_MS = 30000;
 const MAX_ITEMS_PER_SYNC = 10;
@@ -533,14 +534,11 @@ export async function registrarSiembraOfflineFirst(
 
   console.log(`💾 Lote guardado LOCALMENTE con ID: ${idLocal}`);
 
-  const hayConexion = await hayConexionDisponible();
-  if (hayConexion) {
-    setTimeout(() => {
-      sincronizarSiembrasPendientes().catch(() => {});
-    }, 1000);
-  } else {
-    console.log('📡 Sin conexión. El lote se sincronizará automáticamente cuando haya internet.');
-  }
+  // Disparar sincronizaciones en segundo plano de manera no bloqueante
+  setTimeout(() => {
+    sincronizarSiembrasPendientes().catch(() => {});
+    syncLocalDataToCloud().catch(() => {});
+  }, 1000);
 
   return {
     estado: 'PENDIENTE',
@@ -551,6 +549,7 @@ export async function registrarSiembraOfflineFirst(
 function manejarCambioAppState(nextState: AppStateStatus): void {
   if (nextState === 'active') {
     sincronizarSiembrasPendientes().catch(() => {});
+    syncLocalDataToCloud().catch(() => {});
   }
 }
 
@@ -558,6 +557,7 @@ export function iniciarSincronizacionAutomaticaSiembras(): void {
   if (!syncTimer) {
     syncTimer = setInterval(() => {
       sincronizarSiembrasPendientes().catch(() => {});
+      syncLocalDataToCloud().catch(() => {});
     }, SYNC_INTERVAL_MS);
   }
 
@@ -570,6 +570,7 @@ export function iniciarSincronizacionAutomaticaSiembras(): void {
       if (state.isConnected && state.isInternetReachable) {
         console.log('🌐 Conexión a internet detectada. Sincronizando...');
         sincronizarSiembrasPendientes().catch(() => {});
+        syncLocalDataToCloud().catch(() => {});
       } else {
         console.log('📡 Sin conexión a internet. Esperando...');
       }
@@ -577,6 +578,7 @@ export function iniciarSincronizacionAutomaticaSiembras(): void {
   }
 
   sincronizarSiembrasPendientes().catch(() => {});
+  syncLocalDataToCloud().catch(() => {});
 }
 
 export function detenerSincronizacionAutomaticaSiembras(): void {
