@@ -272,9 +272,15 @@ async function obtenerSesionLocal(db: Awaited<ReturnType<typeof getDb>>): Promis
   };
 }
 
-async function sincronizarRegistroEnBackend(input: RegistroProductorInput): Promise<boolean> {
+/**
+ * Registra al productor en el servidor y devuelve el token JWT si el servidor lo proporciona.
+ * Devuelve null si falla la red o el servidor no devuelve token.
+ */
+async function sincronizarRegistroEnBackend(
+  input: RegistroProductorInput
+): Promise<{ token: string; idUsuario: number; idProductor: number } | null> {
   try {
-    await registrarProductorApi({
+    const resServer = await registrarProductorApi({
       nombre: input.nombre.trim(),
       apellido: input.apellido.trim(),
       telefono: input.telefono.trim(),
@@ -283,10 +289,18 @@ async function sincronizarRegistroEnBackend(input: RegistroProductorInput): Prom
       comunidad: input.comunidad.trim(),
     });
 
-    return true;
+    if (resServer?.token && resServer?.data?.id_usuario) {
+      return {
+        token: resServer.token,
+        idUsuario: Number(resServer.data.id_usuario),
+        idProductor: Number(resServer.data.id_productor),
+      };
+    }
+
+    return null;
   } catch (error) {
     console.warn('No se pudo sincronizar el registro con el backend:', error);
-    return false;
+    return null;
   }
 }
 
@@ -356,14 +370,69 @@ export function useAuthLocal() {
       await abrirSesionLocal(db, idUsuario);
     });
 
-    void sincronizarRegistroEnBackend({
-      nombre,
-      apellido,
-      telefono,
-      departamento,
-      municipio,
-      comunidad,
-    });
+    // ✅ CORRECCIÓN CRÍTICA: Esperar la respuesta del servidor para guardar el token JWT.
+    // Antes se usaba void (fire-and-forget), descartando el token y causando
+    // "Token no proporcionado" en todas las peticiones protegidas posteriores.
+    try {
+      const resServidor = await sincronizarRegistroEnBackend({
+        nombre,
+        apellido,
+        telefono,
+        departamento,
+        municipio,
+        comunidad,
+      });
+
+      if (resServidor?.token) {
+        // ✅ Guardar el JWT del servidor + IDs reales en AsyncStorage
+        await AsyncStorage.multiSet([
+          ['@jwt_token',    resServidor.token],
+          ['jwt_token',     resServidor.token],   // compatibilidad con api.js
+          ['@id_usuario',   String(resServidor.idUsuario)],
+          ['id_usuario',    String(resServidor.idUsuario)],
+          ['@id_productor', String(resServidor.idProductor)],
+          ['id_productor',  String(resServidor.idProductor)],
+          ['@isLoggedIn',   'true'],
+          ['sesion_activa', 'true'],
+          ['@user_name',    `${nombre} ${apellido}`.trim()],
+        ]);
+
+        // Actualizar IDs reales en SQLite (sin perder FKs)
+        await db.execAsync('PRAGMA foreign_keys = OFF');
+        try {
+          await db.runAsync(
+            'UPDATE usuario SET id_usuario = ?, sincronizado = 1 WHERE id_usuario = ?',
+            resServidor.idUsuario, idUsuario
+          );
+          await db.runAsync(
+            'UPDATE productor SET id_productor = ?, id_usuario = ?, sincronizado = 1 WHERE id_productor = ?',
+            resServidor.idProductor, resServidor.idUsuario, idProductor
+          );
+          await db.runAsync(
+            'UPDATE auth_sesion SET id_usuario = ? WHERE id_usuario = ?',
+            resServidor.idUsuario, idUsuario
+          );
+        } finally {
+          await db.execAsync('PRAGMA foreign_keys = ON');
+        }
+
+        console.log('✅ [useAuthLocal] JWT guardado. El productor puede sincronizar de inmediato.');
+        return { idUsuario: resServidor.idUsuario, idProductor: resServidor.idProductor };
+      } else {
+        // Sin conexión: guardar solo las claves de sesión local (sin JWT)
+        await AsyncStorage.multiSet([
+          ['@id_usuario',   String(idUsuario)],
+          ['id_usuario',    String(idUsuario)],
+          ['@id_productor', String(idProductor)],
+          ['id_productor',  String(idProductor)],
+          ['@isLoggedIn',   'true'],
+          ['@user_name',    `${nombre} ${apellido}`.trim()],
+        ]);
+        console.warn('⚠️ [useAuthLocal] Registro offline. JWT pendiente hasta la próxima sincronización.');
+      }
+    } catch (syncError) {
+      console.warn('⚠️ [useAuthLocal] Error en sincronización post-registro:', syncError);
+    }
 
     return { idUsuario, idProductor };
   }, []);
@@ -409,8 +478,18 @@ export function useAuthLocal() {
       await limpiarDatosAuthLocal(db);
       await marcarSesionLocalCerrada(db);
     } finally {
-      await AsyncStorage.removeItem('sesion_activa');
-      await AsyncStorage.removeItem('id_usuario');
+      // ✅ Limpiar TODAS las claves de sesión, incluyendo el token JWT
+      await AsyncStorage.multiRemove([
+        'sesion_activa',
+        'id_usuario',
+        '@jwt_token',
+        'jwt_token',
+        '@id_usuario',
+        '@id_productor',
+        'id_productor',
+        '@isLoggedIn',
+        '@user_name',
+      ]);
     }
   }, []);
 

@@ -313,16 +313,37 @@ export function usePerfil() {
         await cargarPerfil();
 
         const msg = String(apiError?.message || '').toLowerCase();
-        const esErrorDeRed =
-          msg.includes('network') ||
-          msg.includes('fetch') ||
-          msg.includes('timeout') ||
-          msg.includes('connect') ||
-          msg.includes('abort') ||
-          msg.includes('host') ||
-          msg.includes('no se pudo conectar');
+        const statusCode = apiError?.status as number | undefined;
 
-        if (esErrorDeRed) {
+        // ── Error de autenticación (401) — token ausente, expirado o inválido
+        const esError401 =
+          statusCode === 401 ||
+          msg.includes('token no proporcionado') ||
+          msg.includes('token inválido') ||
+          msg.includes('token expirado') ||
+          msg.includes('unauthorized');
+
+        // ── Error de red / conexión
+        const esErrorDeRed =
+          !esError401 && (
+            msg.includes('network') ||
+            msg.includes('fetch') ||
+            msg.includes('timeout') ||
+            msg.includes('connect') ||
+            msg.includes('abort') ||
+            msg.includes('host') ||
+            msg.includes('no se pudo conectar')
+          );
+
+        if (esError401) {
+          // El token no llegó al servidor. Informar al productor qué hacer.
+          Alert.alert(
+            'Sesión requerida',
+            'Tu sesión ha expirado o no se encontró el acceso al servidor. ' +
+            'Tus datos se guardaron en el dispositivo. ' +
+            'Cierra sesión y vuelve a ingresar para sincronizar.'
+          );
+        } else if (esErrorDeRed) {
           Alert.alert(
             'Perfil guardado localmente',
             'Tus datos se guardaron en el dispositivo. Se sincronizarán automáticamente con el servidor cuando recuperes la conexión.'

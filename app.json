@@ -55,7 +55,9 @@
           "locationWhenInUsePermission": "Yapu Aroma necesita acceder a tu ubicacion GPS para registrar la ubicacion real de la parcela."
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

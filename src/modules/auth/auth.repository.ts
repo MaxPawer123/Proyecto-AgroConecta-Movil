@@ -63,6 +63,22 @@ export async function isUserLoggedIn(): Promise<boolean> {
   return loggedOld === 'true';
 }
 
+/**
+ * Persiste en AsyncStorage (y en SQLite) todos los datos de sesión del productor.
+ *
+ * IMPORTANTE: Esta función SIEMPRE debe ser llamada con el token del servidor
+ * cuando se disponga de él. Si se llama sin token (durante el registro offline),
+ * las rutas protegidas del backend responderán 401 "Token no proporcionado"
+ * hasta que el token sea guardado en una llamada posterior.
+ *
+ * Claves que se guardan en AsyncStorage:
+ *   '@jwt_token'    → token JWT (clave canónica, leída por requestJson)
+ *   'jwt_token'     → duplicado por compatibilidad con api.js legacy
+ *   '@id_usuario'   → ID del usuario autenticado
+ *   'id_usuario'    → duplicado por compatibilidad
+ *   '@id_productor' → ID del productor
+ *   'id_productor'  → duplicado por compatibilidad
+ */
 export async function guardarSesion(idUsuario: number, idProductor: number, nombre: string, token?: string): Promise<void> {
   await AsyncStorage.setItem('@id_usuario', String(idUsuario));
   await AsyncStorage.setItem('id_usuario', String(idUsuario));

@@ -307,28 +307,44 @@ export async function ejecutarConBaseUrls<T>(
 // ────────────────────────────────────────────────────────────────────────────────
 export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   return ejecutarConBaseUrls<T>(async (baseUrl, signal) => {
+    // ── 1. Leer token JWT desde AsyncStorage ────────────────────────────────
+    // Se intenta con ambas claves para compatibilidad con versiones anteriores.
     let token = await AsyncStorage.getItem('@jwt_token').catch(() => null);
     if (!token) {
       token = await AsyncStorage.getItem('jwt_token').catch(() => null);
     }
 
-    // Leer el id_usuario guardado localmente para inyectarlo en los headers
-    // y que el backend pueda filtrar los datos del usuario correcto.
+    // ⚠️ DIAGNÓSTICO: Si el token no existe, el backend responderá 401.
+    // Causa más común: guardarSesion() no fue llamado después del login/registro,
+    // o el AsyncStorage fue limpiado sin cerrar sesión correctamente.
+    if (!token) {
+      console.warn(
+        `🔐 [http] ADVERTENCIA: petición ${init?.method || 'GET'} ${path} ` +
+        'sin token JWT. El backend responderá "Token no proporcionado." ' +
+        'Verifica que guardarSesion() fue llamado tras login/registro exitoso.'
+      );
+    }
+
+    // ── 2. Leer id_usuario desde AsyncStorage ───────────────────────────────
     let idUsuario = await AsyncStorage.getItem('@id_usuario').catch(() => null);
     if (!idUsuario) {
       idUsuario = await AsyncStorage.getItem('id_usuario').catch(() => null);
     }
 
+    // ── 3. Construir headers con el estándar Bearer Token (RFC 6750) ────────
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(init?.headers as Record<string, string> || {}),
     };
 
     if (token) {
+      // ✅ INYECCIÓN DEL TOKEN — authMiddleware.js lee exactamente este header:
+      //   const authHeader = req.headers.authorization;  → "Bearer eyJhbG..."
+      //   const token = authHeader.split(' ')[1];         → "eyJhbG..."
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // Inyectar id_usuario para el aislamiento de datos por usuario
+    // Header auxiliar para rutas que filtran por usuario sin decodificar JWT
     if (idUsuario) {
       headers['id_usuario'] = idUsuario;
       headers['x-user-id'] = idUsuario;
