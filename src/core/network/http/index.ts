@@ -5,12 +5,28 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ────────────────────────────────────────────────────────────────────────────────
 // ⚙️  CONFIGURACIÓN PRINCIPAL
 // ────────────────────────────────────────────────────────────────────────────────
-// 👇 IP LAN FIJA del backend — cámbiala si tu PC obtiene otra IP de tu router.
-const BACKEND_IP = '192.168.0.8';
-const BACKEND_PORT = 3000;
-const BASE_URL_FIJA = process.env.EXPO_PUBLIC_API_URL || process.env.EXPO_PUBLIC_API_BASE_URL || `http://${BACKEND_IP}:${BACKEND_PORT}`;
+// 🌐 URL DE PRODUCCIÓN (Vercel) — prioridad absoluta.
+// Cámbiala solo si cambias de dominio en Vercel.
+const VERCEL_URL = 'https://proyecto-agro-conecta-backend.vercel.app';
 
-const REQUEST_TIMEOUT_MS = 10000;
+// 🏠 IP LAN para desarrollo local (solo se usa si EXPO_PUBLIC_USE_LAN=true en .env)
+// Actualiza BACKEND_IP si tu router le asigna otra IP a tu PC.
+const BACKEND_IP   = '192.168.0.8';
+const BACKEND_PORT = 3000;
+const LAN_URL      = `http://${BACKEND_IP}:${BACKEND_PORT}`;
+
+// La URL activa se determina así:
+//  1. Si EXPO_PUBLIC_API_URL está definida en .env → la usa (útil para CI/CD)
+//  2. Si EXPO_PUBLIC_USE_LAN=true → usa la IP LAN (solo para desarrollo interno)
+//  3. En todos los demás casos → Vercel (producción)
+const BASE_URL_FIJA = (() => {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
+  if (envUrl && /^https?:\/\//i.test(envUrl)) return envUrl;
+  if (process.env.EXPO_PUBLIC_USE_LAN === 'true') return LAN_URL;
+  return VERCEL_URL;
+})();
+
+const REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_TIMEOUT_MS = 30000;
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -116,10 +132,19 @@ function prioridadBaseUrl(url: string, baseUrlPrincipal: string | null): number 
   if (baseUrlPrincipal && url === baseUrlPrincipal) return 0;
 
   const host = extraerHostDesdeUrl(url);
-  if (esHostPrivado(host) && url.startsWith('http://')) return 1;
-  if (host === '10.0.2.2') return 2;
-  if (host === 'localhost' || host === '127.0.0.1') return 3;
-  if (url.startsWith('https://')) return 4;
+
+  // ✅ HTTPS (Vercel/producción) → máxima prioridad después de la URL principal
+  if (url.startsWith('https://')) return 1;
+
+  // IP LAN privada solo en segundo lugar (solo útil en desarrollo)
+  if (esHostPrivado(host) && url.startsWith('http://')) return 2;
+
+  // Emulador Android
+  if (host === '10.0.2.2') return 3;
+
+  // localhost / loopback — NUNCA deben ser usados en un celular físico
+  if (host === 'localhost' || host === '127.0.0.1') return 9;
+
   return 5;
 }
 
@@ -243,9 +268,17 @@ function construirBaseUrlsCandidatas(): string[] {
 // ────────────────────────────────────────────────────────────────────────────────
 function esErrorConexionRecuperable(error: unknown): boolean {
   if (error instanceof HttpStatusError) {
+    // ✅ 401/403 son errores de autenticación definitivos — NO reintentar con
+    // otra URL. Hacerlo causaría que la petición llegue a 127.0.0.1 (el celular
+    // mismo) o a la IP LAN, produciendo errores de red confusos.
+    if (error.status === 401 || error.status === 403) return false;
+    // 400 Bad Request tampoco se recupera cambiando de URL
+    if (error.status === 400) return false;
+    // Errores de servidor o tasa de solicitudes sí pueden recuperarse con otra URL
     return [408, 429, 500, 502, 503, 504].includes(error.status);
   }
-  return true; // Todos los errores que no son de estado HTTP (p. ej., fallos de conexión, de red, abortos o DNS) son considerados recuperables para probar otras URLs.
+  // Errores de red (DNS, TCP, timeout) → intentar la siguiente URL candidata
+  return true;
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -314,14 +347,27 @@ export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs
       token = await AsyncStorage.getItem('jwt_token').catch(() => null);
     }
 
-    // ⚠️ DIAGNÓSTICO: Si el token no existe, el backend responderá 401.
-    // Causa más común: guardarSesion() no fue llamado después del login/registro,
-    // o el AsyncStorage fue limpiado sin cerrar sesión correctamente.
+    const metodo = (init?.method || 'GET').toUpperCase();
+    const esMutacion = ['PUT', 'POST', 'PATCH', 'DELETE'].includes(metodo);
+
     if (!token) {
+      // ✅ Para peticiones que modifican datos (PUT/POST) no tiene sentido enviar
+      // la solicitud sin credenciales — el servidor SIEMPRE responderá 401.
+      // Lanzamos el error localmente para que usePerfil.guardarPerfilLocal()
+      // lo capture de inmediato y muestre "Sesión requerida" sin tocar la red.
+      if (esMutacion) {
+        console.error(
+          `🔴 [http] ${metodo} ${path} abortado: sin token JWT en AsyncStorage. ` +
+          'El productor debe cerrar sesión y volver a registrarse/iniciar sesión ' +
+          'para que el nuevo flujo guarde el JWT correctamente.'
+        );
+        throw new HttpStatusError('Token no proporcionado.', 401);
+      }
+
       console.warn(
-        `🔐 [http] ADVERTENCIA: petición ${init?.method || 'GET'} ${path} ` +
-        'sin token JWT. El backend responderá "Token no proporcionado." ' +
-        'Verifica que guardarSesion() fue llamado tras login/registro exitoso.'
+        `🔐 [http] ADVERTENCIA: GET ${path} sin token JWT. ` +
+        'Las rutas públicas (GET lotes, tipos de cultivo) funcionarán igual. ' +
+        'Las rutas protegidas responderán 401.'
       );
     }
 
