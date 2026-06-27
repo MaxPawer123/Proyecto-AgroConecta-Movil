@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { iniciarSincronizacionAutomaticaSiembras, registrarSiembraOfflineFirst } from '@/src/modules/siembra/siembra.sync';
+import { iniciarSincronizacionAutomaticaSiembras } from '@/src/modules/siembra/siembra.sync';
+import { saveDataLocally } from '@/src/services/syncService';
 import { FormRegistroSiembra, UseRegistroSiembraParams, UseRegistroSiembraResult } from '../types';
 
 const formInicial: FormRegistroSiembra = {
@@ -333,43 +334,19 @@ export function useRegistroSiembra({
     setGuardando(true);
 
     try {
-      if (rubro === 'quinua') {
-        await registrarSiembraOfflineFirst({
-          rubro: 'QUINUA',
-          nombreLote: nombre,
-          tipoCultivo: cultivosString,
-          cultivos: cultivosArray,
-          ubicacion: form.ubicacion,
-          superficie,
-          fechaSiembraIso,
-          fechaCosechaIso,
-          fotoTerrenoUri: fotoTerreno,
-        });
-      } else if (rubro === 'papa') {
-        await registrarSiembraOfflineFirst({
-          rubro: 'PAPA',
-          nombreLote: nombre,
-          tipoCultivo: cultivosString,
-          cultivos: cultivosArray,
-          ubicacion: form.ubicacion,
-          superficie,
-          fechaSiembraIso,
-          fechaCosechaIso,
-          fotoTerrenoUri: fotoTerreno,
-        });
-      } else {
-        await registrarSiembraOfflineFirst({
-          rubro: 'HORTALIZA',
-          nombreLote: nombre,
-          tipoCultivo: cultivosString,
-          cultivos: cultivosArray,
-          ubicacion: form.ubicacion,
-          superficie,
-          fechaSiembraIso,
-          fechaCosechaIso,
-          fotoTerrenoUri: fotoTerreno,
-        });
-      }
+      await saveDataLocally({
+        rubro: rubro === 'quinua' ? 'QUINUA' : rubro === 'papa' ? 'PAPA' : 'HORTALIZA',
+        nombreLote: nombre,
+        tipoCultivo: cultivosString,
+        cultivos: cultivosArray,
+        ubicacion: form.ubicacion,
+        superficie,
+        fechaSiembraIso,
+        fechaCosechaIso,
+        fotoTerrenoUri: fotoTerreno,
+      });
+
+      Alert.alert('Éxito', 'Guardado localmente');
 
       limpiarFormulario();
       setGuardando(false);

@@ -48,7 +48,7 @@ export type ListResponse<T> = {
 // ────────────────────────────────────────────────────────────────────────────────
 // Error HTTP personalizado
 // ────────────────────────────────────────────────────────────────────────────────
-class HttpStatusError extends Error {
+export class HttpStatusError extends Error {
   status: number;
 
   constructor(message: string, status: number) {
@@ -336,57 +336,87 @@ export async function ejecutarConBaseUrls<T>(
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// 📡 Petición JSON genérica
+// 📡 Petición JSON genérica — A PRUEBA DE FALLOS
 // ────────────────────────────────────────────────────────────────────────────────
+/**
+ * Realiza una petición HTTP JSON con las siguientes garantías:
+ *  - Si NO hay token y la ruta NO es de autenticación → continúa sin Authorization header.
+ *  - Un error 401 lanza `HttpStatusError` (status=401) pero NO cierra la app.
+ *  - Errores de red (sin internet) son atrapados por `ejecutarConBaseUrls`.
+ *
+ * Los llamadores deben envolver en try/catch para manejar el error 401
+ * de forma específica (ej: mostrar pantalla de login, no crashear).
+ */
 export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
   return ejecutarConBaseUrls<T>(async (baseUrl, signal) => {
-    // ── 1. Leer token JWT desde AsyncStorage ────────────────────────────────
-    // Se intenta con ambas claves para compatibilidad con versiones anteriores.
-    let token = await AsyncStorage.getItem('@jwt_token').catch(() => null);
-    if (!token) {
-      token = await AsyncStorage.getItem('jwt_token').catch(() => null);
+    // ── 1. Leer token JWT desde AsyncStorage (no aborta si no existe) ────────
+    let token: string | null = null;
+    try {
+      const raw1 = await AsyncStorage.getItem('@jwt_token');
+      const raw2 = !raw1 ? await AsyncStorage.getItem('jwt_token') : null;
+      const rawToken = raw1 ?? raw2;
+
+      // Limpiar comillas dobles/simples y espacios en blanco que pueden aparecer
+      // si el token fue guardado incorrectamente con JSON.stringify() o con trim() pendiente.
+      // Ej: '"eyJhbGci..."' → 'eyJhbGci...'  |  ' Bearer eyJ... ' → 'eyJ...'
+      if (rawToken) {
+        token = rawToken
+          .replace(/^["']+|["']+$/g, '') // quitar comillas al inicio/final
+          .replace(/^Bearer\s+/i, '')      // quitar prefijo "Bearer " si viene duplicado
+          .trim();
+
+        // Si el resultado está vacío tras limpiar, descartarlo
+        if (!token) token = null;
+      }
+    } catch {
+      // AsyncStorage falló (poco probable) → continuamos sin token
+      token = null;
     }
 
     const metodo = (init?.method || 'GET').toUpperCase();
-    const esMutacion = ['PUT', 'POST', 'PATCH', 'DELETE'].includes(metodo);
 
-    if (!token) {
-      // ✅ Para peticiones que modifican datos (PUT/POST) no tiene sentido enviar
-      // la solicitud sin credenciales — el servidor SIEMPRE responderá 401.
-      // Lanzamos el error localmente para que usePerfil.guardarPerfilLocal()
-      // lo capture de inmediato y muestre "Sesión requerida" sin tocar la red.
-      if (esMutacion) {
-        console.error(
-          `🔴 [http] ${metodo} ${path} abortado: sin token JWT en AsyncStorage. ` +
-          'El productor debe cerrar sesión y volver a registrarse/iniciar sesión ' +
-          'para que el nuevo flujo guarde el JWT correctamente.'
-        );
-        throw new HttpStatusError('Token no proporcionado.', 401);
-      }
+    // ── 2. Detectar si es ruta de autenticación ──────────────────────────────
+    //    Las rutas /auth/ nunca llevan Authorization header para evitar
+    //    bucles de autenticación y exponer credenciales accidentalmente.
+    const esRutaAuth = path.includes('/auth/');
 
+    // ── 🔑 DEBUG JWT — visible en Metro / Logcat ─────────────────────────────
+    // Imprime los primeros 10 chars (como pide el backend para comparar con sus logs)
+    const tokenDebug = token
+      ? `${token.slice(0, 10)}... ✅ (${token.length} chars)`
+      : 'NULL ❌ — petición SIN Authorization';
+    console.log(
+      `🔑 [http] ${metodo} ${path} | Token: ${esRutaAuth ? 'OMITIDO (ruta /auth/)' : tokenDebug}`
+    );
+
+    if (!token && !esRutaAuth) {
       console.warn(
-        `🔐 [http] ADVERTENCIA: GET ${path} sin token JWT. ` +
-        'Las rutas públicas (GET lotes, tipos de cultivo) funcionarán igual. ' +
-        'Las rutas protegidas responderán 401.'
+        `⚠️  [http] ${metodo} ${path} — No hay JWT en AsyncStorage. ` +
+        'Si recibes 401, verifica que el login haya guardado el token con: ' +
+        "await AsyncStorage.setItem('@jwt_token', token)"
       );
     }
 
-    // ── 2. Leer id_usuario desde AsyncStorage ───────────────────────────────
-    let idUsuario = await AsyncStorage.getItem('@id_usuario').catch(() => null);
-    if (!idUsuario) {
-      idUsuario = await AsyncStorage.getItem('id_usuario').catch(() => null);
+    // ── 3. Leer id_usuario desde AsyncStorage ───────────────────────────────
+    let idUsuario: string | null = null;
+    try {
+      idUsuario = await AsyncStorage.getItem('@id_usuario');
+      if (!idUsuario) {
+        idUsuario = await AsyncStorage.getItem('id_usuario');
+      }
+    } catch {
+      idUsuario = null;
     }
 
-    // ── 3. Construir headers con el estándar Bearer Token (RFC 6750) ────────
+    // ── 4. Construir headers ─────────────────────────────────────────────────
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(init?.headers as Record<string, string> || {}),
     };
 
-    if (token) {
-      // ✅ INYECCIÓN DEL TOKEN — authMiddleware.js lee exactamente este header:
-      //   const authHeader = req.headers.authorization;  → "Bearer eyJhbG..."
-      //   const token = authHeader.split(' ')[1];         → "eyJhbG..."
+    // Solo inyectar Authorization si hay token Y no es ruta de auth
+    if (token && !esRutaAuth) {
+      // ✅ authMiddleware.js lee: req.headers.authorization → "Bearer eyJhbG..."
       headers['Authorization'] = `Bearer ${token}`;
     }
 
@@ -396,12 +426,14 @@ export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs
       headers['x-user-id'] = idUsuario;
     }
 
+    // ── 5. Ejecutar fetch ────────────────────────────────────────────────────
     const response = await fetch(`${baseUrl}${path}`, {
       ...init,
       signal,
       headers,
     });
 
+    // ── 6. Parsear respuesta ─────────────────────────────────────────────────
     let data: unknown = null;
     try {
       data = await response.json();
@@ -409,11 +441,22 @@ export async function requestJson<T>(path: string, init?: RequestInit, timeoutMs
       data = null;
     }
 
+    // ── 7. Manejar errores HTTP ──────────────────────────────────────────────
     if (!response.ok) {
-      const mensaje =
-        data && typeof data === 'object' && 'message' in data
-          ? String((data as { message?: unknown }).message || `Error HTTP ${response.status}`)
-          : `Error HTTP ${response.status}`;
+      let mensaje = `Error HTTP ${response.status}`;
+      
+      if (data && typeof data === 'object') {
+        const dataObj = data as Record<string, unknown>;
+        const serverMsg = dataObj.message || dataObj.error || dataObj.detalle;
+        if (serverMsg) {
+          mensaje = String(serverMsg);
+          if (dataObj.detalle && dataObj.detalle !== serverMsg) {
+            mensaje += ` (${dataObj.detalle})`;
+          }
+        }
+      }
+
+      // Lanza HttpStatusError con el mensaje de error real del backend (ej: "Token inválido (JsonWebTokenError: invalid signature)")
       throw new HttpStatusError(mensaje, response.status);
     }
 
@@ -445,4 +488,19 @@ export async function fetchGetBackendConFallback<T>(
   }
 }
 
-export { HttpStatusError };
+/**
+ * Versión segura de fetchGetBackend que NUNCA lanza excepciones.
+ * Ideal para hooks que deben devolver datos vacíos en caso de error.
+ */
+export async function fetchGetBackendSeguro<T>(
+  path: string,
+  valorPorDefecto: T
+): Promise<T> {
+  try {
+    return await fetchGetBackend<T>(path);
+  } catch (error) {
+    const status = error instanceof HttpStatusError ? error.status : 0;
+    console.warn(`[http] fetchGetBackendSeguro: Error en GET ${path} (status: ${status}). Usando valor por defecto.`);
+    return valorPorDefecto;
+  }
+}

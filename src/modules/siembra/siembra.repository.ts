@@ -108,7 +108,8 @@ export function determinarCategoriaCultivo(cultivo: string): 'QUINUA' | 'PAPA' |
 export async function obtenerOInsertarProductoLocal(
   db: Db,
   nombre: string,
-  rubro?: string
+  rubro?: string,
+  idLoteProducto?: number | null
 ): Promise<number> {
   const nombreNormalizado = nombre.trim();
   if (!nombreNormalizado) {
@@ -117,9 +118,9 @@ export async function obtenerOInsertarProductoLocal(
 
   const rubroFinal = rubro && rubro !== 'General' ? rubro : determinarCategoriaCultivo(nombreNormalizado);
 
-  const existente = await db.getFirstAsync<{ id_producto: number; rubro: string }>(
+  const existente = await db.getFirstAsync<{ id_producto: number; rubro: string; id_lote_producto: number | null }>(
     `
-      SELECT id_producto, rubro
+      SELECT id_producto, rubro, id_lote_producto
       FROM PRODUCTO
       WHERE lower(nombre) = lower(?)
       LIMIT 1
@@ -129,10 +130,20 @@ export async function obtenerOInsertarProductoLocal(
 
   if (existente?.id_producto) {
     const rubroActual = existente.rubro;
-    if (rubroFinal && (!rubroActual || rubroActual === 'General' || rubroActual === '')) {
+    const debeActualizarRubro = rubroFinal && (!rubroActual || rubroActual === 'General' || rubroActual === '');
+    // Actualizar id_lote_producto si recibimos uno nuevo y el actual es null
+    const debeActualizarLoteProducto =
+      idLoteProducto != null && existente.id_lote_producto == null;
+
+    if (debeActualizarRubro || debeActualizarLoteProducto) {
       await db.runAsync(
-        `UPDATE PRODUCTO SET rubro = ?, sincronizado = 0 WHERE id_producto = ?`,
-        rubroFinal,
+        `UPDATE PRODUCTO
+         SET rubro = COALESCE(NULLIF(?, ''), rubro),
+             id_lote_producto = COALESCE(?, id_lote_producto),
+             sincronizado = 0
+         WHERE id_producto = ?`,
+        debeActualizarRubro ? rubroFinal : '',
+        idLoteProducto ?? null,
         existente.id_producto
       );
     }
@@ -140,12 +151,61 @@ export async function obtenerOInsertarProductoLocal(
   }
 
   const result = await db.runAsync(
-    'INSERT INTO PRODUCTO (nombre, rubro, sincronizado) VALUES (?, ?, 0)',
+    'INSERT INTO PRODUCTO (nombre, rubro, id_lote_producto, sincronizado) VALUES (?, ?, ?, 0)',
     nombreNormalizado,
-    rubroFinal || ''
+    rubroFinal || '',
+    idLoteProducto ?? null
   );
 
   return Number(result.lastInsertRowId);
+}
+
+/**
+ * Traduce un id_lote_producto LOCAL al id_lote_producto del SERVIDOR.
+ *
+ * El flujo Offline-First crea registros en LOTE_PRODUCTO con IDs locales
+ * auto-incrementales de SQLite. Cuando el registro se sincroniza, el servidor
+ * devuelve su propio ID. Esta función busca ese ID servidor en la columna
+ * `id_lote_producto` de la tabla LOTE_PRODUCTO local.
+ *
+ * @param idLoteProductoLocal - ID local (SQLite) de la fila en LOTE_PRODUCTO.
+ * @returns El ID servidor correspondiente, o null si no se encontró o no se
+ *          sincronizó todavía (en ese caso el backend debe aceptar NULL).
+ */
+export async function resolverIdLoteProductoServidor(
+  idLoteProductoLocal: number | null | undefined
+): Promise<number | null> {
+  if (idLoteProductoLocal == null) return null;
+
+  try {
+    const db = await getDb();
+    // Buscamos el registro en LOTE_PRODUCTO cuyo id_local (PK autoincremental
+    // de SQLite) coincide con idLoteProductoLocal.
+    // Si la tabla guarda su propio id_servidor en una columna 'id_lote_producto_servidor',
+    // la usaríamos directamente. De lo contrario usamos el campo id_lote_producto
+    // almacenado en PRODUCTO como referencia de la relación ya sincronizada.
+    const fila = await db.getFirstAsync<{ id_servidor: number | null }>(
+      `SELECT id_lote_producto AS id_servidor
+       FROM LOTE_PRODUCTO
+       WHERE id_lote_producto = ?
+       LIMIT 1`,
+      idLoteProductoLocal
+    );
+
+    if (!fila) {
+      console.warn(
+        `[resolverIdLoteProductoServidor] No se encontró LOTE_PRODUCTO con id_local=${idLoteProductoLocal}. Se enviará NULL.`
+      );
+      return null;
+    }
+
+    // Si el id_servidor es el mismo id local (SQLite aún no sincronizó esta fila
+    // con el servidor), retornamos null para evitar enviar IDs locales al backend.
+    return fila.id_servidor ?? null;
+  } catch (err) {
+    console.warn(`[resolverIdLoteProductoServidor] Error al resolver ID: ${String(err)}`);
+    return null;
+  }
 }
 
 export async function getLoteServerColumn(): Promise<'id_lote' | 'id_servidor'> {

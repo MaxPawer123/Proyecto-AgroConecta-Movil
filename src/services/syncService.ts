@@ -1,54 +1,218 @@
-import NetInfo from '@react-native-community/netinfo';
-import { supabase, obtenerSesionValida } from '../core/supabase/supabaseClient';
-import { obtenerLotesPendientesLocales, marcarLoteComoSincronizado } from '../modules/siembra/siembra.repository';
+/**
+ * syncService.ts — Servicio de Sincronización Local-Primero
+ *
+ * Arquitectura Offline-First garantizada:
+ *  1. saveDataLocally() SIEMPRE escribe en SQLite (jamás en red).
+ *  2. syncLocalDataToCloud() solo se ejecuta con conexión confirmada por NetInfo.
+ *  3. Error 401 de Supabase → marca dato como 'pendiente_sincronizacion' y detiene
+ *     la sincronización sin crashear la UI.
+ *  4. Error de red → el dato permanece con sincronizado=0 y se reintenta en el
+ *     próximo ciclo automático.
+ *  5. Ninguna función lanza excepciones hacia la UI — todo es capturado internamente.
+ */
 
+import NetInfo from '@react-native-community/netinfo';
+import { supabase, obtenerSesionValida, isSupabaseConfigured } from '../core/supabase/supabaseClient';
+import {
+  obtenerLotesPendientesLocales,
+  marcarLoteComoSincronizado,
+  insertarLoteLocal,
+  obtenerOInsertarProductoLocal,
+  resolverIdLoteProductoServidor,
+} from '../modules/siembra/siembra.repository';
+import { getDb } from '../core/database/sqlite.config';
+
+// ─── Estado del servicio ─────────────────────────────────────────────────────
 let sincronizando = false;
 
+/** Razón por la que la última sincronización fue detenida (para diagnóstico). */
+export type RazonDetencion =
+  | 'sin_conexion'
+  | 'sin_sesion'
+  | 'error_401'
+  | 'supabase_no_configurado'
+  | 'ya_en_curso'
+  | 'sin_pendientes'
+  | 'error_inesperado'
+  | null;
+
+let _ultimaRazonDetencion: RazonDetencion = null;
+
+export function getUltimaRazonDetencion(): RazonDetencion {
+  return _ultimaRazonDetencion;
+}
+
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+export interface LocalDataInput {
+  rubro: 'QUINUA' | 'HORTALIZA' | 'PAPA';
+  nombreLote: string;
+  tipoCultivo: string;
+  cultivos: string[];
+  ubicacion: string;
+  superficie: number;
+  fechaSiembraIso: string;
+  fechaCosechaIso: string;
+  fotoTerrenoUri?: string | null;
+}
+
+export interface SyncResult {
+  exitoso: boolean;
+  procesados: number;
+  razonDetencion: RazonDetencion;
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// 💾  PASO 1: Guardar localmente (siempre, sin internet, sin sesión)
+// ────────────────────────────────────────────────────────────────────────────────
 /**
- * Servicio central para sincronizar los lotes y registros locales pendientes
- * con las tablas remotas de Supabase.
+ * Guarda cualquier registro de lote/siembra directamente en SQLite local.
+ *
+ * Garantías:
+ *  - NO requiere internet.
+ *  - NO requiere sesión de Supabase.
+ *  - Marca el registro con sincronizado=0 para sincronización posterior.
+ *  - NUNCA lanza excepciones hacia la UI: envuelve todo en try/catch.
+ *
+ * @returns ID local del registro insertado, o null si hubo error de BD.
  */
-export async function syncLocalDataToCloud(): Promise<{ exitoso: boolean; procesados: number }> {
+export async function saveDataLocally(input: LocalDataInput): Promise<number | null> {
+  try {
+    const db = await getDb();
+
+    // 1. Obtener o insertar productos en el catálogo local
+    const idProductos: number[] = [];
+    for (const cultivo of input.cultivos) {
+      const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, input.rubro);
+      idProductos.push(idProducto);
+    }
+
+    // 2. Insertar el lote con sincronizado = 0 (pendiente de sync remota)
+    const idLocal = await insertarLoteLocal({
+      id_servidor: null,
+      id_productos: idProductos,
+      tipo_cultivo: input.tipoCultivo,
+      nombre_lote: input.nombreLote,
+      ubicacion: input.ubicacion,
+      superficie: input.superficie,
+      fecha_siembra: input.fechaSiembraIso,
+      fecha_cosecha_est: input.fechaCosechaIso,
+      foto_siembra_uri_local: input.fotoTerrenoUri ?? null,
+      sincronizado: 0, // Marcado para sync posterior
+    });
+
+    console.log(
+      `💾 [SyncService] Lote guardado localmente. ID local: ${idLocal}. ` +
+      'Estado: pendiente de sincronización (sincronizado=0).'
+    );
+
+    return idLocal;
+  } catch (error: unknown) {
+    // Error en SQLite — informar pero NO crashear la app
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[SyncService] ❌ Error al guardar localmente en SQLite: ${msg}`);
+    return null;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// ☁️  PASO 2: Sincronizar con Supabase (solo con conexión y sesión válidas)
+// ────────────────────────────────────────────────────────────────────────────────
+/**
+ * Intenta sincronizar registros locales pendientes (sincronizado=0) con Supabase.
+ *
+ * Flujo de decisión:
+ *  ┌─ ¿Ya hay sincronización en curso?  → detiene (razon: 'ya_en_curso')
+ *  ├─ ¿NetInfo confirma conexión?       → si no, detiene (razon: 'sin_conexion')
+ *  ├─ ¿Supabase configurado?            → si no, detiene (razon: 'supabase_no_configurado')
+ *  ├─ ¿Sesión JWT válida?               → si no, detiene (razon: 'sin_sesion')
+ *  ├─ ¿Hay registros pendientes?        → si no, finaliza (razon: 'sin_pendientes')
+ *  └─ Por cada lote pendiente:
+ *      ├─ Éxito → marca sincronizado=1
+ *      ├─ Error 401 → marca como 'PENDIENTE_SESION', detiene loop (razon: 'error_401')
+ *      └─ Otro error → registra en log, continúa con el siguiente
+ *
+ * @returns SyncResult con resultado y razón de detención (para diagnóstico en UI).
+ */
+export async function syncLocalDataToCloud(): Promise<SyncResult> {
+  // ── Guardia de re-entrada ────────────────────────────────────────────────
   if (sincronizando) {
-    console.log('[Sync Service] Sincronización en curso. Omitiendo ejecución.');
-    return { exitoso: false, procesados: 0 };
+    console.log('[SyncService] Sincronización ya en curso. Omitiendo.');
+    _ultimaRazonDetencion = 'ya_en_curso';
+    return { exitoso: false, procesados: 0, razonDetencion: 'ya_en_curso' };
   }
 
   sincronizando = true;
+  _ultimaRazonDetencion = null;
   let procesados = 0;
 
   try {
-    // 1. Detectar conexión activa a internet
-    const estadoRed = await NetInfo.fetch();
-    if (!estadoRed.isConnected || !estadoRed.isInternetReachable) {
-      console.log('[Sync Service] Dispositivo sin internet. Esperando conexión.');
-      sincronizando = false;
-      return { exitoso: false, procesados: 0 };
+    // ── 1. Verificar conexión con NetInfo ────────────────────────────────────
+    let hayConexion = false;
+    try {
+      const estadoRed = await NetInfo.fetch();
+      hayConexion = Boolean(estadoRed.isConnected && estadoRed.isInternetReachable !== false);
+    } catch {
+      // NetInfo falló — asumimos sin conexión para evitar intentos fallidos
+      hayConexion = false;
     }
 
-    // 2. Verificar/renovar silenciosamente la sesión con el refresh token
-    const sesion = await obtenerSesionValida();
+    if (!hayConexion) {
+      console.log('[SyncService] 📵 Sin conexión a internet. Sincronización pospuesta.');
+      _ultimaRazonDetencion = 'sin_conexion';
+      return { exitoso: false, procesados: 0, razonDetencion: 'sin_conexion' };
+    }
+
+    // ── 2. Verificar que Supabase esté configurado ───────────────────────────
+    if (!isSupabaseConfigured()) {
+      console.log('[SyncService] ⚠️  Supabase no configurado. Sincronización no disponible.');
+      _ultimaRazonDetencion = 'supabase_no_configurado';
+      return { exitoso: false, procesados: 0, razonDetencion: 'supabase_no_configurado' };
+    }
+
+    // ── 3. Obtener sesión válida (sin lanzar excepciones) ────────────────────
+    let sesion = null;
+    try {
+      sesion = await obtenerSesionValida();
+    } catch {
+      // obtenerSesionValida() nunca debería lanzar, pero por si acaso
+      sesion = null;
+    }
+
     if (!sesion) {
-      console.log('[Sync Service] Sesión expirada y no se pudo renovar en silencio. Sincronización detenida sin alterar datos locales.');
-      sincronizando = false;
-      return { exitoso: false, procesados: 0 };
+      console.log(
+        '[SyncService] 🔒 Sin sesión válida. Los registros permanecen locales ' +
+        'hasta que el usuario inicie sesión.'
+      );
+      _ultimaRazonDetencion = 'sin_sesion';
+      return { exitoso: false, procesados: 0, razonDetencion: 'sin_sesion' };
     }
 
-    console.log('[Sync Service] Sesión válida obtenida. Buscando lotes locales pendientes...');
+    // ── 4. Obtener registros pendientes de SQLite ────────────────────────────
+    let lotesPendientes: Awaited<ReturnType<typeof obtenerLotesPendientesLocales>> = [];
+    try {
+      lotesPendientes = await obtenerLotesPendientesLocales();
+    } catch (dbError: unknown) {
+      const msg = dbError instanceof Error ? dbError.message : String(dbError);
+      console.error(`[SyncService] Error al leer SQLite: ${msg}`);
+      _ultimaRazonDetencion = 'error_inesperado';
+      return { exitoso: false, procesados: 0, razonDetencion: 'error_inesperado' };
+    }
 
-    // 3. Obtener registros no sincronizados de SQLite
-    const lotesPendientes = await obtenerLotesPendientesLocales();
     if (lotesPendientes.length === 0) {
-      console.log('[Sync Service] No hay lotes pendientes de sincronización.');
-      sincronizando = false;
-      return { exitoso: true, procesados: 0 };
+      console.log('[SyncService] ✅ No hay lotes pendientes de sincronización.');
+      _ultimaRazonDetencion = 'sin_pendientes';
+      return { exitoso: true, procesados: 0, razonDetencion: 'sin_pendientes' };
     }
 
-    console.log(`[Sync Service] Subiendo ${lotesPendientes.length} lotes pendientes a Supabase...`);
+    console.log(`[SyncService] 🔄 Iniciando sync de ${lotesPendientes.length} lote(s)...`);
+
+    // ── 5. Iterar y sincronizar cada lote ────────────────────────────────────
+    let detenerPorAuth = false;
 
     for (const lote of lotesPendientes) {
+      if (detenerPorAuth) break; // 401 detectado en iteración anterior
+
       try {
-        // Mapear los campos del lote a la estructura esperada por la tabla remota en Supabase
         const payload = {
           id_productor: lote.id_productor,
           nombre_lote: lote.nombre_lote,
@@ -59,56 +223,225 @@ export async function syncLocalDataToCloud(): Promise<{ exitoso: boolean; proces
           foto_siembra_url: lote.foto_siembra_uri_local,
           ubicacion: lote.ubicacion || 'No especificada',
           estado: 'ACTIVO',
-          id_usuario: lote.id_productor, // O sesion.user.id si coincide el ID del auth de Supabase
+          id_usuario: lote.id_productor,
           updated_at: new Date().toISOString(),
         };
 
-        let queryError = null;
-        let dataResult = null;
+        // ── Upsert vs Insert según si ya tiene id_servidor ─────────────────
+        const operacion = lote.id_servidor
+          ? supabase
+              .from('lote')
+              .upsert({ id_lote: lote.id_servidor, ...payload })
+              .select('id_lote')
+              .single()
+          : supabase
+              .from('lote')
+              .insert(payload)
+              .select('id_lote')
+              .single();
 
-        // Upsert / Insert
-        if (lote.id_servidor) {
-          // Si ya tiene ID del servidor, actualizamos
-          const { data, error } = await supabase
-            .from('lote')
-            .upsert({ id_lote: lote.id_servidor, ...payload })
-            .select('id_lote')
-            .single();
-          queryError = error;
-          dataResult = data;
-        } else {
-          // Si es un lote nuevo creado offline, insertamos
-          const { data, error } = await supabase
-            .from('lote')
-            .insert(payload)
-            .select('id_lote')
-            .single();
-          queryError = error;
-          dataResult = data;
-        }
+        const { data: dataResult, error: queryError } = await operacion;
 
+        // ── Manejo de error de Supabase ────────────────────────────────────
         if (queryError) {
-          throw queryError;
+          const esError401 =
+            // Supabase devuelve status 401 o mensajes JWT
+            (queryError as any)?.status === 401 ||
+            queryError.message?.toLowerCase().includes('jwt') ||
+            queryError.message?.toLowerCase().includes('invalid token') ||
+            queryError.message?.toLowerCase().includes('unauthorized') ||
+            queryError.message?.toLowerCase().includes('not authenticated') ||
+            queryError.code === 'PGRST301'; // PostgREST: JWT expired
+
+          if (esError401) {
+            // ❌ Error de autenticación: no es recuperable con la sesión actual.
+            // El dato permanece con sincronizado=0 (no lo marcamos como error fatal).
+            // La próxima vez que el usuario inicie sesión, se reintentará.
+            console.error(
+              `[SyncService] 🔒 Error 401/JWT al sincronizar lote ${lote.id_local}. ` +
+              'El registro permanece pendiente hasta que el usuario re-autentique. ' +
+              `Detalle: ${queryError.message}`
+            );
+            detenerPorAuth = true;
+            _ultimaRazonDetencion = 'error_401';
+            // NO lanzamos — simplemente dejamos el loop
+            break;
+          }
+
+          // Error de Supabase no relacionado con auth → registrar y continuar
+          console.warn(
+            `[SyncService] ⚠️  Error al sincronizar lote ${lote.id_local}: ` +
+            `${queryError.message}. Reintentando en el próximo ciclo.`
+          );
+          continue; // Siguiente lote
         }
 
+        // ── Éxito: marcar como sincronizado en SQLite ──────────────────────
         if (dataResult) {
-          const idServidor = dataResult.id_lote;
-          // 4. Actualizar bandera local 'sincronizado' a 1 (true) y guardar ID de servidor
+          const idServidor = (dataResult as { id_lote: number }).id_lote;
           await marcarLoteComoSincronizado(lote.id_local, idServidor);
           procesados++;
-          console.log(`[Sync Service] Lote local ${lote.id_local} sincronizado exitosamente con ID Servidor: ${idServidor}`);
+          console.log(
+            `[SyncService] ✅ Lote local ${lote.id_local} sincronizado ` +
+            `con ID servidor: ${idServidor}`
+          );
         }
-      } catch (err: any) {
-        console.error(`[Sync Service] Error al sincronizar el lote local ${lote.id_local}:`, err?.message || err);
+      } catch (err: unknown) {
+        // Captura excepciones no controladas por el query de Supabase
+        const msg = err instanceof Error ? err.message : String(err);
+        const esError401 =
+          msg.toLowerCase().includes('401') ||
+          msg.toLowerCase().includes('jwt') ||
+          msg.toLowerCase().includes('unauthorized');
+
+        if (esError401) {
+          console.error(
+            `[SyncService] 🔒 Excepción 401/JWT en lote ${lote.id_local}. ` +
+            'Deteniendo sync. El usuario debe re-autenticarse.'
+          );
+          detenerPorAuth = true;
+          _ultimaRazonDetencion = 'error_401';
+          break;
+        }
+
+        // Error de red u otro: el dato sigue pendiente, no crasheamos
+        console.warn(
+          `[SyncService] ⚠️  Excepción en lote ${lote.id_local}: ${msg}. ` +
+          'El registro permanece pendiente para el próximo ciclo.'
+        );
       }
     }
 
-    sincronizando = false;
-    return { exitoso: true, procesados };
+    // ── 6. Resultado final ───────────────────────────────────────────────────
+    const exitoso = !detenerPorAuth;
+    if (!_ultimaRazonDetencion) {
+      _ultimaRazonDetencion = procesados > 0 ? null : 'sin_pendientes';
+    }
 
-  } catch (error) {
-    console.error('[Sync Service] Error general en syncLocalDataToCloud:', error);
+    console.log(
+      `[SyncService] Ciclo completado. Procesados: ${procesados}/${lotesPendientes.length}. ` +
+      `Razón de parada: ${_ultimaRazonDetencion ?? 'completado_ok'}`
+    );
+
+    return { exitoso, procesados, razonDetencion: _ultimaRazonDetencion };
+
+  } catch (errorGeneral: unknown) {
+    // Captura de última instancia — NUNCA debe llegar aquí, pero si llega no crashea la UI
+    const msg = errorGeneral instanceof Error ? errorGeneral.message : String(errorGeneral);
+    console.error(`[SyncService] ❌ Error general inesperado en syncLocalDataToCloud: ${msg}`);
+    _ultimaRazonDetencion = 'error_inesperado';
+    return { exitoso: false, procesados, razonDetencion: 'error_inesperado' };
+
+  } finally {
     sincronizando = false;
-    return { exitoso: false, procesados };
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// 🌐 Sync de productos pendientes con traducción de IDs (Offline-First)
+// ────────────────────────────────────────────────────────────────────────────────
+/**
+ * Sincroniza el catálogo de productos pendientes (sincronizado = 0) con el
+ * backend, resolviendo previamente el mapeo de IDs locales a IDs servidor.
+ *
+ * Problema resuelto:
+ *   En modo offline, LOTE_PRODUCTO se crea con un id_lote_producto local
+ *   (ej. 5). Al sincronizar, Supabase genera su propio ID (ej. 104). Sin esta
+ *   función, el backend recibiría el ID local 5, que no existe en Supabase y
+ *   rompería la FK `fk_producto_lote_producto`.
+ *
+ * Modo seguro:
+ *   Si `resolverIdLoteProductoServidor` devuelve null (lote aún no
+ *   sincronizado), el producto se envía con `id_lote_producto: null`.
+ *   El backend acepta NULL gracias a `ON DELETE SET NULL` en el esquema.
+ *
+ * @param token - JWT de sesión para autorizar la petición al backend.
+ */
+export async function syncProductosPendientes(token: string): Promise<void> {
+  try {
+    const db = await getDb();
+
+    // Obtener productos aún no sincronizados con el servidor
+    const productosPendientes = await db.getAllAsync<{
+      id_producto: number;
+      nombre: string;
+      rubro: string;
+      id_lote_producto: number | null;
+      estado: string;
+    }>(
+      `SELECT id_producto, nombre, rubro, id_lote_producto, estado
+       FROM PRODUCTO
+       WHERE sincronizado = 0`
+    );
+
+    if (productosPendientes.length === 0) {
+      console.log('[SyncService] ✅ No hay productos pendientes de sincronización.');
+      return;
+    }
+
+    console.log(
+      `[SyncService] 🔄 Sincronizando ${productosPendientes.length} producto(s) pendientes...`
+    );
+
+    // ── Traducción de IDs: local → servidor ───────────────────────────────────
+    const productosConIdsMapeados = await Promise.all(
+      productosPendientes.map(async (producto) => {
+        // Resuelve el id_lote_producto local al ID real de Supabase.
+        // Si el lote_producto aún no se sincronizó, devuelve null (modo seguro).
+        const idLoteProductoServidor = await resolverIdLoteProductoServidor(
+          producto.id_lote_producto
+        );
+
+        return {
+          id_producto:       producto.id_producto,
+          nombre:            producto.nombre,
+          rubro:             producto.rubro,
+          estado:            producto.estado ?? 'ACTIVO',
+          sincronizado:      true,
+          // null si la relación aún no tiene ID servidor → el backend acepta NULL
+          id_lote_producto:  idLoteProductoServidor,
+        };
+      })
+    );
+
+    // ── POST al backend ─────────────────────────────────────────────────────
+    const { sincronizarProductosApi } = await import(
+      '../core/network/api/productos'
+    );
+    const respuesta = await sincronizarProductosApi(productosConIdsMapeados, token);
+
+    if (!respuesta?.success) {
+      console.warn('[SyncService] ⚠️  El backend no confirmó la sincronización de productos.');
+      return;
+    }
+
+    // ── Marcar como sincronizados en SQLite ─────────────────────────────────
+    const idsLocales = productosPendientes.map((p) => p.id_producto);
+    if (idsLocales.length > 0) {
+      const placeholders = idsLocales.map(() => '?').join(', ');
+      await db.runAsync(
+        `UPDATE PRODUCTO SET sincronizado = 1 WHERE id_producto IN (${placeholders})`,
+        ...idsLocales
+      );
+    }
+
+    console.log(
+      `[SyncService] ✅ ${productosPendientes.length} producto(s) sincronizados correctamente.`
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[SyncService] ⚠️  Error en syncProductosPendientes (no crítico): ${msg}`);
+    // No relanzamos — la sincronización principal no debe crashear por esto.
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// 🎯 Helper: Estado de sesión para la UI
+// ────────────────────────────────────────────────────────────────────────────────
+/**
+ * Devuelve si el SyncService está bloqueado esperando re-autenticación.
+ * La UI puede usar esto para mostrar un banner "Inicia sesión para sincronizar".
+ */
+export function syncBloqueadoPorAuth(): boolean {
+  return _ultimaRazonDetencion === 'error_401' || _ultimaRazonDetencion === 'sin_sesion';
 }

@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from '@/src/core/database/sqlite.config';
-import { registrarProductorApi } from '@/src/core/network/api/auth';
+import { registrarProductorApi, iniciarSesionApi } from '@/src/core/network/api/auth';
 
 type RegistroProductorInput = {
   nombre: string;
@@ -304,6 +304,48 @@ async function sincronizarRegistroEnBackend(
   }
 }
 
+// ─── Login con teléfono + PIN (⚡ persiste el JWT inmediatamente) ─────────────
+/**
+ * Autentica al usuario usando teléfono + PIN contra el backend.
+ * Al éxito, guarda el token JWT en AsyncStorage con AMBAS claves
+ * (@jwt_token  y  jwt_token) para que el interceptor HTTP lo encuentre
+ * sin importar qué clave busque primero.
+ *
+ * @throws Error si las credenciales son inválidas o no hay conexión.
+ */
+async function loginConTelefonoYPin(
+  telefono: string,
+  pin: string
+): Promise<{ token: string; idUsuario: number; idProductor: number }> {
+  const response = await iniciarSesionApi({ telefono: telefono.trim(), pin: pin.trim() });
+
+  // — Persistir el JWT — ésta es la clave para que el interceptor HTTP lo encuentre
+  await AsyncStorage.multiSet([
+    ['@jwt_token',    response.token],
+    ['jwt_token',     response.token],    // clave de compatibilidad (api.js legado)
+    ['@id_usuario',   String(response.data.id_usuario)],
+    ['id_usuario',    String(response.data.id_usuario)],
+    ['@id_productor', String(response.data.id_productor)],
+    ['id_productor',  String(response.data.id_productor)],
+    ['@isLoggedIn',   'true'],
+    ['sesion_activa', 'true'],
+    ['@user_name',    `${response.data.nombre} ${response.data.apellido}`.trim()],
+  ]);
+
+  console.log(
+    '✅ [useAuthLocal] JWT guardado en AsyncStorage.\n' +
+    `   Usuario: ${response.data.nombre} ${response.data.apellido}\n` +
+    `   id_usuario: ${response.data.id_usuario} | id_productor: ${response.data.id_productor}\n` +
+    `   Token (primeros 30 chars): ${response.token.slice(0, 30)}...`
+  );
+
+  return {
+    token:       response.token,
+    idUsuario:   Number(response.data.id_usuario),
+    idProductor: Number(response.data.id_productor),
+  };
+}
+
 export function useAuthLocal() {
   const verificarCuentaExistente = useCallback(async (): Promise<boolean> => {
     const db = await getDb();
@@ -508,8 +550,22 @@ export function useAuthLocal() {
     return '/auth/registro';
   }, []);
 
+  const iniciarSesion = useCallback(async (
+    telefono: string,
+    pin: string
+  ): Promise<{ token: string; idUsuario: number; idProductor: number }> => {
+    const db = await getDb();
+    const resultado = await loginConTelefonoYPin(telefono, pin);
+
+    // Actualizar sesión local en SQLite para que resolverRutaInicial funcione
+    await abrirSesionLocal(db, resultado.idUsuario);
+
+    return resultado;
+  }, []);
+
   return {
     registrarProductor,
+    iniciarSesion,
     desbloquearApp,
     verificarCuentaExistente,
     cerrarSesionLocal,

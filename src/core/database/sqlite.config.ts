@@ -86,6 +86,7 @@ async function createBaseSchema(db: SQLite.SQLiteDatabase): Promise<void> {
         id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
         nombre TEXT NOT NULL,
         rubro TEXT NOT NULL,
+        id_lote_producto INTEGER,
         estado TEXT NOT NULL DEFAULT 'ACTIVO',
         sincronizado INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -219,6 +220,12 @@ async function asegurarColumnasProducto(db: SQLite.SQLiteDatabase): Promise<void
 
   if (!currentColumns.has('estado')) {
     await runSafe(db, "ALTER TABLE PRODUCTO ADD COLUMN estado TEXT NOT NULL DEFAULT 'ACTIVO'");
+  }
+
+  // Migración: agregar FK local hacia lote_producto (Offline-First)
+  // runSafe silencia 'duplicate column name' si la columna ya existe.
+  if (!currentColumns.has('id_lote_producto')) {
+    await runSafe(db, 'ALTER TABLE PRODUCTO ADD COLUMN id_lote_producto INTEGER');
   }
 }
 
