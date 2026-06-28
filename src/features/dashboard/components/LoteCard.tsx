@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ViewStyle, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface LoteCardProps {
@@ -7,6 +7,7 @@ interface LoteCardProps {
   tipoCultivo: string;
   estado: string;
   area: number;
+  fotoUrl?: string | null;
   onPress?: () => void;
 }
 
@@ -34,7 +35,7 @@ function getEstadoColor(estado: string): string {
   return '#64748B'; // Gris por defecto
 }
 
-export function LoteCard({ nombre, tipoCultivo, estado, area, onPress }: LoteCardProps) {
+export function LoteCard({ nombre, tipoCultivo, estado, area, fotoUrl, onPress }: LoteCardProps) {
   const estadoColor = getEstadoColor(estado);
   
   return (
@@ -43,20 +44,27 @@ export function LoteCard({ nombre, tipoCultivo, estado, area, onPress }: LoteCar
       activeOpacity={0.85}
       onPress={onPress}
     >
-      <View style={styles.headerRow}>
-        <View style={styles.nameContainer}>
-          <Text style={styles.nombre} numberOfLines={1}>{nombre}</Text>
-          <Text style={styles.tipoCultivo} numberOfLines={1}>{tipoCultivo}</Text>
-        </View>
-      </View>
+      <View style={styles.cardContent}>
+        {fotoUrl ? (
+          <Image source={{ uri: fotoUrl }} style={styles.loteImage} resizeMode="cover" />
+        ) : null}
+        <View style={styles.infoContainer}>
+          <View style={styles.headerRow}>
+            <View style={styles.nameContainer}>
+              <Text style={styles.nombre} numberOfLines={1}>{nombre}</Text>
+              <Text style={styles.tipoCultivo} numberOfLines={1}>{tipoCultivo}</Text>
+            </View>
+          </View>
 
-      <View style={styles.bottomRow}>
-        <View style={styles.statusContainer}>
-          <View style={[styles.statusDot, { backgroundColor: estadoColor }]} />
-          <Text style={styles.estadoText} numberOfLines={1}>{estado}</Text>
-        </View>
+          <View style={styles.bottomRow}>
+            <View style={styles.statusContainer}>
+              <View style={[styles.statusDot, { backgroundColor: estadoColor }]} />
+              <Text style={styles.estadoText} numberOfLines={1}>{estado}</Text>
+            </View>
 
-        <Text style={styles.areaText}>{area.toFixed(2)} ha</Text>
+            <Text style={styles.areaText}>{area.toFixed(2)} ha</Text>
+          </View>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -66,14 +74,29 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     minWidth: 200,
-    justifyContent: 'space-between',
     ...shadowCard,
   },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loteImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: '#E2E8F0',
+  },
+  infoContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+    minHeight: 60,
+  },
   headerRow: {
-    marginBottom: 10,
+    marginBottom: 4,
   },
   nameContainer: {
     flex: 1,
@@ -87,7 +110,7 @@ const styles = StyleSheet.create({
   tipoCultivo: {
     color: '#64748B',
     fontSize: 12,
-    marginTop: 3,
+    marginTop: 2,
   },
   bottomRow: {
     flexDirection: 'row',
@@ -118,3 +141,4 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
+

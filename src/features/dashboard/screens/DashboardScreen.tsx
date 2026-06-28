@@ -117,15 +117,16 @@ export function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      {lotesMostrados.length > 0 ? (
+      {lotesMostrados && lotesMostrados.length > 0 ? (
         <View style={styles.recentList}>
-          {lotesMostrados.map((lote) => (
-            <View key={lote.id} style={styles.loteCardWrapper}>
+          {lotesMostrados.map((lote, index) => (
+            <View key={`${lote.id || index}-${index}`} style={styles.loteCardWrapper}>
               <LoteCard
                 nombre={lote.nombre}
                 tipoCultivo={lote.tipoCultivo}
                 estado={lote.estado}
                 area={lote.area ?? 0}
+                fotoUrl={lote.fotoUrl}
                 onPress={() => {
                   router.push({
                     pathname: '/calculadora-costos' as any,
@@ -138,10 +139,11 @@ export function DashboardScreen() {
               />
             </View>
           ))}
+
         </View>
       ) : (
         <View style={styles.emptyLotesContainer}>
-          <Text style={styles.emptyLotesText}>No hay parcelas registrados</Text>
+          <Text style={styles.emptyLotesText}>No hay lotes registrados</Text>
         </View>
       )}
 

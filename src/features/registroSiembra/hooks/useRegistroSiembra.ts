@@ -183,21 +183,25 @@ export function useRegistroSiembra({
             allowsEditing: false,
             aspect: [4, 3],
             quality: 0.7,
+            base64: true, // ← Activa la codificación Base64 de la imagen
           })
         : await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [4, 3],
             quality: 0.7,
+            base64: true, // ← Activa la codificación Base64 de la imagen
           });
 
     if (!resultado.canceled && resultado.assets && resultado.assets.length > 0) {
+      const imagenUri = resultado.assets[0].uri;
+
       if (origen === 'camera') {
-        setFotoPendienteCamara(resultado.assets[0].uri);
+        setFotoPendienteCamara(imagenUri);
         return;
       }
 
-      setFotoTerreno(resultado.assets[0].uri);
+      setFotoTerreno(imagenUri);
     }
   };
 

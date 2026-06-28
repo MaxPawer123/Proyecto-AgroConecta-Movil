@@ -1,16 +1,3 @@
-/**
- * syncService.ts — Servicio de Sincronización Local-Primero
- *
- * Arquitectura Offline-First garantizada:
- *  1. saveDataLocally() SIEMPRE escribe en SQLite (jamás en red).
- *  2. syncLocalDataToCloud() solo se ejecuta con conexión confirmada por NetInfo.
- *  3. Error 401 de Supabase → marca dato como 'pendiente_sincronizacion' y detiene
- *     la sincronización sin crashear la UI.
- *  4. Error de red → el dato permanece con sincronizado=0 y se reintenta en el
- *     próximo ciclo automático.
- *  5. Ninguna función lanza excepciones hacia la UI — todo es capturado internamente.
- */
-
 import NetInfo from '@react-native-community/netinfo';
 import { supabase, obtenerSesionValida, isSupabaseConfigured } from '../core/supabase/supabaseClient';
 import {
@@ -19,8 +6,65 @@ import {
   insertarLoteLocal,
   obtenerOInsertarProductoLocal,
   resolverIdLoteProductoServidor,
+  getLoteServerColumn,
+  actualizarFotoSiembraLocal,
 } from '../modules/siembra/siembra.repository';
 import { getDb } from '../core/database/sqlite.config';
+
+// Estrategia de fotos: Subida directa a Cloudinary (Offline-First)
+
+/**
+ * Sube una imagen local (file://) a Cloudinary de manera directa usando FormData.
+ * @param uriLocal URI de archivo local.
+ * @returns La URL pública (secure_url) de Cloudinary o null si falla.
+ */
+async function subirFotoACloudinary(uriLocal: string): Promise<string | null> {
+  try {
+    const cloudName = 'dgdn58hpw';
+    const apiKey = '272864567725746';
+    const uploadPreset = 'ml_default'; // Preset unsigned por defecto en Cloudinary
+
+    const fileName = uriLocal.split('/').pop() || `siembra_${Date.now()}.jpg`;
+    
+    const formData = new FormData();
+    formData.append('file', {
+      uri: uriLocal,
+      type: 'image/jpeg',
+      name: fileName,
+    } as any);
+    
+    formData.append('upload_preset', uploadPreset);
+    formData.append('api_key', apiKey);
+
+    console.log(`📸 [Cloudinary] Subiendo imagen a Cloudinary: ${fileName}...`);
+    
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`📸 [Cloudinary] Error en respuesta (status ${response.status}): ${errorText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data && data.secure_url) {
+      console.log(`📸 [Cloudinary] ¡Subida exitosa! URL: ${data.secure_url}`);
+      return data.secure_url;
+    }
+
+    console.warn(`📸 [Cloudinary] No se recibió secure_url en los datos de respuesta.`);
+    return null;
+  } catch (error) {
+    console.warn(`📸 [Cloudinary] Excepción al subir imagen:`, error);
+    return null;
+  }
+}
 
 // ─── Estado del servicio ─────────────────────────────────────────────────────
 let sincronizando = false;
@@ -60,8 +104,6 @@ export interface SyncResult {
   procesados: number;
   razonDetencion: RazonDetencion;
 }
-
-// ────────────────────────────────────────────────────────────────────────────────
 // 💾  PASO 1: Guardar localmente (siempre, sin internet, sin sesión)
 // ────────────────────────────────────────────────────────────────────────────────
 /**
@@ -213,6 +255,52 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
       if (detenerPorAuth) break; // 401 detectado en iteración anterior
 
       try {
+        // ── 5a. Foto — estrategia Cloudinary (Offline-First) ──────────────────
+        let fotoUrlParaPayload = lote.foto_siembra_uri_local;
+        const esFotoLocal =
+          fotoUrlParaPayload !== null &&
+          fotoUrlParaPayload !== undefined &&
+          fotoUrlParaPayload.startsWith('file://');
+
+        let fotoSubidaOk = true;
+
+        if (esFotoLocal && fotoUrlParaPayload) {
+          try {
+            const secureUrl = await subirFotoACloudinary(fotoUrlParaPayload);
+            if (secureUrl) {
+              fotoUrlParaPayload = secureUrl;
+
+              if (lote.id_servidor) {
+                // Lote existente: Persistencia local y en Supabase de la URL web
+                const db = await getDb();
+                await db.runAsync(
+                  'UPDATE lote SET foto_siembra_url = ?, sincronizado = 1 WHERE id_lote = ?',
+                  secureUrl,
+                  lote.id_servidor
+                );
+                
+                await supabase
+                  .from('lote')
+                  .update({ foto_siembra_url: secureUrl, sincronizado: true })
+                  .eq('id_lote', lote.id_servidor);
+
+                console.log(`📸 [Sync-Fotos] ✅ URL persistida local y remotamente para lote existente ${lote.id_local}`);
+              } else {
+                // Lote nuevo: Guardar localmente; el payload del posterior INSERT la subirá a la nube
+                await actualizarFotoSiembraLocal(lote.id_local, secureUrl);
+              }
+            } else {
+              console.warn("📸 [Cloudinary] Error de red o respuesta vacía. Manteniendo foto localmente.");
+              fotoUrlParaPayload = null; // Evitar enviar la URI local file:// al backend
+              fotoSubidaOk = false;
+            }
+          } catch (errorFoto: unknown) {
+            console.warn("📸 [Cloudinary] Error de red. Manteniendo foto localmente.");
+            fotoUrlParaPayload = null;
+            fotoSubidaOk = false;
+          }
+        }
+
         const payload = {
           id_productor: lote.id_productor,
           nombre_lote: lote.nombre_lote,
@@ -220,7 +308,8 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
           fecha_siembra: lote.fecha_siembra,
           fecha_cosecha_est: lote.fecha_cosecha_est,
           fecha_cosecha_real: lote.fecha_cosecha_real,
-          foto_siembra_url: lote.foto_siembra_uri_local,
+          foto_siembra_url: fotoUrlParaPayload, // URL de Cloudinary o null
+
           ubicacion: lote.ubicacion || 'No especificada',
           estado: 'ACTIVO',
           id_usuario: lote.id_productor,
@@ -245,7 +334,6 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
         // ── Manejo de error de Supabase ────────────────────────────────────
         if (queryError) {
           const esError401 =
-            // Supabase devuelve status 401 o mensajes JWT
             (queryError as any)?.status === 401 ||
             queryError.message?.toLowerCase().includes('jwt') ||
             queryError.message?.toLowerCase().includes('invalid token') ||
@@ -254,9 +342,6 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
             queryError.code === 'PGRST301'; // PostgREST: JWT expired
 
           if (esError401) {
-            // ❌ Error de autenticación: no es recuperable con la sesión actual.
-            // El dato permanece con sincronizado=0 (no lo marcamos como error fatal).
-            // La próxima vez que el usuario inicie sesión, se reintentará.
             console.error(
               `[SyncService] 🔒 Error 401/JWT al sincronizar lote ${lote.id_local}. ` +
               'El registro permanece pendiente hasta que el usuario re-autentique. ' +
@@ -264,11 +349,9 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
             );
             detenerPorAuth = true;
             _ultimaRazonDetencion = 'error_401';
-            // NO lanzamos — simplemente dejamos el loop
             break;
           }
 
-          // Error de Supabase no relacionado con auth → registrar y continuar
           console.warn(
             `[SyncService] ⚠️  Error al sincronizar lote ${lote.id_local}: ` +
             `${queryError.message}. Reintentando en el próximo ciclo.`
@@ -276,18 +359,37 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
           continue; // Siguiente lote
         }
 
-        // ── Éxito: marcar como sincronizado en SQLite ──────────────────────
+        // ── Éxito: marcar sincronización en SQLite según el estado de la foto ────
         if (dataResult) {
           const idServidor = (dataResult as { id_lote: number }).id_lote;
-          await marcarLoteComoSincronizado(lote.id_local, idServidor);
+          
+          if (!fotoSubidaOk) {
+            // Si la foto no se pudo subir, guardamos el id_servidor pero dejamos sincronizado = 0
+            // de modo que en el próximo ciclo se intente volver a subir la foto.
+            const db = await getDb();
+            const serverColumn = await getLoteServerColumn();
+            await db.runAsync(
+              `UPDATE lote SET ${serverColumn} = ?, sincronizado = 0, updated_at = ? WHERE id_local = ?`,
+              idServidor,
+              new Date().toISOString(),
+              lote.id_local
+            );
+            console.log(
+              `[SyncService] ⚠️ Lote local ${lote.id_local} guardado en la nube con ID servidor ${idServidor}, ` +
+              'pero manteniéndose sincronizado = 0 localmente para reintentar la subida de foto a Cloudinary.'
+            );
+          } else {
+            // Todo exitoso (incluyendo foto), marcar como sincronizado
+            await marcarLoteComoSincronizado(lote.id_local, idServidor);
+            console.log(
+              `[SyncService] ✅ Lote local ${lote.id_local} sincronizado completamente ` +
+              `con ID servidor: ${idServidor}`
+            );
+          }
+          
           procesados++;
-          console.log(
-            `[SyncService] ✅ Lote local ${lote.id_local} sincronizado ` +
-            `con ID servidor: ${idServidor}`
-          );
         }
       } catch (err: unknown) {
-        // Captura excepciones no controladas por el query de Supabase
         const msg = err instanceof Error ? err.message : String(err);
         const esError401 =
           msg.toLowerCase().includes('401') ||
@@ -304,7 +406,6 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
           break;
         }
 
-        // Error de red u otro: el dato sigue pendiente, no crasheamos
         console.warn(
           `[SyncService] ⚠️  Excepción en lote ${lote.id_local}: ${msg}. ` +
           'El registro permanece pendiente para el próximo ciclo.'
@@ -326,7 +427,6 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
     return { exitoso, procesados, razonDetencion: _ultimaRazonDetencion };
 
   } catch (errorGeneral: unknown) {
-    // Captura de última instancia — NUNCA debe llegar aquí, pero si llega no crashea la UI
     const msg = errorGeneral instanceof Error ? errorGeneral.message : String(errorGeneral);
     console.error(`[SyncService] ❌ Error general inesperado en syncLocalDataToCloud: ${msg}`);
     _ultimaRazonDetencion = 'error_inesperado';

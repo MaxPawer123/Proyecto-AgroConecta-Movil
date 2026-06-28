@@ -20,6 +20,7 @@ export type LoteRecienteDashboard = {
   estado: string;
   area?: number;
   tipoCultivo: string;
+  fotoUrl?: string | null;
 };
 
 export type DashboardData = {
@@ -44,6 +45,7 @@ type LoteResumido = {
   area: number;
   orderKey: number;
   tipoCultivo: string;
+  fotoUrl: string | null;
 };
 
 const estadoInicial: Omit<DashboardData, 'actualizar'> = {
@@ -149,6 +151,11 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
   const nombre = String(item.nombre_lote ?? '').trim() || `Lote ${item.id_local}`;
   const tipoCultivo = String(item.tipo_cultivo ?? '').trim() || 'Sin cultivo';
 
+  // Lógica de foto:
+  // Si foto_sincronizada == 0 y hay una URI local, muestra la foto del celular.
+  // Si foto_sincronizada == 1, usa la URL pública de Supabase (imagen_url).
+  const fotoUrl = item.foto_sincronizada === 1 ? item.imagen_url : item.foto_siembra_uri_local;
+
   return {
     id: `local-${item.id_local}`,
     idServidor: item.id_servidor ?? null,
@@ -157,6 +164,7 @@ function mapearLoteLocal(item: Awaited<ReturnType<typeof obtenerLotesLocales>>[n
     area: Number(item.superficie ?? 0),
     orderKey: item.id_local,
     tipoCultivo,
+    fotoUrl: fotoUrl ?? null,
   };
 }
 
@@ -172,6 +180,7 @@ function mapearLoteBackend(item: LoteApi): LoteResumido {
     area: Number(item.superficie ?? 0),
     orderKey: item.id_lote,
     tipoCultivo,
+    fotoUrl: item.foto_siembra_url ?? null,
   };
 }
 
@@ -226,6 +235,7 @@ async function cargarDashboardLocal(): Promise<Omit<DashboardData, 'loading' | '
       estado: item.estado,
       area: item.area,
       tipoCultivo: item.tipoCultivo,
+      fotoUrl: item.fotoUrl,
     })),
     origenDatos: [`SQLite: ${lotesCombinados.length}`],
   };
@@ -287,6 +297,7 @@ async function cargarBackendConTimeout(): Promise<Omit<DashboardData, 'loading' 
           estado: item.estado,
           area: item.area,
           tipoCultivo: item.tipoCultivo,
+          fotoUrl: item.fotoUrl,
         })),
         origenDatos: [`SQLite: ${lotesLocales.length}`, `Backend: ${lotesBackend.length}`],
       };

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from '../../core/database/sqlite.config';
+import { supabase } from '../../core/supabase/supabaseClient';
 
 let loteServerColumnCache: 'id_lote' | 'id_servidor' | null = null;
 
@@ -179,29 +180,57 @@ export async function resolverIdLoteProductoServidor(
 
   try {
     const db = await getDb();
-    // Buscamos el registro en LOTE_PRODUCTO cuyo id_local (PK autoincremental
-    // de SQLite) coincide con idLoteProductoLocal.
-    // Si la tabla guarda su propio id_servidor en una columna 'id_lote_producto_servidor',
-    // la usaríamos directamente. De lo contrario usamos el campo id_lote_producto
-    // almacenado en PRODUCTO como referencia de la relación ya sincronizada.
-    const fila = await db.getFirstAsync<{ id_servidor: number | null }>(
-      `SELECT id_lote_producto AS id_servidor
-       FROM LOTE_PRODUCTO
+    
+    // 1. Obtener la relación local de LOTE_PRODUCTO
+    const relLocal = await db.getFirstAsync<{ id_lote: number; id_producto: number }>(
+      `SELECT id_lote, id_producto 
+       FROM LOTE_PRODUCTO 
        WHERE id_lote_producto = ?
        LIMIT 1`,
       idLoteProductoLocal
     );
 
-    if (!fila) {
+    if (!relLocal) {
       console.warn(
-        `[resolverIdLoteProductoServidor] No se encontró LOTE_PRODUCTO con id_local=${idLoteProductoLocal}. Se enviará NULL.`
+        `[resolverIdLoteProductoServidor] No se encontró LOTE_PRODUCTO local con id_lote_producto=${idLoteProductoLocal}.`
       );
       return null;
     }
 
-    // Si el id_servidor es el mismo id local (SQLite aún no sincronizó esta fila
-    // con el servidor), retornamos null para evitar enviar IDs locales al backend.
-    return fila.id_servidor ?? null;
+    // 2. Buscar el id_lote del servidor (Supabase) en la tabla lote
+    const lote = await db.getFirstAsync<{ id_lote: number | null }>(
+      `SELECT id_lote FROM lote WHERE id_local = ? LIMIT 1`,
+      relLocal.id_lote
+    );
+
+    if (!lote || lote.id_lote == null) {
+      console.warn(
+        `[resolverIdLoteProductoServidor] Lote local id=${relLocal.id_lote} aún no sincronizado con el servidor.`
+      );
+      return null;
+    }
+
+    // 3. Consultar la tabla lote_producto en Supabase para obtener el id_lote_producto del servidor
+    const { data, error } = await supabase
+      .from('lote_producto')
+      .select('id_lote_producto')
+      .eq('id_lote', lote.id_lote)
+      .eq('id_producto', relLocal.id_producto)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`[resolverIdLoteProductoServidor] Error al consultar Supabase: ${error.message}`);
+      return null;
+    }
+
+    if (!data) {
+      console.warn(
+        `[resolverIdLoteProductoServidor] No se encontró la relación en el servidor para id_lote=${lote.id_lote}, id_producto=${relLocal.id_producto}.`
+      );
+      return null;
+    }
+
+    return data.id_lote_producto;
   } catch (err) {
     console.warn(`[resolverIdLoteProductoServidor] Error al resolver ID: ${String(err)}`);
     return null;
@@ -257,6 +286,8 @@ export type LoteLocal = {
   fecha_cosecha_est: string;
   fecha_cosecha_real?: string | null;
   foto_siembra_uri_local: string | null;
+  foto_sincronizada: number;
+  imagen_url: string | null;
   sincronizado: number;
   created_at?: string;
   updated_at?: string;
@@ -273,6 +304,8 @@ const LOTE_SELECT_FIELDS = `
   l.fecha_cosecha_est,
   l.fecha_cosecha_real,
   l.foto_siembra_url,
+  l.foto_sincronizada,
+  l.imagen_url,
   l.estado,
   l.sincronizado,
   l.created_at,
@@ -308,11 +341,14 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     fecha_cosecha_est: String(row.fecha_cosecha_est ?? ''),
     fecha_cosecha_real: row.fecha_cosecha_real === null || row.fecha_cosecha_real === undefined ? null : String(row.fecha_cosecha_real),
     foto_siembra_uri_local: row.foto_siembra_url === null || row.foto_siembra_url === undefined ? null : String(row.foto_siembra_url),
+    foto_sincronizada: row.foto_sincronizada === null || row.foto_sincronizada === undefined ? 0 : Number(row.foto_sincronizada),
+    imagen_url: row.imagen_url === null || row.imagen_url === undefined ? null : String(row.imagen_url),
     sincronizado: Number(row.sincronizado ?? 0),
     created_at: row.created_at === null || row.created_at === undefined ? undefined : String(row.created_at),
     updated_at: row.updated_at === null || row.updated_at === undefined ? undefined : String(row.updated_at),
   };
 }
+
 
 export async function obtenerLotesPendientesLocales(): Promise<LoteLocal[]> {
   const db = await getDb();
@@ -416,6 +452,22 @@ export async function insertarLoteLocal(loteData: LoteInsertInput): Promise<numb
         idLoteLocalCreado,
         idProducto
       );
+
+      // Obtener el id_lote_producto generado o existente
+      const rel = await db.getFirstAsync<{ id_lote_producto: number }>(
+        'SELECT id_lote_producto FROM LOTE_PRODUCTO WHERE id_lote = ? AND id_producto = ? LIMIT 1',
+        idLoteLocalCreado,
+        idProducto
+      );
+
+      if (rel) {
+        // Actualizar el producto con el ID de relación local y marcar como pendiente de sincronización
+        await db.runAsync(
+          'UPDATE PRODUCTO SET id_lote_producto = ?, sincronizado = 0 WHERE id_producto = ?',
+          rel.id_lote_producto,
+          idProducto
+        );
+      }
     }
   });
 
@@ -483,6 +535,22 @@ export async function actualizarCultivosDeLote(
       const categoriaResuelta = rubro || determinarCategoriaCultivo(cultivo);
       const idProducto = await obtenerOInsertarProductoLocal(db, cultivo, categoriaResuelta);
       await db.runAsync('INSERT OR IGNORE INTO LOTE_PRODUCTO (id_lote, id_producto) VALUES (?, ?)', idLoteLocal, idProducto);
+
+      // Obtener el id_lote_producto recién creado
+      const rel = await db.getFirstAsync<{ id_lote_producto: number }>(
+        'SELECT id_lote_producto FROM LOTE_PRODUCTO WHERE id_lote = ? AND id_producto = ? LIMIT 1',
+        idLoteLocal,
+        idProducto
+      );
+
+      if (rel) {
+        // Actualizar el producto con el ID de relación local y marcar como pendiente de sincronización
+        await db.runAsync(
+          'UPDATE PRODUCTO SET id_lote_producto = ?, sincronizado = 0 WHERE id_producto = ?',
+          rel.id_lote_producto,
+          idProducto
+        );
+      }
     }
 
     await db.runAsync('UPDATE lote SET updated_at = ? WHERE id_local = ?', new Date().toISOString(), idLoteLocal);
@@ -549,3 +617,48 @@ export async function eliminarLoteLocalPorServidor(idServidor: number): Promise<
   await db.runAsync("UPDATE produccion_lote SET estado = 'INACTIVO' WHERE id_lote = ?", idServidor);
   await db.runAsync(`UPDATE lote SET estado = 'INACTIVO' WHERE ${serverColumn} = ?`, idServidor);
 }
+
+/**
+ * Actualiza la columna `foto_siembra_url` de un lote en SQLite local.
+ *
+ * Se utiliza durante la sincronización cuando la foto fue subida exitosamente
+ * a Supabase Storage: reemplaza el URI local (file://) por la URL pública
+ * de la foto en la nube, y marca el registro como pendiente de re-sync para
+ * que el backend reciba la URL actualizada.
+ *
+ * @param idLocal   - ID local del lote (columna `id_local` en la tabla `lote`).
+ * @param urlPublica - URL pública de Supabase Storage (ej: "https://...supabase.co/...").
+ */
+export async function actualizarFotoSiembraLocal(
+  idLocal: number,
+  urlPublica: string
+): Promise<void> {
+  try {
+    const db = await getDb();
+    await db.runAsync(
+      `UPDATE lote
+         SET foto_siembra_url = ?,
+             imagen_url        = ?,
+             foto_sincronizada = 1,
+             sincronizado      = 0,
+             updated_at        = ?
+       WHERE id_local = ?`,
+      urlPublica,
+      urlPublica,
+      new Date().toISOString(),
+      idLocal
+    );
+    console.log(
+      `[SiembraRepository] 📸 foto_siembra_url e imagen_url actualizadas y foto_sincronizada = 1 para lote ${idLocal}: ${urlPublica}`
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[SiembraRepository] ⚠️ No se pudo actualizar foto_siembra_url para lote ${idLocal}: ${msg}`
+    );
+    // No relanzamos — el SyncService debe continuar con el siguiente lote.
+  }
+}
+
+
+

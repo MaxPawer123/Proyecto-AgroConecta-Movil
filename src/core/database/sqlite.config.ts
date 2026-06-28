@@ -246,7 +246,15 @@ async function asegurarColumnasLote(db: SQLite.SQLiteDatabase): Promise<void> {
   if (!columns.has('fecha_cosecha_real')) {
     await runSafe(db, 'ALTER TABLE lote ADD COLUMN fecha_cosecha_real TEXT');
   }
+  if (!columns.has('foto_sincronizada')) {
+    await runSafe(db, 'ALTER TABLE lote ADD COLUMN foto_sincronizada INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!columns.has('imagen_url')) {
+    await runSafe(db, 'ALTER TABLE lote ADD COLUMN imagen_url TEXT');
+  }
 }
+
+
 
 async function aplicarMigraciones(db: SQLite.SQLiteDatabase): Promise<void> {
   await asegurarColumnasUsuarioYProductor(db);

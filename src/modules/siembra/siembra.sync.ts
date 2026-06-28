@@ -11,10 +11,10 @@ import {
 import {
   crearLoteApi,
   obtenerLotesPorTipoCultivoApi,
-  subirFotoSiembraApi,
 } from '../../core/network/api/lotes';
 import { sincronizarProductosApi } from '../../core/network/api/productos';
 import { crearGastoApi, obtenerGastosPorLoteApi } from '../../core/network/api/gastos';
+import { esErrorDeConectividad } from '../../core/network/http';
 import { registrarProduccionLoteApi } from '../../core/network/api/produccion';
 import {
   obtenerBorradorProduccionLocal,
@@ -123,13 +123,82 @@ async function buscarLoteServidorExistente(item: LoteLocal): Promise<number | nu
   }
 }
 
+/**
+ * Sube una imagen local (file://) a Cloudinary de manera directa usando FormData.
+ * @param uriLocal URI de archivo local.
+ * @returns La URL pública (secure_url) de Cloudinary o null si falla.
+ */
+async function subirFotoACloudinary(uriLocal: string): Promise<string | null> {
+  try {
+    const cloudName = 'dgdn58hpw';
+    const apiKey = '272864567725746';
+    const uploadPreset = 'ml_default'; 
+
+    const fileName = uriLocal.split('/').pop() || `siembra_${Date.now()}.jpg`;
+    
+    const formData = new FormData();
+    formData.append('file', {
+      uri: uriLocal,
+      type: 'image/jpeg',
+      name: fileName,
+    } as any);
+    
+    formData.append('upload_preset', uploadPreset);
+    formData.append('api_key', apiKey);
+
+    console.log(`📸 [Cloudinary] Subiendo imagen a Cloudinary: ${fileName}...`);
+    
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`📸 [Cloudinary] Error en respuesta (status ${response.status}): ${errorText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data && data.secure_url) {
+      console.log(`📸 [Cloudinary] ¡Subida exitosa! URL: ${data.secure_url}`);
+      return data.secure_url;
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('📸 [Cloudinary] Error de red al subir la imagen:', error);
+    return null;
+  }
+}
+
 async function sincronizarLote(item: LoteLocal, idProductorRecuperado: number): Promise<number> {
   let fotoSiembraUrl = item.foto_siembra_uri_local;
+  let subidaCloudinaryOk = false;
+
   if (fotoSiembraUrl && !fotoSiembraUrl.startsWith('http')) {
     try {
-      fotoSiembraUrl = await subirFotoSiembraApi(fotoSiembraUrl);
+      const secureUrl = await subirFotoACloudinary(fotoSiembraUrl);
+      if (secureUrl) {
+        fotoSiembraUrl = secureUrl;
+        subidaCloudinaryOk = true;
+        
+        // Actualizamos localmente para persistir el avance
+        const db = await getDb();
+        await db.runAsync(
+          'UPDATE lote SET foto_siembra_url = ? WHERE id_lote = ?',
+          [secureUrl, item.id_local]
+        );
+      } else {
+        // En lugar de lanzar error, seguimos sin subir la foto para no bloquear el sync
+        fotoSiembraUrl = null; 
+      }
     } catch {
-      throw new Error('No se pudo subir la foto local del lote.');
+      // Ignorar fallo de red
+      fotoSiembraUrl = null;
     }
   }
 
@@ -215,6 +284,18 @@ async function sincronizarGastosLocales(idLocal: number, idServidor: number): Pr
       await marcarGastoComoSincronizado(gasto.id_local, idGasto, idServidor);
       console.log(`✅ Gasto ${gasto.id_local} sincronizado → ID servidor: ${idGasto}`);
     } catch (error) {
+      // ── Error de conectividad: servidor inaccesible ─────────────────────────
+      // El gasto permanece con sincronizado=0 para reintentarlo en el próximo ciclo.
+      // NO se muestra ningún banner ni alerta visual al productor.
+      if (esErrorDeConectividad(error)) {
+        console.log(
+          `📡 [Sync] Sin red. Gasto ${gasto.id_local} conservado en SQLite (sincronizado=0). ` +
+          'Se reintentará automáticamente cuando haya conexión.'
+        );
+        // Salir del bucle completo: si un gasto falla por red, el resto también fallará.
+        break;
+      }
+      // ── Error de servidor (4xx / 5xx / lógica): registrar y continuar ───────
       console.warn(`❌ Error sincronizando gasto ${gasto.id_local}:`, error);
       await actualizarCostoLocal(gasto.id_local, {
         ultimo_error: error instanceof Error ? error.message : String(error),
@@ -293,6 +374,16 @@ async function sincronizarGastosHuerfanosLocales(): Promise<void> {
       await marcarGastoComoSincronizado(gasto.id_local, idGasto, idLoteServidor);
       console.log(`✅ Gasto huérfano ${gasto.id_local} sincronizado → ID servidor: ${idGasto}`);
     } catch (error) {
+      // ── Error de conectividad: abortar el resto del ciclo silenciosamente ───
+      // Los gastos huérfanos permanecen con sincronizado=0 intactos en SQLite.
+      if (esErrorDeConectividad(error)) {
+        console.log(
+          `📡 [Sync] Sin red. ${huerfanos.length} gasto(s) huérfano(s) conservados en SQLite. ` +
+          'Se sincronizarán automáticamente al recuperar la conexión.'
+        );
+        break;
+      }
+      // ── Error de servidor: anotar y continuar con el siguiente ──────────────
       console.warn(`❌ Error sincronizando gasto huérfano ${gasto.id_local}:`, error);
       await actualizarCostoLocal(gasto.id_local, {
         ultimo_error: error instanceof Error ? error.message : String(error),
@@ -693,6 +784,22 @@ export async function descargarDatosServidorALocal(): Promise<void> {
             idLoteLocal,
             idProducto
           );
+
+          // Obtener el id_lote_producto recién creado o existente
+          const rel = await db.getFirstAsync<{ id_lote_producto: number }>(
+            'SELECT id_lote_producto FROM LOTE_PRODUCTO WHERE id_lote = ? AND id_producto = ? LIMIT 1',
+            idLoteLocal,
+            idProducto
+          );
+
+          if (rel) {
+            // Guardar la FK id_lote_producto en PRODUCTO. Al descargarlo del servidor, ya está sincronizado.
+            await db.runAsync(
+              'UPDATE PRODUCTO SET id_lote_producto = ?, sincronizado = 1 WHERE id_producto = ?',
+              rel.id_lote_producto,
+              idProducto
+            );
+          }
         }
       }
     }

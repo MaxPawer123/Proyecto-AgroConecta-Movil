@@ -58,50 +58,103 @@ export class HttpStatusError extends Error {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// 🔍 Interceptor inteligente de errores de red
-// ────────────────────────────────────────────────────────────────────────────────
+// ─── URLs que pertenecen a flujos de sincronización automática en segundo plano ─
+// Si la red falla para ESTAS rutas, NO se muestra el banner de diagnóstico.
+// El SyncService debe manejar el error de forma silenciosa y conservar el dato en SQLite.
+const SYNC_URL_PATTERNS = [
+  '/api/gastos',
+  '/api/productos/sync',
+  '/api/lotes',
+  '/sync',
+];
+
+// ─── Patrones de URL de Supabase Storage / subidas de archivos ─────────────────
+// Las fotos van DIRECTO a Supabase, nunca pasan por el backend Express.
+// Cualquier error de red aquí es silencioso: storageHelper lo captura en su
+// propio try/catch y el SyncService conserva la foto local para reintentar.
+const STORAGE_URL_PATTERNS = [
+  '/storage/',
+  '/upload/',
+  'supabase.co/storage',
+  'supabase.co/rest',
+  'cloudinary.com',
+  'cloudinary',
+];
+
+function esPeticionDeSincronizacion(url: string): boolean {
+  return SYNC_URL_PATTERNS.some((pattern) => url.includes(pattern));
+}
+
+function esPeticionDeStorage(url: string): boolean {
+  return STORAGE_URL_PATTERNS.some((pattern) => url.includes(pattern));
+}
+
+/**
+ * Detecta si un error es de conectividad (sin internet, timeout, abortado).
+ * Exportado para que `gastos.ts` y el SyncService puedan usarlo sin repetir lógica.
+ */
+export function esErrorDeConectividad(error: unknown): boolean {
+  if (error instanceof HttpStatusError) return false;
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes('network request failed') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network error') ||
+    msg.includes('cleartext') ||
+    msg.includes('timeout') ||
+    error.name === 'AbortError'
+  );
+}
+
 function interceptarErrorDeRed(error: unknown, urlIntentada: string): void {
   if (error instanceof HttpStatusError) {
-    // El servidor SÍ respondió pero con un status code de error — no es un problema de red.
     return;
   }
 
-  if (error instanceof Error) {
-    const msg = error.message.toLowerCase();
+  if (!esErrorDeConectividad(error)) return;
 
-    const esErrorDeRed =
-      msg.includes('network request failed') ||
-      msg.includes('failed to fetch') ||
-      msg.includes('network error') ||
-      msg.includes('cleartext') ||
-      msg.includes('timeout') ||
-      error.name === 'AbortError';
+  // ── BYPASS SILENCIOSO PARA CLOUDINARY Y SYNC ──────────────────────────────
+  const esCloudinary = urlIntentada.includes('cloudinary.com') || urlIntentada.includes('cloudinary');
+  const esSync = esPeticionDeSincronizacion(urlIntentada);
 
-    if (esErrorDeRed) {
-      console.error(
-        '\n' +
-        '╔══════════════════════════════════════════════════════════════════╗\n' +
-        '║  ❌ Error Crítico de Red                                        ║\n' +
-        '╠══════════════════════════════════════════════════════════════════╣\n' +
-        '║  El celular NO alcanza al servidor backend.                     ║\n' +
-        '║                                                                 ║\n' +
-        `║  URL intentada: ${urlIntentada.padEnd(46)}║\n` +
-        '║                                                                 ║\n' +
-        '║  🔎 Checklist de diagnóstico:                                   ║\n' +
-        '║  1. ¿El celular y la PC están en el MISMO Wi-Fi?                ║\n' +
-        '║  2. ¿El backend está corriendo? (npm start en Backend/)         ║\n' +
-        '║  3. ¿El Firewall de Windows bloquea el puerto 3000?             ║\n' +
-        '║     → Panel de control > Firewall > Permitir app >              ║\n' +
-        '║       Agregar regla de entrada TCP puerto 3000                  ║\n' +
-        '║  4. ¿La IP configurada (192.168.0.8) sigue siendo correcta?    ║\n' +
-        '║     → En CMD ejecuta: ipconfig | findstr IPv4                   ║\n' +
-        '╚══════════════════════════════════════════════════════════════════╝\n' +
-        `  Error original: ${error.message}\n`
-      );
-    }
+  if (esCloudinary || esSync) {
+    console.log("📸 Subida de imagen offline o pausada, reintentando silenciosamente...");
+    return;
   }
+
+  if (esPeticionDeStorage(urlIntentada)) {
+    console.log(
+      `📸 [Storage-Bypass] Fallo silencioso en subida de archivo. ` +
+      'La foto se conserva en SQLite local y se reintentará en el próximo ciclo.'
+    );
+    return;
+  }
+
+  // ── Modo diagnóstico completo para peticiones de usuario ────────────────────
+  const errMsg = error instanceof Error ? error.message : String(error);
+  console.error(
+    '\n' +
+    '╔══════════════════════════════════════════════════════════════════╗\n' +
+    '║  ❌ Error Crítico de Red                                        ║\n' +
+    '╠══════════════════════════════════════════════════════════════════╣\n' +
+    '║  El celular NO alcanza al servidor backend.                     ║\n' +
+    '║                                                                 ║\n' +
+    `║  URL intentada: ${urlIntentada.padEnd(46)}║\n` +
+    '║                                                                 ║\n' +
+    '║  🔎 Checklist de diagnóstico:                                   ║\n' +
+    '║  1. ¿El celular y la PC están en el MISMO Wi-Fi?                ║\n' +
+    '║  2. ¿El backend está corriendo? (npm start en Backend/)         ║\n' +
+    '║  3. ¿El Firewall de Windows bloquea el puerto 3000?             ║\n' +
+    '║     → Panel de control > Firewall > Permitir app >              ║\n' +
+    '║       Agregar regla de entrada TCP puerto 3000                  ║\n' +
+    '║  4. ¿La IP configurada (192.168.0.8) sigue siendo correcta?    ║\n' +
+    '║     → En CMD ejecuta: ipconfig | findstr IPv4                   ║\n' +
+    '╚══════════════════════════════════════════════════════════════════╝\n' +
+    `  Error original: ${errMsg}\n`
+  );
 }
+
 
 // ────────────────────────────────────────────────────────────────────────────────
 // Cache de la última URL que funcionó
