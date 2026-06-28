@@ -230,15 +230,15 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
         // ── Upsert vs Insert según si ya tiene id_servidor ─────────────────
         const operacion = lote.id_servidor
           ? supabase
-              .from('lote')
-              .upsert({ id_lote: lote.id_servidor, ...payload })
-              .select('id_lote')
-              .single()
+            .from('lote')
+            .upsert({ id_lote: lote.id_servidor, ...payload })
+            .select('id_lote')
+            .single()
           : supabase
-              .from('lote')
-              .insert(payload)
-              .select('id_lote')
-              .single();
+            .from('lote')
+            .insert(payload)
+            .select('id_lote')
+            .single();
 
         const { data: dataResult, error: queryError } = await operacion;
 
@@ -393,13 +393,13 @@ export async function syncProductosPendientes(token: string): Promise<void> {
         );
 
         return {
-          id_producto:       producto.id_producto,
-          nombre:            producto.nombre,
-          rubro:             producto.rubro,
-          estado:            producto.estado ?? 'ACTIVO',
-          sincronizado:      true,
+          id_producto: producto.id_producto,
+          nombre: producto.nombre,
+          rubro: producto.rubro,
+          estado: producto.estado ?? 'ACTIVO',
+          sincronizado: true,
           // null si la relación aún no tiene ID servidor → el backend acepta NULL
-          id_lote_producto:  idLoteProductoServidor,
+          id_lote_producto: idLoteProductoServidor,
         };
       })
     );
@@ -408,7 +408,7 @@ export async function syncProductosPendientes(token: string): Promise<void> {
     const { sincronizarProductosApi } = await import(
       '../core/network/api/productos'
     );
-    const respuesta = await sincronizarProductosApi(productosConIdsMapeados, token);
+    const respuesta = await sincronizarProductosApi(productosConIdsMapeados);
 
     if (!respuesta?.success) {
       console.warn('[SyncService] ⚠️  El backend no confirmó la sincronización de productos.');
