@@ -291,6 +291,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
         comunidad: item.ubicacion || 'No especificada',
+        ubicacion: item.ubicacion || '',
         fechaSiembra: formatearFecha(item.fecha_siembra),
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
@@ -429,7 +430,8 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           imagen: resolverUriImagen(item.foto_siembra_uri_local || item.foto_siembra_url, rubroConfig.defaultImage),
           imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
           area: superficie,
-          comunidad: 'Comunidad registrada',
+          comunidad: item.ubicacion || 'Comunidad registrada',
+          ubicacion: item.ubicacion || '',
           fechaSiembra: formatearFecha(item.fecha_siembra),
           cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
           fechaSiembraIso: item.fecha_siembra,
@@ -460,6 +462,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
           area: superficie,
           comunidad: item.ubicacion || 'Comunidad registrada',
+          ubicacion: item.ubicacion || '',
           fechaSiembra: formatearFecha(item.fecha_siembra),
           cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
           fechaSiembraIso: item.fecha_siembra,
@@ -558,6 +561,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         imagenRemota: resolverUriImagen(item.foto_siembra_url || item.foto_siembra_uri_local) || null,
         area: superficie,
         comunidad: item.ubicacion || 'No especificada',
+        ubicacion: item.ubicacion || '',
         fechaSiembra: formatearFecha(item.fecha_siembra),
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
@@ -588,6 +592,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
         imagenRemota: resolverUriImagen(item.foto_siembra_url) || null,
         area: superficie,
         comunidad: item.ubicacion || 'Comunidad registrada',
+        ubicacion: item.ubicacion || '',
         fechaSiembra: formatearFecha(item.fecha_siembra),
         cosechaEstimada: formatearFecha(item.fecha_cosecha_est),
         fechaSiembraIso: item.fecha_siembra,
@@ -753,7 +758,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     setFormEdicionState({
       nombre: lote.nombre || '',
       tipoCultivo: lote.tipoProducto || '',
-      ubicacion: lote.comunidad === 'Comunidad registrada' ? '' : (lote.comunidad || ''),
+      ubicacion: lote.ubicacion || (lote.comunidad === 'Comunidad registrada' ? '' : (lote.comunidad || '')),
       superficie: String(lote.area || ''),
       fechaSiembraIso: lote.fechaSiembraIso || '',
       fechaCosechaIso: lote.fechaCosechaIso || '',
@@ -768,7 +773,7 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
     const nombre = formEdicion.nombre.trim();
     const tipoCultivo = formEdicion.tipoCultivo.trim();
     const superficie = Number(formEdicion.superficie);
-    const ubicacion = formEdicion.ubicacion.trim() || (loteEditando.comunidad === 'Comunidad registrada' ? '' : (loteEditando.comunidad || ''));
+    const ubicacion = formEdicion.ubicacion.trim() || (loteEditando.ubicacion || (loteEditando.comunidad === 'Comunidad registrada' ? '' : (loteEditando.comunidad || '')));
     const fechaSiembraIso = formEdicion.fechaSiembraIso.trim() || loteEditando.fechaSiembraIso;
     const fechaCosechaIso = formEdicion.fechaCosechaIso.trim() || loteEditando.fechaCosechaIso;
     const fotoSiembra = formEdicion.fotoSiembra.trim();
@@ -812,18 +817,19 @@ const ordenarLotesPorRecencia = useCallback((items: LoteViewModel[]) => {
           actuales.map((item) =>
           item.key === loteEditando.key
             ? {
-                ...item,
-                nombre,
-                tipoProducto: tipoCultivo,
-                comunidad: ubicacion,
-                area: superficie,
-                fechaSiembraIso,
-                fechaCosechaIso,
-                fechaSiembra: formatearFecha(fechaSiembraIso),
-                cosechaEstimada: formatearFecha(fechaCosechaIso),
-                imagen: resolverUriImagen(fotoSiembra, item.imagen),
-                imagenRemota: fotoSiembra || null,
-              }
+                 ...item,
+                 nombre,
+                 tipoProducto: tipoCultivo,
+                 comunidad: ubicacion,
+                 ubicacion: ubicacion,
+                 area: superficie,
+                 fechaSiembraIso,
+                 fechaCosechaIso,
+                 fechaSiembra: formatearFecha(fechaSiembraIso),
+                 cosechaEstimada: formatearFecha(fechaCosechaIso),
+                 imagen: resolverUriImagen(fotoSiembra, item.imagen),
+                 imagenRemota: fotoSiembra || null,
+               }
             : item
           )
         )

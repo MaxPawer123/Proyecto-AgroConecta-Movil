@@ -60,7 +60,13 @@ export function LoteItem({ lote, productLabel, onOpenPhoto, onCalcular, onEditar
               </View>
               <View style={styles.detalleRow}>
                 <Ionicons name="location-outline" size={14} color="#2eaa51" />
-                <Text style={styles.detalleText}>{lote.comunidad}</Text>
+                <Text 
+                  style={styles.detalleText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {lote.ubicacion ? (lote.ubicacion.includes('|') ? lote.ubicacion.split('|')[0].trim() : lote.ubicacion) : 'Sin ubicación registrada'}
+                </Text>
               </View>
               <View style={styles.detalleRow}>
                 <Ionicons name="calendar-outline" size={14} color="#9ca3af" />
@@ -143,7 +149,7 @@ const styles = StyleSheet.create({
   loteCultivo: { fontSize: 13, color: '#6b7280' },
   detallesGrid: { marginBottom: 16 },
   detalleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  detalleText: { fontSize: 12, color: '#4b5563', marginLeft: 8 },
+  detalleText: { fontSize: 12, color: '#4b5563', marginLeft: 8, flex: 1 },
   divider: { height: 1, backgroundColor: '#f3f4f6', marginBottom: 16 },
   accionesContainer: { gap: 8 },
   accionesSecundariasRow: { flexDirection: 'row', gap: 8 },

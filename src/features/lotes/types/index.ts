@@ -14,6 +14,7 @@ export interface LoteViewModel {
 	imagenRemota: string | null;
 	area: number;
 	comunidad: string;
+	ubicacion: string;
 	fechaSiembra: string;
 	cosechaEstimada: string;
 	fechaSiembraIso: string;

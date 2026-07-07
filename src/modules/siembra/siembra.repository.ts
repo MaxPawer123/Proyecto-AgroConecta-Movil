@@ -286,6 +286,7 @@ export type LoteLocal = {
   fecha_cosecha_est: string;
   fecha_cosecha_real?: string | null;
   foto_siembra_uri_local: string | null;
+  foto_siembra_url?: string | null;
   foto_sincronizada: number;
   imagen_url: string | null;
   sincronizado: number;
@@ -341,6 +342,7 @@ function mapRowToLote(row: Record<string, unknown>): LoteLocal {
     fecha_cosecha_est: String(row.fecha_cosecha_est ?? ''),
     fecha_cosecha_real: row.fecha_cosecha_real === null || row.fecha_cosecha_real === undefined ? null : String(row.fecha_cosecha_real),
     foto_siembra_uri_local: row.foto_siembra_url === null || row.foto_siembra_url === undefined ? null : String(row.foto_siembra_url),
+    foto_siembra_url: row.foto_siembra_url === null || row.foto_siembra_url === undefined ? null : String(row.foto_siembra_url),
     foto_sincronizada: row.foto_sincronizada === null || row.foto_sincronizada === undefined ? 0 : Number(row.foto_sincronizada),
     imagen_url: row.imagen_url === null || row.imagen_url === undefined ? null : String(row.imagen_url),
     sincronizado: Number(row.sincronizado ?? 0),

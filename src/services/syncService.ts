@@ -18,10 +18,9 @@ import { getDb } from '../core/database/sqlite.config';
  * @param uriLocal URI de archivo local.
  * @returns La URL pública (secure_url) de Cloudinary o null si falla.
  */
-async function subirFotoACloudinary(uriLocal: string): Promise<string | null> {
+async function subirImagenACloudinary(uriLocal: string): Promise<string | null> {
   try {
     const cloudName = 'dgdn58hpw';
-    const apiKey = '272864567725746';
     const uploadPreset = 'ml_default'; // Preset unsigned por defecto en Cloudinary
 
     const fileName = uriLocal.split('/').pop() || `siembra_${Date.now()}.jpg`;
@@ -34,7 +33,6 @@ async function subirFotoACloudinary(uriLocal: string): Promise<string | null> {
     } as any);
 
     formData.append('upload_preset', uploadPreset);
-    formData.append('api_key', apiKey);
 
     console.log(`📸 [Cloudinary] Subiendo imagen a Cloudinary: ${fileName}...`);
 
@@ -256,27 +254,20 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
 
       try {
         // ── 5a. Foto — estrategia Cloudinary (Offline-First) ──────────────────
-        let fotoUrlParaPayload = lote.foto_siembra_uri_local;
-        const esFotoLocal =
-          fotoUrlParaPayload !== null &&
-          fotoUrlParaPayload !== undefined &&
-          fotoUrlParaPayload.startsWith('file://');
+        let urlCloudinary = lote.foto_siembra_url;
 
-        if (esFotoLocal && fotoUrlParaPayload) {
+        const esFotoLocal =
+          lote.foto_siembra_uri_local !== null &&
+          lote.foto_siembra_uri_local !== undefined &&
+          lote.foto_siembra_uri_local.startsWith('file://');
+
+        if (esFotoLocal && lote.foto_siembra_uri_local) {
           try {
             console.log(`📸 [SyncService] Subiendo foto local de lote ${lote.id_local} a Cloudinary...`);
-            const secureUrl = await subirFotoACloudinary(fotoUrlParaPayload);
-            if (secureUrl) {
-              fotoUrlParaPayload = secureUrl;
-
-              // Actualizamos localmente para persistir el avance de inmediato
-              const db = await getDb();
-              await db.runAsync(
-                'UPDATE lote SET foto_siembra_url = ? WHERE id_local = ?',
-                secureUrl,
-                lote.id_local
-              );
-              console.log(`📸 [SyncService] Foto subida y guardada localmente para lote ${lote.id_local}: ${secureUrl}`);
+            const secureUrl = await subirImagenACloudinary(lote.foto_siembra_uri_local);
+            if (secureUrl && secureUrl.startsWith('https://res.cloudinary.com')) {
+              urlCloudinary = secureUrl;
+              console.log(`📸 [SyncService] Foto subida y actualizada en memoria para lote ${lote.id_local}: ${secureUrl}`);
             } else {
               console.warn(`📸 [SyncService] No se pudo subir la foto del lote ${lote.id_local} a Cloudinary. Sincronización de este lote pospuesta.`);
               continue; // ⚠️ NO enviar el lote a Supabase si falla la subida de la foto
@@ -294,7 +285,7 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
           fecha_siembra: lote.fecha_siembra,
           fecha_cosecha_est: lote.fecha_cosecha_est,
           fecha_cosecha_real: lote.fecha_cosecha_real,
-          foto_siembra_url: fotoUrlParaPayload, // URL de Cloudinary o null
+          foto_siembra_url: urlCloudinary, // URL de Cloudinary o null
 
           ubicacion: lote.ubicacion || 'No especificada',
           estado: 'ACTIVO',
@@ -349,8 +340,17 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
         if (dataResult) {
           const idServidor = (dataResult as { id_lote: number }).id_lote;
 
-          // Todo exitoso (incluyendo foto), marcar como sincronizado en SQLite
-          await marcarLoteComoSincronizado(lote.id_local, idServidor);
+          // Tras recibir la respuesta exitosa del servidor, ejecuta el query local para actualizar el estado
+          const serverColumn = await getLoteServerColumn();
+          const db = await getDb();
+          await db.runAsync(
+            `UPDATE lote SET foto_siembra_url = ?, sincronizado = 1, ${serverColumn} = ?, updated_at = ? WHERE id_local = ?`,
+            urlCloudinary ?? null,
+            idServidor,
+            new Date().toISOString(),
+            lote.id_local
+          );
+
           console.log(
             `[SyncService] ✅ Lote local ${lote.id_local} sincronizado completamente ` +
             `con ID servidor: ${idServidor}`
