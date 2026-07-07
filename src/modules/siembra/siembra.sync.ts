@@ -177,28 +177,26 @@ async function subirFotoACloudinary(uriLocal: string): Promise<string | null> {
 
 async function sincronizarLote(item: LoteLocal, idProductorRecuperado: number): Promise<number> {
   let fotoSiembraUrl = item.foto_siembra_uri_local;
-  let subidaCloudinaryOk = false;
 
   if (fotoSiembraUrl && !fotoSiembraUrl.startsWith('http')) {
     try {
+      console.log(`📸 [siembra.sync] Subiendo foto local de lote ${item.id_local} a Cloudinary...`);
       const secureUrl = await subirFotoACloudinary(fotoSiembraUrl);
       if (secureUrl) {
         fotoSiembraUrl = secureUrl;
-        subidaCloudinaryOk = true;
         
         // Actualizamos localmente para persistir el avance
         const db = await getDb();
         await db.runAsync(
-          'UPDATE lote SET foto_siembra_url = ? WHERE id_lote = ?',
+          'UPDATE lote SET foto_siembra_url = ? WHERE id_local = ?',
           [secureUrl, item.id_local]
         );
+        console.log(`📸 [siembra.sync] Foto subida y guardada localmente para lote ${item.id_local}: ${secureUrl}`);
       } else {
-        // En lugar de lanzar error, seguimos sin subir la foto para no bloquear el sync
-        fotoSiembraUrl = null; 
+        throw new Error('No se pudo subir la foto del lote a Cloudinary. Sincronización de este lote pospuesta.');
       }
-    } catch {
-      // Ignorar fallo de red
-      fotoSiembraUrl = null;
+    } catch (error) {
+      throw error; // Re-lanzar para posponer la sincronización del lote
     }
   }
 

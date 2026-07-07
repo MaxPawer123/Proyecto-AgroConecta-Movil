@@ -25,19 +25,19 @@ async function subirFotoACloudinary(uriLocal: string): Promise<string | null> {
     const uploadPreset = 'ml_default'; // Preset unsigned por defecto en Cloudinary
 
     const fileName = uriLocal.split('/').pop() || `siembra_${Date.now()}.jpg`;
-    
+
     const formData = new FormData();
     formData.append('file', {
       uri: uriLocal,
       type: 'image/jpeg',
       name: fileName,
     } as any);
-    
+
     formData.append('upload_preset', uploadPreset);
     formData.append('api_key', apiKey);
 
     console.log(`📸 [Cloudinary] Subiendo imagen a Cloudinary: ${fileName}...`);
-    
+
     const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
       method: 'POST',
       body: formData,
@@ -262,42 +262,28 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
           fotoUrlParaPayload !== undefined &&
           fotoUrlParaPayload.startsWith('file://');
 
-        let fotoSubidaOk = true;
-
         if (esFotoLocal && fotoUrlParaPayload) {
           try {
+            console.log(`📸 [SyncService] Subiendo foto local de lote ${lote.id_local} a Cloudinary...`);
             const secureUrl = await subirFotoACloudinary(fotoUrlParaPayload);
             if (secureUrl) {
               fotoUrlParaPayload = secureUrl;
 
-              if (lote.id_servidor) {
-                // Lote existente: Persistencia local y en Supabase de la URL web
-                const db = await getDb();
-                await db.runAsync(
-                  'UPDATE lote SET foto_siembra_url = ?, sincronizado = 1 WHERE id_lote = ?',
-                  secureUrl,
-                  lote.id_servidor
-                );
-                
-                await supabase
-                  .from('lote')
-                  .update({ foto_siembra_url: secureUrl, sincronizado: true })
-                  .eq('id_lote', lote.id_servidor);
-
-                console.log(`📸 [Sync-Fotos] ✅ URL persistida local y remotamente para lote existente ${lote.id_local}`);
-              } else {
-                // Lote nuevo: Guardar localmente; el payload del posterior INSERT la subirá a la nube
-                await actualizarFotoSiembraLocal(lote.id_local, secureUrl);
-              }
+              // Actualizamos localmente para persistir el avance de inmediato
+              const db = await getDb();
+              await db.runAsync(
+                'UPDATE lote SET foto_siembra_url = ? WHERE id_local = ?',
+                secureUrl,
+                lote.id_local
+              );
+              console.log(`📸 [SyncService] Foto subida y guardada localmente para lote ${lote.id_local}: ${secureUrl}`);
             } else {
-              console.warn("📸 [Cloudinary] Error de red o respuesta vacía. Manteniendo foto localmente.");
-              fotoUrlParaPayload = null; // Evitar enviar la URI local file:// al backend
-              fotoSubidaOk = false;
+              console.warn(`📸 [SyncService] No se pudo subir la foto del lote ${lote.id_local} a Cloudinary. Sincronización de este lote pospuesta.`);
+              continue; // ⚠️ NO enviar el lote a Supabase si falla la subida de la foto
             }
           } catch (errorFoto: unknown) {
-            console.warn("📸 [Cloudinary] Error de red. Manteniendo foto localmente.");
-            fotoUrlParaPayload = null;
-            fotoSubidaOk = false;
+            console.error(`📸 [SyncService] Error al subir foto de lote ${lote.id_local} a Cloudinary. Sincronización pospuesta:`, errorFoto);
+            continue; // ⚠️ NO enviar el lote a Supabase si falla la subida de la foto
           }
         }
 
@@ -359,34 +345,17 @@ export async function syncLocalDataToCloud(): Promise<SyncResult> {
           continue; // Siguiente lote
         }
 
-        // ── Éxito: marcar sincronización en SQLite según el estado de la foto ────
+        // ── Éxito: marcar sincronización en SQLite ────────────────────────────
         if (dataResult) {
           const idServidor = (dataResult as { id_lote: number }).id_lote;
-          
-          if (!fotoSubidaOk) {
-            // Si la foto no se pudo subir, guardamos el id_servidor pero dejamos sincronizado = 0
-            // de modo que en el próximo ciclo se intente volver a subir la foto.
-            const db = await getDb();
-            const serverColumn = await getLoteServerColumn();
-            await db.runAsync(
-              `UPDATE lote SET ${serverColumn} = ?, sincronizado = 0, updated_at = ? WHERE id_local = ?`,
-              idServidor,
-              new Date().toISOString(),
-              lote.id_local
-            );
-            console.log(
-              `[SyncService] ⚠️ Lote local ${lote.id_local} guardado en la nube con ID servidor ${idServidor}, ` +
-              'pero manteniéndose sincronizado = 0 localmente para reintentar la subida de foto a Cloudinary.'
-            );
-          } else {
-            // Todo exitoso (incluyendo foto), marcar como sincronizado
-            await marcarLoteComoSincronizado(lote.id_local, idServidor);
-            console.log(
-              `[SyncService] ✅ Lote local ${lote.id_local} sincronizado completamente ` +
-              `con ID servidor: ${idServidor}`
-            );
-          }
-          
+
+          // Todo exitoso (incluyendo foto), marcar como sincronizado en SQLite
+          await marcarLoteComoSincronizado(lote.id_local, idServidor);
+          console.log(
+            `[SyncService] ✅ Lote local ${lote.id_local} sincronizado completamente ` +
+            `con ID servidor: ${idServidor}`
+          );
+
           procesados++;
         }
       } catch (err: unknown) {

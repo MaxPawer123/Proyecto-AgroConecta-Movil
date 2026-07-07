@@ -58,6 +58,51 @@ const normalizarSuperficie = (valor: string, unidad: 'ha' | 'm2'): number => {
   return unidad === 'm2' ? superficieIngresada / METROS_CUADRADOS_POR_HECTAREA : superficieIngresada;
 };
 
+const subirFotoACloudinary = async (localUri: string): Promise<string | null> => {
+  try {
+    const cloudName = 'dgdn58hpw';
+    const apiKey = '272864567725746';
+    
+    // REEMPLAZA ESTE PLACEHOLDER CON EL NOMBRE DE TU PRESET UNSIGNED CONFIGURADO EN CLOUDINARY
+    const uploadPreset = 'yapuaroma'; // Cambia esto por tu preset rea
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: localUri,
+      type: 'image/jpeg',
+      name: `siembra_${Date.now()}.jpg`,
+    } as any);
+
+    formData.append('upload_preset', uploadPreset);
+    formData.append('api_key', apiKey);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Respuesta HTTP ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (data && data.secure_url) {
+      console.log("🔗 URL generada exitosamente en Cloudinary:", data.secure_url);
+      return data.secure_url;
+    }
+
+    throw new Error('La respuesta del servidor no incluyó el campo "secure_url".');
+  } catch (error: any) {
+    console.error("❌ Error al subir la foto a Cloudinary:", error?.message || error);
+    return null;
+  }
+};
+
 const construirTextoUbicacionGps = async (latitude: number, longitude: number): Promise<string> => {
   const base = `GPS: ${formatearNumeroGps(latitude)}, ${formatearNumeroGps(longitude)}`;
 
@@ -96,6 +141,7 @@ export function useRegistroSiembra({
   const [guardando, setGuardando] = useState(false);
   const [cargandoUbicacionGps, setCargandoUbicacionGps] = useState(false);
   const [errorUbicacionGps, setErrorUbicacionGps] = useState<string | null>(null);
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
 
   useEffect(() => {
     iniciarSincronizacionAutomaticaSiembras();
@@ -201,14 +247,43 @@ export function useRegistroSiembra({
         return;
       }
 
-      setFotoTerreno(imagenUri);
+      // Subida directa desde Galería
+      setSubiendoFoto(true);
+      try {
+        const secureUrl = await subirFotoACloudinary(imagenUri);
+        if (secureUrl) {
+          setFotoTerreno(secureUrl);
+        } else {
+          // Fallback a URI local en caso de error/offline
+          setFotoTerreno(imagenUri);
+        }
+      } catch {
+        setFotoTerreno(imagenUri);
+      } finally {
+        setSubiendoFoto(false);
+      }
     }
   };
 
-  const guardarFotoPendiente = () => {
+  const guardarFotoPendiente = async () => {
     if (!fotoPendienteCamara) return;
-    setFotoTerreno(fotoPendienteCamara);
-    setFotoPendienteCamara(null);
+    
+    // Subida directa desde Cámara al confirmar
+    setSubiendoFoto(true);
+    try {
+      const secureUrl = await subirFotoACloudinary(fotoPendienteCamara);
+      if (secureUrl) {
+        setFotoTerreno(secureUrl);
+      } else {
+        // Fallback a URI local
+        setFotoTerreno(fotoPendienteCamara);
+      }
+    } catch {
+      setFotoTerreno(fotoPendienteCamara);
+    } finally {
+      setSubiendoFoto(false);
+      setFotoPendienteCamara(null);
+    }
   };
 
   const descartarFotoPendiente = () => {
@@ -381,6 +456,7 @@ export function useRegistroSiembra({
     guardando,
     cargandoUbicacionGps,
     errorUbicacionGps,
+    subiendoFoto,
     modalOpcionesOpen,
     modalCalendarioOpen,
     modalCultivosOpen,

@@ -65,6 +65,7 @@ export interface UseRegistroSiembraResult {
 	guardando: boolean;
 	cargandoUbicacionGps: boolean;
 	errorUbicacionGps: string | null;
+	subiendoFoto: boolean;
 	modalOpcionesOpen: boolean;
 	modalCalendarioOpen: boolean;
 	modalCultivosOpen: boolean;
@@ -87,7 +88,7 @@ export interface UseRegistroSiembraResult {
 	cerrarSelectorFecha: () => void;
 	seleccionarFecha: (dateString: string) => void;
 	seleccionarImagen: (origen: 'camera' | 'gallery') => Promise<void>;
-	guardarFotoPendiente: () => void;
+	guardarFotoPendiente: () => Promise<void>;
 	descartarFotoPendiente: () => void;
 	fechaSeleccionadaISO: string;
 	crearLote: () => Promise<void>;
