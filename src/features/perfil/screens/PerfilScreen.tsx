@@ -22,7 +22,7 @@ export function PerfilScreen() {
               <Ionicons name="person-outline" size={38} color="#2BA14A" />
             </View>
             <Text style={styles.nombre}>{nombrePerfil}</Text>
-            <Text style={styles.headerSubtitle}>Perfil local del productor</Text>
+            <Text style={styles.headerSubtitle}>PERFIL DEL PRODUCTOR</Text>
           </View>
 
           <View style={styles.contentWrap}>
